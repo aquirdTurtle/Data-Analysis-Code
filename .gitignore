@@ -1,0 +1,7 @@
+# stuff created by pycharm.
+.idea/
+__pycache__/
+# jupyter notebooks are not meant to be syncronized with this repository.
+*.ipynb
+# created by jupyter.
+.ipynb_checkpoints/
