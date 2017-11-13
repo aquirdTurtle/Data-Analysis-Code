@@ -413,9 +413,9 @@ def plotMotTemperature(data, xLabel="", yLabel="", plotTitle="", window=(0, 0, 0
     print("MOT Temperature (simple):", simpleTemp * 1e6, 'uK')  #
 
 
-def plotMotNumber(dataSetNumber, motKey, exposureTime, window=(0, 0, 0, 0), cameraType='scout',
-              showStandardImages=False, sidemotPower=2.05, diagonalPower=8, motRadius=8 * 8e-6,
-              imagingLoss=0.8, detuning=10e6):
+def plotMotNumberAnalysis(dataSetNumber, motKey, exposureTime, window=(0, 0, 0, 0), cameraType='scout',
+                          showStandardImages=False, sidemotPower=2.05, diagonalPower=8, motRadius=8 * 8e-6,
+                          imagingLoss=0.8, detuning=10e6):
     """
     Calculate the MOT number and plot the data that resulted in the #.
 
@@ -611,7 +611,8 @@ def standardLoadingAnalysis(fileNum, atomLocations, accumulations=1, picsPerExpe
                 else np.linspace(min(transpose(key)[0]), max(transpose(key)[0]), 1000))
     pic1Data = arr(pic1Data.tolist())
     return (pic1Data, thresholds, avgPic, key, loadingRateErr, loadingRateList, allLoadingRate,
-            allLoadingErr, loadFits, loadingFitType, keyName, totalPic1AtomData, rawData, showTotalHist, avgFits)
+            allLoadingErr, loadFits, loadingFitType, keyName, totalPic1AtomData, rawData, showTotalHist, atomLocations,
+            avgFits)
 
 
 def standardAssemblyAnalysis(fileNumber, atomLocs1, pic1Num, atomLocs2=None, pic2Num=None, keyOffset=0,

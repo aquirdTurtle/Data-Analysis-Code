@@ -210,8 +210,8 @@ def Loading(fileNum, atomLocations, showTotalHist=True, showIndividualHist=False
     :return:
     """
 
-    (pic1Data, thresholds, avgPic, key, loadingRateErr, loadingRateList, allLoadingRate,
-     allLoadingErr, loadFits, loadingFitType, keyName, totalPic1AtomData, rawData,
+    (pic1Data, thresholds, avgPic, key, loadingRateErr, loadingRateList, allLoadingRate, allLoadingErr, loadFits,
+     loadingFitType, keyName, totalPic1AtomData, rawData, showTotalHist, atomLocations,
      avgFits) = standardLoadingAnalysis(fileNum, atomLocations, **StandardArgs)
 
     countsHist = []
@@ -245,9 +245,8 @@ def Loading(fileNum, atomLocations, showTotalHist=True, showIndividualHist=False
         alphaVal = 1.0 / (len(atomLocations) ** 0.7)
         avgFig, mainPlot = [[] for _ in range(2)]
         avgFig.append(go.Heatmap(z=avgPic, colorscale='Viridis', colorbar=go.ColorBar(x=1, y=0.15, len=0.3)))
-        for err, loc, color, load, fitData in zip(loadingRateErr, atomLocations, colors, loadingRateList,
-                                                  loadFits):
-
+        for err, loc, color, load, fitData in zip(loadingRateErr, atomLocations, colors, loadingRateList, loadFits):
+            print('hi!', loc)
             mainPlot.append(go.Scatter(x=key, y=load, error_y={'type': 'data', 'array': err, 'color': color},
                                        mode='markers', name=str(loc), legendgroup=str(loc),
                                        marker={'color': color}, opacity=alphaVal))
