@@ -1,4 +1,4 @@
-__version__ = "1.0"
+__version__ = "1.1"
 
 from numpy import array as arr
 from random import randint
@@ -81,7 +81,7 @@ def atomHist(key, atomLocs, pic1Data, bins, binData, fitVals, thresholds, avgPic
 
 def singleImage(data, accumulations=1, loadType='andor', bg=arr([0]), title='Single Picture', window=(0, 0, 0, 0),
                 xMin=0, xMax=0, yMin=0, yMax=0, zeroCorners=False, smartWindow=False, findMax=False,
-                manualAccumulation=False, maxColor=None):
+                manualAccumulation=False, maxColor=None, key=arr([])):
     """
     :return rawData, dataMinusBg
 
@@ -131,32 +131,16 @@ def singleImage(data, accumulations=1, loadType='andor', bg=arr([0]), title='Sin
         if loadType == 'andor':
             rawData, _, _, _ = loadHDF5(data)
         elif loadType == 'scout':
-            rawRawData = [[[] for y in range(accumulations)] for x in range(len(key))]
-            dataInc = 0
-            for keyInc in range(len(key)):
-                for repInc in range(accumulations):
-                    rawRawData[keyInc][repInc] = loadBasler(initDataNum + dataInc)
-                    dataInc += 1
-            rawRawData = arr(rawRawData)
-            # average all the pics for a given key value
-            rawData = [[] for x in range(len(key))]
-            variationInc = 0
-            singleAvgPic = 0
-            for variationPics in rawRawData:
-                avgPic = 0;
-                for pic in variationPics:
-                    avgPic += pic
-                avgPic /= accumulations
-                rawData[variationInc] = avgPic
-                singleAvgPic += avgPic
-                variationInc += 1
-            rawData = arr(rawData)
+            rawData = loadCompoundBasler(data, 'scout')
         elif loadType == 'ace':
-            rawData = loadCompoundBasler(data)
+            rawData = loadCompoundBasler(data, 'ace')
         elif loadType == 'dataray':
-            rawData = loadDataRay(data)
+            rawData = [[] for x in range(data)]
+            # assume user inputted an array of ints.
+            for dataNum in data:
+                rawData[keyInc][repInc] = loadDataRay(data)
         else:
-            raise ValueError("Bad argument for LoadType.")
+            raise ValueError('Bad value for LoadType.')
     else:
         rawData = data
 

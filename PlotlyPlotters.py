@@ -1,4 +1,4 @@
-__version__ = "1.0"
+__version__ = "1.2"
 
 import numpy as np
 from numpy import array as arr

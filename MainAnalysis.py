@@ -1,4 +1,4 @@
-__version__ = "1.0"
+__version__ = "1.1"
 
 from numpy import array as arr
 
@@ -410,7 +410,7 @@ def plotMotTemperature(data, xLabel="", yLabel="", plotTitle="", window=(0, 0, 0
 
     print("PGC Temperture (full ballistic):", temp * 1e6, 'uK')
     # the simple balistic fit doesn't appear to work
-    print("MOT Temperature (simple):", simpleTemp * 1e6, 'uK')  #
+    print("MOT Temperature (simple (don't trust?)):", simpleTemp * 1e6, 'uK')
 
 
 def plotMotNumberAnalysis(dataSetNumber, motKey, exposureTime, window=(0, 0, 0, 0), cameraType='scout',

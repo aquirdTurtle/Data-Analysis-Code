@@ -1,4 +1,4 @@
-__version__ = "1.0"
+__version__ = "1.1"
 
 from os import linesep
 from pandas import read_csv as pd_read_csv
@@ -40,9 +40,9 @@ def setPath(day, month, year):
     This function sets the location of where all of the data files are stored. It is occasionally called more
     than once in a notebook if the user needs to work past midnight.
 
-    :param day:
-    :param month:
-    :param year:
+    :param day: A number string, e.g. '11'.
+    :param month: The name of a month, e.g. 'November' (must match file path capitalization).
+    :param year: A number string, e.g. '2017'.
     :return:
     """
     dataRepository = "J:\\Data repository\\New Data Repository"
@@ -1068,14 +1068,14 @@ def calcMotTemperature(times, sigmas):
     return temperature, tempFromSimple, fitVals, fitCovariances, simpleVals, simpleCovariances
 
 
-def orderData(data, key, keyDim = None, otherDimValues=None):
+def orderData(data, key, keyDim=None, otherDimValues=None):
     """
 
     :param data:
     :param key:
     :param keyDim:
     :param otherDimValues:
-    :return:
+    :return: data, key, otherDimValues
     """
     zipObj = (zip(key, data, otherDimValues) if otherDimValues is not None else zip(key, data))
     if keyDim is not None:
