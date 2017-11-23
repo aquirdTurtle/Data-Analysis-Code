@@ -277,7 +277,7 @@ def browseh5(runNum=None, printOption=None, fileopen=None, filepath=None):
     input format of a tuple with various depth
 
         examples of use:
-    fileopenloc=h5.File('J:\\Data Repository\\New Data Repository\\2017\\September\\September 13\\Raw Data\\data_111.h5')
+    fileopenloc=h5.File('J:\\Data Repository\\New Data Repository\\2017\\September\\September 13\\Raw Data\\data_1.h5')
     browseh5(fileloc)
     or
     filepathloc='J:\\Data Repository\\New Data Repository\\2017\\September\\September 13\\Raw Data\\data_111.h5'
@@ -319,7 +319,7 @@ def browseh5(runNum=None, printOption=None, fileopen=None, filepath=None):
             for n in filenametmp[m]:
                 print('-', n)
                 if type(filenametmp[m][n]) == h5._hl.dataset.Dataset:
-                    if type(f[m][n][0]) == np.bytes_:
+                    if type(filenametmp[m][n][0]) == np.bytes_:
                         x = [z.decode('UTF-8') for z in filenametmp[m][n]]
                         print(''.join(x))
     elif printOption is None:
@@ -400,7 +400,7 @@ def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1):
     :param guessSigma_y:
     :return:
     """
-    pos = np.unravel_index(np.argmax(picture), picture.shape)
+    pos = arr(np.unravel_index(np.argmax(picture), picture.shape))
     pic = picture.flatten()
     x = np.linspace(1, picture.shape[1], picture.shape[1])
     y = np.linspace(1, picture.shape[0], picture.shape[0])
@@ -476,7 +476,7 @@ def fitGaussianBeamWaist(data, key, wavelength):
         # beamWaistExpansion(z, w0, wavelength)
         popt, pcov = fit(lambda x, a, b: beamWaistExpansion(x, a, b, wavelength), key, data, p0=initial_guess)
     except RuntimeError:
-        popt, pcov = [0,0]
+        popt, pcov = [0, 0]
         warn('Fit Failed!')
     return popt, pcov
 
@@ -509,7 +509,7 @@ def load_RSA_6114A(fileLocation):
     count = 0
     yUnits = ""
     xUnits = ""
-    xPointNum, xStart, xEnd = [0,0,0]
+    xPointNum, xStart, xEnd = [0, 0, 0]
     with open(fileLocation) as file:
         for line in iter(file.readline, ''):
             count += 1
@@ -558,7 +558,7 @@ def getOptimalAomBiases(minX, minY, spacing, widthX, widthY):
     horFreq = [70, 75, 65, 67.5, 72.5, 80, 85, 90, 95, 60, 50, 55, 45, 62.5, 57.5, 52.5]
     powerInRail = [209, 197, 180, 198, 205, 186, 156, 130, 72.5, 181, 109, 179, 43.5, 174, 182, 165]
     relativeHorPowerInRail = arr(powerInRail)/max(powerInRail) * 100
-    horAomCurve = interp.interp1d( horFreq, relativeHorPowerInRail )
+    horAomCurve = interp.interp1d(horFreq, relativeHorPowerInRail)
     # at horizontal freq of 70MHz\n",
     vertFreq = [80, 82.5, 77.5, 75, 85, 90, 95, 100, 105, 70, 65, 60, 55, 50, 52.5, 57.5, 62.5]
     vertPowerInRail = [206, 204, 202, 201, 197, 184, 145, 126, 64, 193, 185, 140, 154, 103, 141, 140, 161]
@@ -624,7 +624,6 @@ def maximizeAomPerformance(minX, minY, spacing, widthX, widthY, iterations=10):
     legend()
 
     figure()
-    ypts = calcWave(xpts, yPhases.x, yFreqs, yAmps)
     yptsOrig = calcWave(xpts, yGuess, yFreqs, yAmps)
     ypts = calcWave(xpts, yPhases.x, yFreqs, yAmps)
     title('Y-Axis')
@@ -671,7 +670,7 @@ def fillPlotDataDefaults(plotData):
         if 'legendLabels' not in plotData['ax1']:
             if plotData['ax1']['data'].ndim == 2:
                 # create empty labels
-                plotData['ax1']['legendLabels'] = ['' for x in range(plotData['ax1']['data'].shape[0])]
+                plotData['ax1']['legendLabels'] = ['' for _ in range(plotData['ax1']['data'].shape[0])]
             else:
                 plotData['ax1']['legendLabels'] = ''
     if 'ax2' in plotData:
@@ -682,7 +681,7 @@ def fillPlotDataDefaults(plotData):
         if 'legendLabels' not in plotData['ax2']:
             if plotData['ax2']['data'].ndim == 2:
                 # create empty labels
-                plotData['ax2']['legendLabels'] = ['' for x in range(plotData['ax2']['data'].shape[0])]
+                plotData['ax2']['legendLabels'] = ['' for _ in range(plotData['ax2']['data'].shape[0])]
             else:
                 plotData['ax2']['legendLabels'] = ''
     if 'xlabel' not in plotData:
@@ -721,7 +720,6 @@ def assemblePlotData(rawData, dataMinusBg, dataMinusAverage, positions, waists, 
     if not plotTitle == "":
         countData['title'] = plotTitle
     ax1 = {}
-
     if location == (-1, -1):
         data = []
         legendLabels = []
@@ -767,8 +765,8 @@ def assemblePlotData(rawData, dataMinusBg, dataMinusAverage, positions, waists, 
         ax1['legendLabels'] = ["fit $w_x$", "fit $w_y$", 'Fitted X: ' + str(waistFits[0]),
                                'Fitted Y: ' + str(waistFits[1])]
         fitYData = []
+        xpts = np.linspace(min(key), max(key), 1000)
         for fitParams in waistFits:
-            xpts = np.linspace(min(key), max(key), 1000)
             fitYData.append(beamWaistExpansion(xpts, fitParams[0], fitParams[1], 850e-9))
         ax1['fitYData'] = fitYData
         ax1['fitXData'] = [xpts, xpts]
@@ -797,7 +795,7 @@ def showPicComparisons(data, key, fitParameters=np.array([])):
     titles = ['Raw Picture', 'Background Subtracted', 'Average Subtracted']
     for inc in range(len(data)):
         figure()
-        fig, plts = subplots(1, len(data[inc]), figsize=(15,6))
+        fig, plts = subplots(1, len(data[inc]), figsize=(15, 6))
         count = 0
         for pic in data[inc]:
             x = np.linspace(1, pic.shape[1], pic.shape[1])
@@ -807,12 +805,14 @@ def showPicComparisons(data, key, fitParameters=np.array([])):
             fig.colorbar(im, ax=plts[count], fraction=0.046, pad=0.04)
             plts[count].set_title(titles[count])
             plts[count].axis('off')
-            if fitParameters.size!=0:
+            if fitParameters.size != 0:
                 if (fitParameters[count] != np.zeros(len(fitParameters[count]))).all():
                     data_fitted = fitFunc.gaussian_2D((x, y), *fitParameters[count])
                     try:
-                        plts[count].contour(x, y, data_fitted.reshape(picture.shape[0],picture.shape[1]),
-                                        2, colors='w', alpha=0.35, linestyles="dashed")
+                        # used to be "picture" which was unresolved, assuming should have been pic, as I've changed
+                        # below.
+                        plts[count].contour(x, y, data_fitted.reshape(pic.shape[0], pic.shape[1]), 2, colors='w',
+                                            alpha=0.35, linestyles="dashed")
                     except ValueError:
                         pass
             count += 1
@@ -832,7 +832,6 @@ def showBigPics(data, key, fitParameters=np.array([]), individualColorBars=False
     """
     if data.ndim != 3:
         raise ValueError("Incorrect dimensions for data input showBigPics.")
-    num = len(data)
     count = 0
     maximum = sorted(data.flatten())[colorMax]
     minimum = min(data.flatten())
@@ -846,7 +845,7 @@ def showBigPics(data, key, fitParameters=np.array([]), individualColorBars=False
         x = np.linspace(1, picture.shape[1], picture.shape[1])
         y = np.linspace(1, picture.shape[0], picture.shape[0])
         x, y = np.meshgrid(x, y)
-        im = pcolormesh(picture, vmin = minimum, vmax=maximum)
+        im = pcolormesh(picture, vmin=minimum, vmax=maximum)
         axis('off')
         title(str(round_sig(key[count], 4)), fontsize=8)
         if fitParameters.size != 0:
@@ -886,7 +885,7 @@ def showPics(data, key, fitParameters=np.array([]), individualColorBars=False, c
             else:
                 gridsize2 = i
             break
-    fig, plts = subplots(gridsize2, gridsize1, figsize=(15,10))
+    fig, plts = subplots(gridsize2, gridsize1, figsize=(15, 10))
     count = 0
     rowCount = 0
     picCount = 0
@@ -894,7 +893,7 @@ def showPics(data, key, fitParameters=np.array([]), individualColorBars=False, c
     minimum = min(data.flatten())
     # get picture fits & plots
     for row in plts:
-        for pic in row:
+        for _ in row:
             plts[rowCount, picCount].grid(0)
             if count >= len(data):
                 count += 1
@@ -908,14 +907,14 @@ def showPics(data, key, fitParameters=np.array([]), individualColorBars=False, c
             y = np.linspace(1, picture.shape[0], picture.shape[0])
             x, y = np.meshgrid(x, y)
             im = plts[rowCount, picCount].imshow(picture, origin='bottom', extent=(x.min(), x.max(), y.min(), y.max()),
-                                                 vmin = minimum, vmax=maximum)
+                                                 vmin=minimum, vmax=maximum)
             plts[rowCount, picCount].axis('off')
             plts[rowCount, picCount].set_title(str(round_sig(key[count], 4)), fontsize=8)
             if fitParameters.size != 0:
                 if (fitParameters[count] != np.zeros(len(fitParameters[count]))).all():
                     # data_fitted = gaussian_2D((x, y), *fitParameters[count])
                     try:
-                        ellipse = Ellipse(xy=(fitParameters[count][1],fitParameters[count][2]),
+                        ellipse = Ellipse(xy=(fitParameters[count][1], fitParameters[count][2]),
                                           width=2*fitParameters[count][3], height=2*fitParameters[count][4],
                                           angle=fitParameters[count][5], edgecolor='r', fc='None', lw=2, alpha=0.2)
                         plts[rowCount, picCount].add_patch(ellipse)
@@ -1002,7 +1001,7 @@ def computeFlorescence(greyscaleReading, imagingLoss, imagingLensDiameter, imagi
 
 
 # mot radius is in cm
-def computeMotNumber(sidemotPower, diagonalPower, motRadius, exposure, imagingLoss, greyscaleReading):
+def computeMotNumber(sidemotPower, diagonalPower, motRadius, exposure, imagingLoss, greyscaleReading, detuning=10e6):
     """
     :param sidemotPower: power in the sidemot beam, in mW.  Code Assumes 3.3mm sidemot waist
     :param diagonalPower: power in an individual diagonal mot beam, in mW
@@ -1032,18 +1031,16 @@ def computeMotNumber(sidemotPower, diagonalPower, motRadius, exposure, imagingLo
     sidemotIntensity = beamIntensity(sidemotPower, sidemotWaist, motRadius)
     diagonalIntensity = beamIntensity(diagonalPower, diagonalWaist, motRadius)
     totalIntensity = sidemotIntensity + 2 * diagonalIntensity
-    # this is very approximate.
-    detuning = 10e6
     rate = computeScatterRate(totalIntensity, detuning)
     imagingLensDiameter = 2.54
     imagingLensFocalLength = 10
-    fluorescence = computeFlorescence(greyscaleReading, imagingLoss, imagingLensDiameter,
-                                      imagingLensFocalLength, exposure)
+    fluorescence = computeFlorescence(greyscaleReading, imagingLoss, imagingLensDiameter, imagingLensFocalLength,
+                                      exposure)
     motNumber = fluorescence / rate
     return motNumber
 
 
-# TODO: for some reason this fitting si currently very finicky with respect to sigma_I. Don't understand why. should
+# TODO: for some reason this fitting is currently very finicky with respect to sigma_I. Don't understand why. should
 # fix this.
 def calcMotTemperature(times, sigmas):
     print(sigmas[0])
@@ -1170,7 +1167,7 @@ def getLoadingData(picSeries, loc, whichPic, picsPerExperiment, manThreshold, bi
     pic1Data = normalizeData(picSeries, loc, whichPic, picsPerExperiment)
     if manThreshold is not None:
         threshold = manThreshold
-        thresholdFid=0
+        thresholdFid = 0
         bins, binnedData, fitVals = [None]*3
     else:
         bins, binnedData = getBinData(binWidth, pic1Data)
@@ -1227,12 +1224,12 @@ def normalizeData(data, atomLocation, picture, picturesPerExperiment, subtractBo
                 normFactor = (2*len(pic[0][:])+2*len(pic[:][0]))
                 border += (np.sum(pic[0][:]) + np.sum(pic[:][0]) + np.sum(pic[dimensions[1] - 1][:])
                            + np.sum([pic[i][dimensions[2] - 1] for i in range(len(pic))]))
-                corners = (pic[0][0]+ pic[dimensions[1]-1][dimensions[2] - 1] + pic[0][dimensions[2] - 1]
+                corners = (pic[0][0] + pic[dimensions[1]-1][dimensions[2] - 1] + pic[0][dimensions[2] - 1]
                            + pic[dimensions[1]-1][0])
                 border -= corners
                 # the number of pixels counted in the border
                 border /= normFactor - 4
-            allData = np.append(allData, rawData[imageInc][atomLocation[0]][atomLocation[1]] - border)
+            allData = np.append(allData, pic[atomLocation[0]][atomLocation[1]] - border)
     return allData
 
 
@@ -1255,8 +1252,8 @@ def guessGaussianPeaks(binCenters, binnedData):
     binnedDataNoPoissonian = []
     for binInc in range(0, len(binCenters)):
         binnedDataNoPoissonian.append(binnedData[binInc]
-                                           - fitFunc.poissonian(binCenters[binInc], guess1Location, 2 * max(binnedData)
-                                                                / fitFunc.poissonian(guess1Location, guess1Location, 1)))
+                                      - fitFunc.poissonian(binCenters[binInc], guess1Location, 2 * max(binnedData) /
+                                                           fitFunc.poissonian(guess1Location, guess1Location, 1)))
     guess2Index = np.argmax(binnedDataNoPoissonian)
     guess2Location = binCenters[guess2Index]
     binCenters -= randomOffset
@@ -1687,36 +1684,36 @@ def outputDataToMmaNotebook(fileNumber, survivalData, survivalErrs, captureArray
     """
     runNum = fileNumber
     try:
-        f = open(dataAddress+'\\run'+str(runNum)+'_key.txt', "w")
+        f = open(dataAddress + '\\run' + str(runNum)+'_key.txt', "w")
         for item in key:
-          f.write("%s\n" % item)
+            f.write("%s\n" % item)
         f.close()
-        f = open(dataAddress+'\\run'+str(runNum)+'_survival.txt', "w")
+        f = open(dataAddress + '\\run' + str(runNum)+'_survival.txt', "w")
         for i in survivalData:
             tmp = ''
             for j in i:
                 tmp += "%s," % round_sig(j, 9)
-            tmp2=(tmp.replace("[","").replace("]",""))[0:-1]+"\n"
+            tmp2 = (tmp.replace("[", "").replace("]", ""))[0:-1]+"\n"
             f.write(tmp2)
         f.close()
-        f = open(dataAddress+'\\run'+str(runNum)+'_err.txt', "w")
+        f = open(dataAddress + '\\run' + str(runNum)+'_err.txt', "w")
         for i in survivalErrs:
             tmp = ''
-            for j in i: #262
+            for j in i:
                 tmp += "%s," % round_sig(j, 9)
-            tmp2=(tmp.replace("[","").replace("]",""))[0:-1]+"\n"
+            tmp2 = (tmp.replace("[", "").replace("]", ""))[0:-1]+"\n"
             f.write(tmp2)
         f.close()
-        f = open(dataAddress+'\\run'+str(runNum)+'_loading.txt', "w")
+        f = open(dataAddress + '\\run' + str(runNum) + '_loading.txt', "w")
         for i in captureArray:
             tmp = ''
             for j in i:
                 tmp += "%s," % round_sig(j, 9)
-            tmp2=(tmp.replace("[","").replace("]",""))[0:-1]+"\n"
+            tmp2 = (tmp.replace("[", "").replace("]", ""))[0:-1]+"\n"
             f.write(tmp2)
         f.close()
     except:
-        print("output to MMA file error")
+        print("Error while outputting data to mathematica file.")
 
 
 def unpackAtomLocations(locs):
@@ -1888,4 +1885,3 @@ def getEnsembleStatistics(ensembleData, reps):
             ensembleAverages = np.append(ensembleAverages, np.average(ensembleList))
     ensembleStats = {'avg': ensembleAverages, 'err': ensembleErrors}
     return ensembleStats
-

@@ -1,16 +1,15 @@
-__version__ = "1.2"
+__version__ = "1.3"
 
 import numpy as np
 from numpy import array as arr
 from IPython.display import display
-from pandas import DataFrame
 from Miscellaneous import round_sig, getStats, transpose, getColors
 import plotly.graph_objs as go
 from plotly.offline import iplot
 from plotly.tools import make_subplots
-from AnalysisHelpers import (unpackAtomLocations, getEnsembleHits, getNetLoss, getNetLossStats,
-                             normalizeData, loadHDF5)
-from MainAnalysis import standardAssemblyAnalysis, standardLoadingAnalysis, standardTransferAnalysis
+from MainAnalysis import standardAssemblyAnalysis, standardLoadingAnalysis, standardTransferAnalysis, \
+    AnalyzeRearrangeMoves
+import FittingFunctions as fitFunc
 
 
 def Survival(fileNumber, atomLocs, **TransferArgs):
@@ -22,7 +21,7 @@ def Survival(fileNumber, atomLocs, **TransferArgs):
 def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, accumulations=1, key=None, manualThreshold=None,
              fitType=None, window=None, xMin=None, xMax=None, yMin=None, yMax=None, dataRange=None,
              histSecondPeakGuess=None, keyOffset=0, sumAtoms=True, outputMma=False, dimSlice=None,
-             varyingDim=None, showCounts=False):
+             varyingDim=None, showCounts=False, loadPic=0, transferPic=1):
     """
     Standard data analysis package for looking at survival rates throughout an experiment.
 
@@ -30,12 +29,12 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, accumulations=1, key=N
     """
     (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate, pic1Data, keyName, key,
      repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPic, otherDimValues,
-     locsList) = standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, accumulations=accumulations, key=key,
-                                          picsPerRep=2, manualThreshold=manualThreshold, fitType=fitType, window=window,
-                                          xMin=xMin, xMax=xMax, yMin=yMin, yMax=yMax, dataRange=dataRange,
+     locsList) = standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=key, picsPerRep=2,
+                                          manualThreshold=manualThreshold, fitType=fitType, window=window, xMin=xMin,
+                                          xMax=xMax, yMin=yMin, yMax=yMax, dataRange=dataRange,
                                           histSecondPeakGuess=histSecondPeakGuess, keyOffset=keyOffset,
                                           sumAtoms=sumAtoms, outputMma=outputMma, dimSlice=dimSlice,
-                                          varyingDim=varyingDim)
+                                          varyingDim=varyingDim, loadPic=loadPic, transferPic=transferPic)
     if not show:
         return key, survivalData, survivalErrs, loadingRate
 
@@ -246,7 +245,6 @@ def Loading(fileNum, atomLocations, showTotalHist=True, showIndividualHist=False
         avgFig, mainPlot = [[] for _ in range(2)]
         avgFig.append(go.Heatmap(z=avgPic, colorscale='Viridis', colorbar=go.ColorBar(x=1, y=0.15, len=0.3)))
         for err, loc, color, load, fitData in zip(loadingRateErr, atomLocations, colors, loadingRateList, loadFits):
-            print('hi!', loc)
             mainPlot.append(go.Scatter(x=key, y=load, error_y={'type': 'data', 'array': err, 'color': color},
                                        mode='markers', name=str(loc), legendgroup=str(loc),
                                        marker={'color': color}, opacity=alphaVal))
@@ -400,138 +398,21 @@ def Assembly(fileNumber, atomLocs1, pic1Num, atomLocs2=None, pic2Num=None, keyOf
     return key, fig
 
 
-def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, picNumber=2, threshold=300,
-                          splitByNumberOfMoves=False, plotByNumberOfMoves=False, allLocsList=None):
+def Rearrange(rerngInfoAddress, fileNumber, locations, **rearrangeArgs):
     """
-    Analyzes the rearrangement move log file and displays statistics for different types of moves.
-
-    :param rerngInfoAddress:
-    :param fileNumber:
-    :param locations:
-    :param picNumber:
-    :param threshold:
-    :param splitByNumberOfMoves:
-    :param plotByNumberOfMoves:
-    :param allLocsList:
-    :return:
     """
-    if plotByNumberOfMoves and not splitByNumberOfMoves:
-        raise RuntimeError("Can't plot by number of moves if not splitting by number of moves.")
-    locations = unpackAtomLocations(locations)
-    if allLocsList is not None:
-        allLocsList = unpackAtomLocations(allLocsList)
-    # Open file and create list of moves.
-    moveList = []
-    with open(rerngInfoAddress) as centerLog:
-        for i, line in enumerate(centerLog):
-            if i < 5:
-                continue
-            txt = line.split(' ')
-            if txt[0] == 'Rep' or txt[0] == 'Source:':
-                continue
-            if txt[0] == 'Moves:\n':
-                moveList.append([])
-                continue
-            txt[4] = txt[4][:-1]
-            move = '(' + str(txt[1]) + ',' + str(txt[3]) + ')->(' + str(txt[2]) + ',' + str(txt[4] + ')')
-            moveList[-1].append(move)
-    pics, _, _, repetitions = loadHDF5(fileNumber)
-    moveData = {}
-    if splitByNumberOfMoves:
-        for i, move in enumerate(moveList):
-            moveName = len(move)
-            if moveName not in moveData:
-                moveData[moveName] = [pics[2*i], pics[2*i+1]]
-            else:
-                moveData[moveName].append(pics[2*i])
-                moveData[moveName].append(pics[2*i + 1])
-    else:
-        for i, move in enumerate(moveList):
-            if len(move) == 0:
-                moveName = 'No-Move'
-            else:
-                moveName = '{'
-                for m in move:
-                    moveName += m + ','
-                moveName = moveName[:-2] + ')}'
-            if moveName not in moveData:
-                moveData[moveName] = [pics[2*i], pics[2*i+1]]
-            else:
-                moveData[moveName].append(pics[2*i])
-                moveData[moveName].append(pics[2*i + 1])
-    """
-    netLossList = getNetLoss(pic1Atoms, pic2Atoms)
-    lossAvg, lossErr = getNetLossStats(netLossList, repetitions)
-    """
-    (allPic1Data, allPic2Data, allPic1Atoms, allPic2Atoms,
-     allLocsPic1Data, allLocsPic2Data, allLocsPic1Atoms, allLocsPic2Atoms) = [[] for _ in range(8)]
-    for loc in locations:
-        allPic1Data.append(normalizeData(pics, loc, 0, 2))
-        allPic2Data.append(normalizeData(pics, loc, 1, 2))
-    for point1, point2 in zip(allPic1Data, allPic2Data):
-        allPic1Atoms.append(point1 > threshold)
-        allPic2Atoms.append(point2 > threshold)
-    if allLocsList is not None:
-        for loc in allLocsList:
-            allLocsPic1Data.append(normalizeData(pics, loc, 0, 2))
-            allLocsPic2Data.append(normalizeData(pics, loc, 1, 2))
-        for point1, point2 in zip(allLocsPic1Data, allLocsPic2Data):
-            allLocsPic1Atoms.append(point1 > threshold)
-            allLocsPic2Atoms.append(point2 > threshold)
-    else:
-        (allLocsPic1Data, allLocsPic2Data, allLocsPic1Atoms,
-         allLocsPic2Atoms) = allPic1Data, allPic2Data, allPic1Atoms, allPic2Atoms
-    allEvents = (getEnsembleHits(allPic2Atoms) if picNumber == 2 else getEnsembleHits(allPic1Atoms))
-    allLossList = getNetLoss(allLocsPic1Atoms, allLocsPic2Atoms)
-    allLossAvg, allLossErr = getNetLossStats(allLossList, len(allLossList))
-    print('Average Loss:', allLossAvg, '\nLoss Error:', allLossErr)
-    print('Total Average Assembly:', round_sig(np.mean(allEvents)),
-          round_sig(np.std(allEvents)/np.sqrt(len(allEvents))))
-    d = DataFrame()
-    allLossAvg, allLossErr = [[], []]
-    for keyName, data in moveData.items():
-        data = arr(data)
-        (pic1Data, pic1Atoms, pic2Data, pic2Atoms, pic1AllLocsData, pic1AllLocsAtoms, pic2AllLocsData,
-         pic2AllLocsAtoms) = [[] for _ in range(8)]
-        for loc in locations:
-            pic1Data.append(normalizeData(data, loc, 0, 2).tolist())
-            pic2Data.append(normalizeData(data, loc, 1, 2).tolist())
-            pic1Atoms.append([])
-            pic2Atoms.append([])
-            for (point1, point2) in zip(pic1Data[-1], pic2Data[-1]):
-                pic1Atoms[-1].append(point1 > threshold)
-                pic2Atoms[-1].append(point2 > threshold)
-        if allLocsList is not None:
-            for loc in allLocsList:
-                pic1AllLocsData.append(normalizeData(data, loc, 0, 2).tolist())
-                pic2AllLocsData.append(normalizeData(data, loc, 1, 2).tolist())
-                pic1AllLocsAtoms.append([])
-                pic2AllLocsAtoms.append([])
-                for (point1, point2) in zip(pic1AllLocsData[-1], pic2AllLocsData[-1]):
-                    pic1AllLocsAtoms[-1].append(point1 > threshold)
-                    pic2AllLocsAtoms[-1].append(point2 > threshold)
-            lossList = getNetLoss(pic1AllLocsAtoms, pic2AllLocsAtoms)
-            a, e = getNetLossStats(lossList, len(lossList))
-            allLossAvg.append(a[0])
-            allLossErr.append(e[0])
-        atomEvents = (getEnsembleHits(pic2Atoms) if picNumber == 2 else getEnsembleHits(pic1Data))
-        d[keyName] = [int(len(data)/2), np.mean(atomEvents), np.std(atomEvents)/np.sqrt(len(atomEvents))]
-    allLossAvg = arr(allLossAvg)
-    d = d.transpose()
-    d.columns = ['occurances', 'success', 'error']
-    d = d.sort_values('occurances', ascending=False)
-    if plotByNumberOfMoves:
-        # calculate the expected values
-        maxNum = max(d.transpose().columns)
-        singleProb = d.transpose()[1]['success']
-        predictedNumMoves = np.arange(1, maxNum + 1)
-        predictedProbs = singleProb**predictedNumMoves
-        # plot stuff
-        fig = [go.Scatter(x=d.transpose().columns, y=d['success'], error_y={'array': d['error']}, mode='markers',
+    allData, fits = AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, **rearrangeArgs)
+    # calculate the expected values
+    for loc in allData:
+        xpts = np.linspace(0, len(allData[loc].transpose().columns), 100)
+        fig = [go.Scatter(x=allData[loc].transpose().columns, y=allData[loc]['success'],
+                          error_y={'array': allData[loc]['error']}, mode='markers',
                           name='Observed Data'),
-               go.Scatter(x=predictedNumMoves, y=predictedProbs, mode='Markers', name='Expected'),
-               go.Scatter(x=d.transpose().columns, y=allLossAvg, mode='markers', name='Loss')]
-        tempLayout = go.Layout(xaxis={'title': 'Moves Made'}, yaxis={'title': 'Success Probability'})
+               go.Scatter(x=xpts, y=fitFunc.exponentialDecay(xpts, *fits[loc]),
+                          name='Fit-Values:' + str(fits[loc]))
+               ]
+        tempLayout = go.Layout(xaxis={'title': 'Moves Made'}, yaxis={'title': 'Success Probability'},
+                               title=loc)
         finalFig = go.Figure(data=fig, layout=tempLayout)
         iplot(finalFig)
-    return d
+    return allData
