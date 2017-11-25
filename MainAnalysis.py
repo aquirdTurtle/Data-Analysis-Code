@@ -1,4 +1,4 @@
-__version__ = "1.3"
+__version__ = "1.4"
 """
 Recent Changes:
 - General Cleaning up code
@@ -23,7 +23,7 @@ from AnalysisHelpers import (loadDetailedKey, processImageData, loadHDF5, loadCo
                              getAtomInPictureStatistics, normalizeData, showPicComparisons, fitDoubleGaussian,
                              getSurvivalData, getSurvivalEvents, unpackAtomLocations, guessGaussianPeaks,
                              calculateAtomThreshold, outputDataToMmaNotebook, simpleMotExpansion, calcMotTemperature,
-                             ballisticMotExpansion, getLoadingData, orderData, applyDataRange)
+                             ballisticMotExpansion, getLoadingData, orderData, applyDataRange, postSelectOnAssembly)
 
 
 def analyzeCodeTimingData(num, talk=True, numTimes=3):
@@ -461,10 +461,35 @@ def plotMotNumberAnalysis(dataSetNumber, motKey, exposureTime, window=(0, 0, 0, 
 def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPerRep=2, manualThreshold=None,
                              fitType=None, window=None, xMin=None, xMax=None, yMin=None, yMax=None, dataRange=None,
                              histSecondPeakGuess=None, keyOffset=0, sumAtoms=True, outputMma=False, dimSlice=None,
-                             varyingDim=None, subtractEdgeCounts=True, loadPic=0, transferPic=1):
+                             varyingDim=None, subtractEdgeCounts=True, loadPic=0, transferPic=1, postSelectionPic=None):
     """
     Standard data analysis package for looking at survival rates throughout an experiment.
     Returns key, survivalData, survivalErrors
+
+    :param fileNumber:
+    :param atomLocs1:
+    :param atomLocs2:
+    :param key:
+    :param picsPerRep:
+    :param manualThreshold:
+    :param fitType:
+    :param window:
+    :param xMin:
+    :param xMax:
+    :param yMin:
+    :param yMax:
+    :param dataRange:
+    :param histSecondPeakGuess:
+    :param keyOffset:
+    :param sumAtoms:
+    :param outputMma:
+    :param dimSlice:
+    :param varyingDim:
+    :param subtractEdgeCounts:
+    :param loadPic:
+    :param transferPic:
+    :param postSelectionPic:
+    :return:
     """
     atomLocs1 = unpackAtomLocations(atomLocs1)
     atomLocs2 = unpackAtomLocations(atomLocs2)
@@ -503,7 +528,7 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
     avgPic = getAvgPic(groupedData)
     # initialize arrays
     (pic1Data, pic2Data, atomCounts, bins, binnedData, thresholds, survivalData, survivalErrs,
-     loadingRate,) = arr([[None] * len(atomLocs1)] * 9)
+     loadingRate, pic1Atoms, pic2Atoms) = arr([[None] * len(atomLocs1)] * 11)
     for i, (loc1, loc2) in enumerate(zip(atomLocs1, atomLocs2)):
         pic1Data[i] = normalizeData(groupedData, loc1, loadPic, picsPerRep, subtractBorders=subtractEdgeCounts)
         pic2Data[i] = normalizeData(groupedData, loc2, transferPic, picsPerRep, subtractBorders=subtractEdgeCounts)
@@ -515,7 +540,16 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
         gaussianFitVals = fitDoubleGaussian(bins[i], binnedData[i], guess)
         thresholds[i], thresholdFid = (((manualThreshold, 0) if manualThreshold is not None
                                        else calculateAtomThreshold(gaussianFitVals)))
-        survivalList = getSurvivalEvents(atomCounts[i], thresholds[i], numberOfRuns)
+        pic1Atoms[i], pic2Atoms[i] = [[] for _ in range(2)]
+        for point1, point2 in zip(pic1Data[i], pic2Data[i]):
+            pic1Atoms[i].append(point1 > thresholds[i])
+            pic2Atoms[i].append(point2 > thresholds[i])
+
+    if postSelectionPic is not None:
+        pic1Atoms, pic2Atoms = postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic)
+
+    for i in range(len(atomLocs1)):
+        survivalList = getSurvivalEvents(pic1Atoms[i], pic2Atoms[i])
         survivalData[i], survivalErrs[i], loadingRate[i] = getSurvivalData(survivalList, repetitions)
     (key, locationsList, survivalErrs, survivalData, loadingRate,
      otherDims) = groupMultidimensionalData(key, varyingDim, atomLocs1, survivalData, survivalErrs, loadingRate)

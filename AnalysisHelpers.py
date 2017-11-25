@@ -1,4 +1,4 @@
-__version__ = "1.1"
+__version__ = "1.2"
 
 from os import linesep
 from pandas import read_csv as pd_read_csv
@@ -1200,6 +1200,21 @@ def calculateAtomThreshold(fitVals):
     return threshold, fidelity
 
 
+def postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic):
+    ensembleHits = (getEnsembleHits(pic1Atoms) if postSelectionPic == 1 else getEnsembleHits(pic2Atoms))
+    # ps for post-selected
+    psPic1Atoms, psPic2Atoms = [[], []]
+    for i, ensembleVariation in enumerate(ensembleHits):
+        psPic1Atoms.append([])
+        psPic2Atoms.append([])
+        for hit in ensembleVariation:
+            if hit:
+                psPic1Atoms[-1].append(pic1Atoms[i])
+                psPic2Atoms[-1].append(pic2Atoms[i])
+            # else nothing!
+    return psPic1Atoms, psPic2Atoms
+
+
 def normalizeData(data, atomLocation, picture, picturesPerExperiment, subtractBorders=True):
     """
     :param picturesPerExperiment:
@@ -1279,23 +1294,24 @@ def getBinData(binWidth, data):
     return binCenters, binnedData
 
 
-def getSurvivalEvents(data, threshold, numberOfExperiments):
+def getSurvivalEvents(pic1Atoms, pic2Atoms):
     """
-    This function assumes 2 pictures.
     It returns a raw array that includes every survival data point, including points where the the atom doesn't get
     loaded at all.
     """
     # this will include entries for when there is no atom in the first picture.
     survivalData = np.array([])
     survivalData.astype(int)
-    if len(data.shape) == 4:
-        data.reshape((data.shape[0] * data.shape[1], data.shape[2], data.shape[3]))
+    # flattens variations & locations?
+    # if len(data.shape) == 4:
+    #     data.reshape((data.shape[0] * data.shape[1], data.shape[2], data.shape[3]))
+
     # this doesn't take into account loss, since these experiments are feeding-back on loss.
-    for experimentInc in range(0, numberOfExperiments):
-        if data[2 * experimentInc] > threshold and data[2 * experimentInc + 1] >= threshold:
+    for atom1, atom2 in zip(pic1Atoms, pic2Atoms):
+        if atom1 and atom2:
             # atom survived
             survivalData = np.append(survivalData, [1])
-        elif data[2 * experimentInc] > threshold > data[2 * experimentInc + 1]:
+        elif atom1 and not atom2:
             # atom didn't survive
             survivalData = np.append(survivalData, [0])
         else:
