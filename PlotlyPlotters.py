@@ -18,10 +18,10 @@ def Survival(fileNumber, atomLocs, **TransferArgs):
     return key, survival, survivalerr, captureArray
 
 
-def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, accumulations=1, key=None, manualThreshold=None,
+def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, key=None, manualThreshold=None,
              fitType=None, window=None, xMin=None, xMax=None, yMin=None, yMax=None, dataRange=None,
              histSecondPeakGuess=None, keyOffset=0, sumAtoms=True, outputMma=False, dimSlice=None,
-             varyingDim=None, showCounts=False, loadPic=0, transferPic=1):
+             varyingDim=None, showCounts=False, loadPic=0, transferPic=1, postSelectionPic=None):
     """
     Standard data analysis package for looking at survival rates throughout an experiment.
 
@@ -34,7 +34,8 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, accumulations=1, key=N
                                           xMax=xMax, yMin=yMin, yMax=yMax, dataRange=dataRange,
                                           histSecondPeakGuess=histSecondPeakGuess, keyOffset=keyOffset,
                                           sumAtoms=sumAtoms, outputMma=outputMma, dimSlice=dimSlice,
-                                          varyingDim=varyingDim, loadPic=loadPic, transferPic=transferPic)
+                                          varyingDim=varyingDim, loadPic=loadPic, transferPic=transferPic,
+                                          postSelectionPic=postSelectionPic)
     if not show:
         return key, survivalData, survivalErrs, loadingRate
 
