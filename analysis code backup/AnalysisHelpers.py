@@ -1,9 +1,10 @@
-__version__ = "1.3"
+__version__ = "1.2"
 
 from os import linesep
 from pandas import read_csv as pd_read_csv
 import pandas as pd
 
+# import numpy as np
 from astropy.io import fits
 
 from numpy import array as arr
@@ -13,63 +14,25 @@ import uncertainties as unc
 import uncertainties.unumpy as unp
 from warnings import warn
 
+import matplotlib as mpl
 from matplotlib.pyplot import *
+from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Ellipse
 
-from scipy.optimize import minimize, basinhopping, curve_fit as fit
+from scipy.optimize import basinhopping, curve_fit as fit
 import scipy.special as special
+# from scipy.interpolate import InterpolatedUnivariateSpline as interpolate
 import scipy.interpolate as interp
 
 
 import MarksConstants as consts
 import FittingFunctions as fitFunc
 
-from Miscellaneous import transpose, round_sig
-from copy import deepcopy
+from Miscellaneous import transpose, getColors, round_sig
 
+# import sympy as sp
+# sp.init_printing(use_latex=True)
 dataAddress = None
-
-
-def extrapolateEveningBiases(hBiasIn, vBiasIn, depthIn):
-    # normalize biases
-    hBiasIn /= np.sum(hBiasIn)
-    vBiasIn /= np.sum(vBiasIn)
-    guess = np.concatenate((hBiasIn, vBiasIn))
-    f = lambda g : modFitFunc(hBiasIn, vBiasIn, depthIn, *g)
-    result = minimize(f, guess)
-    return result, extrapolateModDepth(hBiasIn, vBiasIn, depthIn, result['x'])
-
-
-def extrapolateModDepth(hBiasIn, vBiasIn, depthIn, testBiases):
-    """
-    assumes that hBiasIn and vBiasIn are normalized.
-    This function extrapolates what the depth of each tweezer should be based on the
-    current depths and current biases. Basically, it assumes that if you change the bias by x%,
-    then the depth for every atom in that row/column will change by x%.
-    """
-    for b in testBiases:
-        if b <= 0 or b >= 1:
-            return None
-    hBiasTest = testBiases[:len(hBiasIn)]
-    vBiasTest = testBiases[len(hBiasIn):len(hBiasIn) + len(vBiasIn)]
-    # normalize tests
-    hBiasTest /= np.sum(hBiasTest)
-    vBiasTest /= np.sum(vBiasTest)
-    modDepth = deepcopy(depthIn)
-    for rowInc, _ in enumerate(depthIn):
-        dif = (vBiasTest[rowInc] - vBiasIn[rowInc])/vBiasIn[rowInc]
-        modDepth[rowInc] = modDepth[rowInc] * (1-dif)
-    for colInc, _ in enumerate(transpose(depthIn)):
-        dif = (hBiasTest[colInc] - hBiasIn[colInc])/hBiasIn[colInc]
-        modDepth[:,colInc] = modDepth[:,colInc] * (1-dif)
-    return modDepth
-
-
-def modFitFunc(hBiasIn, vBiasIn, depthIn, *testBiases):
-    newDepths = extrapolateModDepth(hBiasIn, vBiasIn, depthIn, testBiases)
-    if newDepths is None:
-        return 1e9
-    return np.std(newDepths)
 
 
 def setPath(day, month, year):
@@ -636,21 +599,22 @@ def maximizeAomPerformance(minX, minY, spacing, widthX, widthY, iterations=10):
         x = np.linspace(0, 10e-6, 10000)
         return max(calcWave(x, phases, yFreqs, yAmps))
 
+
     xBounds = [(0, 2 * consts.pi) for _ in range(widthX)]
     xGuess = arr([0 for _ in range(widthX)])
     minimizer_kwargs = dict(method="L-BFGS-B", bounds=xBounds)
     xPhases = basinhopping(getXMax, xGuess, minimizer_kwargs=minimizer_kwargs, niter=iterations, stepsize=0.2)
-    print('xFreqs', xFreqs)
-    print('xAmps', xAmps)
-    print('X-Phases', xPhases.x)
+    #print('xFreqs', xFreqs)
+    #print('xAmps', xAmps)
+    #print('X-Phases', xPhases.x)
 
     yGuess = arr([0 for _ in range(widthY)])
     yBounds = [(0, 2 * consts.pi) for _ in range(widthY)]
     minimizer_kwargs = dict(method="L-BFGS-B", bounds=yBounds)
     yPhases = basinhopping(getYMax, yGuess, minimizer_kwargs=minimizer_kwargs, niter=iterations, stepsize=0.2)
-    print('yFreqs', yFreqs)
-    print('yAmps', yAmps)
-    print('Y-Phases', yPhases.x)
+    #print('yFreqs', yFreqs)
+    #print('yAmps', yAmps)
+    #print('Y-Phases', yPhases.x)
 
     xpts = np.linspace(0, 10e-6, 10000)
     ypts = calcWave(xpts, xPhases.x, xFreqs, xAmps)
@@ -667,7 +631,19 @@ def maximizeAomPerformance(minX, minY, spacing, widthX, widthY, iterations=10):
     plot(xpts, ypts, ':', label='Y-Optimization')
     plot(xpts, yptsOrig, ':', label='Y-Worst-Case')
     legend()
+    
+    precisionloc=5
+    print('gen'+str(widthX)+'Const\n%%%%\tfreq\tamp\tphase')
+    for ii in range(len(xFreqs)): print('\t'+str(round(xFreqs[ii],precisionloc))+'\t'+str(round(xAmps[ii],precisionloc))
+                                        +'\t'+str(round( xPhases.x[ii],precisionloc)))
+    print('%%%%\ttime\tp.m.\tdelim')
+    print('0.1\t0\n')
 
+    print('gen'+str(widthY)+'Const\n%%%%\tfreq\tamp\tphase')
+    for ii in range(len(yFreqs)): print('\t'+str(round(yFreqs[ii],precisionloc))+'\t'+str(round(yAmps[ii],precisionloc))
+                                        +'\t'+str(round( yPhases.x[ii],precisionloc)))
+    print('%%%%\ttime\tp.m.\tdelim')
+    print('0.1\t0\n\t#')
 
 def integrateData(pictures):
     """
@@ -1238,18 +1214,18 @@ def calculateAtomThreshold(fitVals):
 
 
 def postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic):
+    ## post select on fully loading atoms in array
     ensembleHits = (getEnsembleHits(pic1Atoms) if postSelectionPic == 1 else getEnsembleHits(pic2Atoms))
-    # ps for post-selected
-    psPic1Atoms, psPic2Atoms = [[], []]
-    for i, ensembleVariation in enumerate(ensembleHits):
-        psPic1Atoms.append([])
-        psPic2Atoms.append([])
-        for hit in ensembleVariation:
-            if hit:
-                psPic1Atoms[-1].append(pic1Atoms[i])
-                psPic2Atoms[-1].append(pic2Atoms[i])
+    # ps for post-selected. tranposed initially
+    psPic1Atoms = list(map(list, zip(*pic1Atoms)))
+    psPic2Atoms = list(map(list, zip(*pic2Atoms)))
+    for i, hit in enumerate(ensembleHits):
+        if not hit:
+            # if no in the postselect catagory, replace with a list of False with length matching with atom num 
+            psPic1Atoms[i] = [False] * len(psPic1Atoms[i]) 
+            psPic2Atoms[i] = [False] * len(psPic2Atoms[i])
             # else nothing!
-    return psPic1Atoms, psPic2Atoms
+    return list(map(list, zip(*psPic1Atoms))), list(map(list, zip(*psPic2Atoms)))
 
 
 def normalizeData(data, atomLocation, picture, picturesPerExperiment, subtractBorders=True):
@@ -1705,7 +1681,7 @@ def handleFitting(fitType, key, data):
                 raise RuntimeError()
             ampGuess = 1
             phiGuess = 0
-            OmegaGuess =16/(np.max(key))/np.pis
+            OmegaGuess =16/(np.max(key))/np.pi
             # Omega is the Rabi rate
             fitValues, fitCovs = fit(fitFunc.RabiFlop, key, data, p0=[ampGuess, OmegaGuess, phiGuess])
             fitErrs = np.sqrt(np.diag(fitCovs))
@@ -1899,7 +1875,7 @@ def getAtomInPictureStatistics(atomsInPicData, reps):
     return stats
 
 
-def getEnsembleHits(atomsList):
+def getEnsembleHits(atomsList, config=None):
     """
     This function determines whether an ensemble of atoms was hit in a given picture. Give it whichever
     picture data you need.
@@ -1907,11 +1883,15 @@ def getEnsembleHits(atomsList):
     atomsList should be a 2 dimensional array. 1 Dim for each atom location, one for each picture.
     """
     ensembleHits = []
-    for inc, atoms in enumerate(transpose(atomsList)):
-        ensembleHits.append(True)
-        for atom in atoms:
-            if not atom:
-                ensembleHits[inc] = False
+    if config == None:
+        for inc, atoms in enumerate(transpose(atomsList)):
+            ensembleHits.append(True)
+            for atom in atoms:
+                if not atom:
+                    ensembleHits[inc] = False
+    else:
+        for inc, atoms in enumerate(transpose(atomsList)):
+            ensembleHits[inc] = (atoms==config)
     return ensembleHits
 
 

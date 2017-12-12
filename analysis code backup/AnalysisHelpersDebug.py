@@ -1,9 +1,10 @@
-__version__ = "1.3"
+__version__ = "1.2"
 
 from os import linesep
 from pandas import read_csv as pd_read_csv
 import pandas as pd
 
+# import numpy as np
 from astropy.io import fits
 
 from numpy import array as arr
@@ -13,63 +14,25 @@ import uncertainties as unc
 import uncertainties.unumpy as unp
 from warnings import warn
 
+import matplotlib as mpl
 from matplotlib.pyplot import *
+from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Ellipse
 
-from scipy.optimize import minimize, basinhopping, curve_fit as fit
+from scipy.optimize import basinhopping, curve_fit as fit
 import scipy.special as special
+# from scipy.interpolate import InterpolatedUnivariateSpline as interpolate
 import scipy.interpolate as interp
 
 
 import MarksConstants as consts
 import FittingFunctions as fitFunc
 
-from Miscellaneous import transpose, round_sig
-from copy import deepcopy
+from Miscellaneous import transpose, getColors, round_sig
 
+# import sympy as sp
+# sp.init_printing(use_latex=True)
 dataAddress = None
-
-
-def extrapolateEveningBiases(hBiasIn, vBiasIn, depthIn):
-    # normalize biases
-    hBiasIn /= np.sum(hBiasIn)
-    vBiasIn /= np.sum(vBiasIn)
-    guess = np.concatenate((hBiasIn, vBiasIn))
-    f = lambda g : modFitFunc(hBiasIn, vBiasIn, depthIn, *g)
-    result = minimize(f, guess)
-    return result, extrapolateModDepth(hBiasIn, vBiasIn, depthIn, result['x'])
-
-
-def extrapolateModDepth(hBiasIn, vBiasIn, depthIn, testBiases):
-    """
-    assumes that hBiasIn and vBiasIn are normalized.
-    This function extrapolates what the depth of each tweezer should be based on the
-    current depths and current biases. Basically, it assumes that if you change the bias by x%,
-    then the depth for every atom in that row/column will change by x%.
-    """
-    for b in testBiases:
-        if b <= 0 or b >= 1:
-            return None
-    hBiasTest = testBiases[:len(hBiasIn)]
-    vBiasTest = testBiases[len(hBiasIn):len(hBiasIn) + len(vBiasIn)]
-    # normalize tests
-    hBiasTest /= np.sum(hBiasTest)
-    vBiasTest /= np.sum(vBiasTest)
-    modDepth = deepcopy(depthIn)
-    for rowInc, _ in enumerate(depthIn):
-        dif = (vBiasTest[rowInc] - vBiasIn[rowInc])/vBiasIn[rowInc]
-        modDepth[rowInc] = modDepth[rowInc] * (1-dif)
-    for colInc, _ in enumerate(transpose(depthIn)):
-        dif = (hBiasTest[colInc] - hBiasIn[colInc])/hBiasIn[colInc]
-        modDepth[:,colInc] = modDepth[:,colInc] * (1-dif)
-    return modDepth
-
-
-def modFitFunc(hBiasIn, vBiasIn, depthIn, *testBiases):
-    newDepths = extrapolateModDepth(hBiasIn, vBiasIn, depthIn, testBiases)
-    if newDepths is None:
-        return 1e9
-    return np.std(newDepths)
 
 
 def setPath(day, month, year):
@@ -82,7 +45,7 @@ def setPath(day, month, year):
     :param year: A number string, e.g. '2017'.
     :return:
     """
-    dataRepository = "J:\\Data repository\\New Data Repository"
+    dataRepository = "C:\\Users\\liny\\Desktop\\Data-Analysis-Code-master 11292017"
     global dataAddress
     dataAddress = dataRepository + "\\" + year + "\\" + month + "\\" + month + " " + day + "\\Raw Data\\"
 
@@ -1705,7 +1668,7 @@ def handleFitting(fitType, key, data):
                 raise RuntimeError()
             ampGuess = 1
             phiGuess = 0
-            OmegaGuess =16/(np.max(key))/np.pis
+            OmegaGuess =16/(np.max(key))/np.pi
             # Omega is the Rabi rate
             fitValues, fitCovs = fit(fitFunc.RabiFlop, key, data, p0=[ampGuess, OmegaGuess, phiGuess])
             fitErrs = np.sqrt(np.diag(fitCovs))
@@ -1899,7 +1862,7 @@ def getAtomInPictureStatistics(atomsInPicData, reps):
     return stats
 
 
-def getEnsembleHits(atomsList):
+def getEnsembleHits(atomsList, config=None):
     """
     This function determines whether an ensemble of atoms was hit in a given picture. Give it whichever
     picture data you need.
@@ -1907,11 +1870,15 @@ def getEnsembleHits(atomsList):
     atomsList should be a 2 dimensional array. 1 Dim for each atom location, one for each picture.
     """
     ensembleHits = []
-    for inc, atoms in enumerate(transpose(atomsList)):
-        ensembleHits.append(True)
-        for atom in atoms:
-            if not atom:
-                ensembleHits[inc] = False
+    if config == None:
+        for inc, atoms in enumerate(transpose(atomsList)):
+            ensembleHits.append(True)
+            for atom in atoms:
+                if not atom:
+                    ensembleHits[inc] = False
+    else:
+        for inc, atoms in enumerate(transpose(atomsList)):
+            ensembleHits[inc] = (atoms==config)
     return ensembleHits
 
 

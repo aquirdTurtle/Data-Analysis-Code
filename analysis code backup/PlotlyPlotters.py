@@ -1,4 +1,4 @@
-__version__ = "1.5"
+__version__ = "1.4"
 
 import numpy as np
 from numpy import array as arr
@@ -14,7 +14,8 @@ import FittingFunctions as fitFunc
 
 def Survival(fileNumber, atomLocs, **TransferArgs):
     """See corresponding transfer function for valid TransferArgs."""
-    return Transfer(fileNumber, atomLocs, atomLocs, **TransferArgs)
+    (key, survival, survivalerr, captureArray) = Transfer(fileNumber, atomLocs, atomLocs, **TransferArgs)
+    return key, survival, survivalerr, captureArray
 
 
 def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, key=None, manualThreshold=None,
@@ -23,6 +24,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, key=None, manualThresh
              varyingDim=None, showCounts=False, loadPic=0, transferPic=1, postSelectionPic=None):
     """
     Standard data analysis package for looking at survival rates throughout an experiment.
+
     Returns key, survivalData, survivalErrors
     """
     (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate, pic1Data, keyName, key,
@@ -64,8 +66,8 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, key=None, manualThresh
             if fitData['vals'] is None:
                 print(loc, 'Fit Failed!')
                 continue
-            print(loc, round_sig(fitData['vals'][1], 4), '+-', round_sig(fitData['errs'][1], 2))
-            centers.append(fitData['vals'][1])
+            print(loc, round_sig(fitData['vals'][2], 4), '+-', round_sig(fitData['errs'][2], 2))
+            centers.append(fitData['vals'][2])
             mainPlot.append(go.Scatter(x=fitData['x'], y=fitData['nom'], line={'color': color},
                                        legendgroup=legend, showlegend=False, opacity=alphaVal))
             mainPlot.append(go.Scatter(x=fitData['x'], y=fitData['nom'] + fitData['std'],
@@ -75,24 +77,9 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, key=None, manualThresh
                                        opacity=alphaVal / 2, line={'color': color},
                                        legendgroup=legend, fill='tonexty', showlegend=False,
                                        hoverinfo='none'))
-
     if fitType is not None:
         print('Fit Center Statistics:')
-        transferPic = np.zeros(avgPic.shape)
-        for i, loc in enumerate(atomLocs1):
-            transferPic[loc[0], loc[1]] = np.mean(survivalData[i])
-        # transferFig = [go.Heatmap(z=transferPic, colorscale='Viridis', colorbar=go.ColorBar(x=1, y=0.15, len=0.3))]
-        # layout = go.Layout(title='Transfer Pic')
-        # iplot(go.Figure(data=transferFig, layout=layout))
-        print(centers)
         display(getStats(centers))
-        fitCenterPic = np.zeros(avgPic.shape)
-        for i, loc in enumerate(atomLocs1):
-            fitCenterPic[loc[0], loc[1]] = centers[i]
-        fitCenterFig = [go.Heatmap(z=fitCenterPic, colorscale='Viridis', colorbar=go.ColorBar(x=1, y=0.15, len=0.3))]
-        layout = go.Layout(title='Fit-Center Pic')
-        iplot(go.Figure(data=fitCenterFig , layout=layout))
-
     # countsFig.append(go.Scatter(y=atomCounts, mode='markers', opacity=0.1, marker={'color':color, 'size':1},
     #            legendgroup='avg', showlegend=False))
     # countsHist.append(go.Histogram(y=atomCounts, nbinsy=100, legendgroup='avg', showlegend=False, opacity=0.1,
@@ -116,6 +103,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, key=None, manualThresh
                                  showlegend=False, legendgroup=legend, marker={'size': 5, 'color': '#FF0000'}))
 
     # average stuff
+
     mainPlot.append(go.Scatter(x=key, y=avgSurvivalData, mode="markers", name='avg',
                                error_y={"type": 'data', "array": avgSurvivalErr, 'color': '#000000'},
                                marker={'color': '#000000'}, legendgroup='avg'))
@@ -198,7 +186,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, key=None, manualThresh
     fig['layout']['yaxis1'].update(title=scanType + " %", range=[0, 1])
     fig['layout']['xaxis1'].update(title=str(keyName))
     iplot(fig)
-    return key, survivalData, survivalErrs, loadingRate, fits
+    return key, survivalData, survivalErrs, loadingRate
 
 
 def Loading(fileNum, atomLocations, showTotalHist=True, showIndividualHist=False, showLoadingRate=True,
@@ -234,7 +222,7 @@ def Loading(fileNum, atomLocations, showTotalHist=True, showIndividualHist=False
                                        showlegend=False, xbins=dict(start=min(pic1Data.flatten()),
                                                                     end=max(pic1Data.flatten())),
                                        marker=dict(color='#000000')))
-        countsHist.append(go.Scatter(x=[np.mean(thresholds), np.mean(thresholds)], y=[0, max(d)],
+        countsHist.append(go.Scatter(x=[0, max(d)], y=[np.mean(thresholds), np.mean(thresholds)],
                                      showlegend=False, mode='lines', line={'color': '#000000', 'width': 1},
                                      hoverinfo='none', legendgroup='avg'))
     if showIndividualHist:
@@ -326,7 +314,7 @@ def Loading(fileNum, atomLocations, showTotalHist=True, showIndividualHist=False
     return key, loadingRateList, loadingRateErr, totalPic1AtomData, rawData
 
 
-def Assembly(fileNumber, atomLocs1, pic1Num, atomLocs2=None, keyOffset=0, window=None,
+def Assembly(fileNumber, atomLocs1, pic1Num, atomLocs2=None, pic2Num=None, keyOffset=0, window=None,
              picsPerRep=2, histSecondPeakGuess=None, manualThreshold=None, fitType=None, allAtomLocs1=None,
              allAtomLocs2=None):
     """
@@ -335,10 +323,11 @@ def Assembly(fileNumber, atomLocs1, pic1Num, atomLocs2=None, keyOffset=0, window
     """
     (atomLocs1, atomLocs2, key, thresholds, pic1Data, pic2Data, fit, ensembleStats, avgPic, atomCounts, keyName,
      indvStatistics, lossAvg,
-     lossErr) = standardAssemblyAnalysis(fileNumber, atomLocs1, pic1Num, atomLocs2=atomLocs2, keyOffset=keyOffset,
-                                         window=window, picsPerRep=picsPerRep, histSecondPeakGuess=histSecondPeakGuess,
-                                         manualThreshold=manualThreshold, fitType=fitType, allAtomLocs1=allAtomLocs1,
-                                         allAtomLocs2=allAtomLocs2)
+     lossErr) = standardAssemblyAnalysis(fileNumber, atomLocs1, pic1Num, atomLocs2=atomLocs2,
+                                         pic2Num=pic2Num, keyOffset=keyOffset, window=window,
+                                         picsPerRep=picsPerRep, histSecondPeakGuess=histSecondPeakGuess,
+                                         manualThreshold=manualThreshold, fitType=fitType,
+                                         allAtomLocs1=allAtomLocs1, allAtomLocs2=allAtomLocs2)
     # ######################## Plotting
     # get the colors for the plot.
     colors, colors2 = getColors(len(atomLocs1) + 1)

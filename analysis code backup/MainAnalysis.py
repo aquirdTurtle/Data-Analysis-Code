@@ -507,6 +507,7 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
     # ## Initial Data Analysis
     # Group data into variations.
     numberOfPictures = int(rawData.shape[0])
+    picsPerRep = int(numberOfPictures/repetitions/len(key))
     # numberOfRuns = int(numberOfPictures / picsPerRep)
     numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
     groupedDataRaw = rawData.reshape((numberOfVariations, repetitions * picsPerRep, rawData.shape[1],
@@ -518,7 +519,7 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
     key, groupedData = applyDataRange(dataRange, slicedOrderedData, key)
     # gather some info about the run
     numberOfPictures = int(groupedData.shape[0] * groupedData.shape[1])
-    # numberOfRuns = int(numberOfPictures / picsPerRep)
+    numberOfRuns = int(numberOfPictures / picsPerRep)
     numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
     print('Total # of Pictures:', numberOfPictures, '\n', 'Number of Variations:', numberOfVariations)
     print('Data Shape:', groupedData.shape)
@@ -556,7 +557,7 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
     # need to change for loop!
     fits = [None] * len(locationsList)
     for i, _ in enumerate(locationsList):
-        fits[i], _ = handleFitting(fitType, key, survivalData[i])
+        fits[i] = handleFitting(fitType, key, survivalData[i])
     pic1Data = arr(pic1Data.tolist())
     atomCounts = arr(atomCounts.tolist())
     # calculate average values
@@ -565,7 +566,7 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
         # weight the sum with loading percentage
         avgSurvivalData = sum(survivalData*loadingRate)/sum(loadingRate)
         avgSurvivalErr = np.sqrt(np.sum(survivalErrs**2))/len(atomLocs1)
-        avgFit, _ = handleFitting(fitType, key, avgSurvivalData)
+        avgFit = handleFitting(fitType, key, avgSurvivalData)
     if outputMma:
         outputDataToMmaNotebook(fileNumber, survivalData, survivalErrs, loadingRate, key)
     return (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate,
