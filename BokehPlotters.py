@@ -22,7 +22,7 @@ from IPython.display import display, Image
 def atomHistWithBokeh(key, atomLocs, pic1Data, bins, binData, fitVals, thresholds, avgPic,
                       atomCount, variationNumber, outputFileAddr=None, interactive=False):
     """
-    Makes a standard atom histogram-centric plot.
+    Makes a standard atom histogram-centric plot. 
     key:
     :param atomLocs: list of coordinate pairs where atoms are. element 0 is row#, element 1 is column#
     :param pic1Data: list (for each location) of ordered lists of the counts on a pixel for each experiment
