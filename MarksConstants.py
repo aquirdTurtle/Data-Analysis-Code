@@ -20,8 +20,13 @@ sigma = 5.6704e-8
 amu = 1.6605390e-27
 # use numpy
 pi = np.pi
-# gravity constant, inexact
+# gravity acceleration near earth, inexact
 g = 9.80665
+# gravitational constant (inexact) (nist)
+G = 6.67408e-11
+# earth mass (inexact)
+m_Earth = 5.972e24
+r_Earth = 6.371e6
 # fundamental charge (charge of electron & proton), in coulombs, inexact
 qe = 1.6021766208e-19
 # Bohr Radius, in m

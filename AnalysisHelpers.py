@@ -1,4 +1,4 @@
-__version__ = "1.3"
+__version__ = "1.4"
 
 from os import linesep
 from pandas import read_csv as pd_read_csv
@@ -30,12 +30,19 @@ from copy import deepcopy
 dataAddress = None
 
 
+def modFitFunc(hBiasIn, vBiasIn, depthIn, *testBiases):
+    newDepths = extrapolateModDepth(hBiasIn, vBiasIn, depthIn, testBiases)
+    if newDepths is None:
+        return 1e9
+    return np.std(newDepths)
+
+
 def extrapolateEveningBiases(hBiasIn, vBiasIn, depthIn):
     # normalize biases
     hBiasIn /= np.sum(hBiasIn)
     vBiasIn /= np.sum(vBiasIn)
     guess = np.concatenate((hBiasIn, vBiasIn))
-    f = lambda g : modFitFunc(hBiasIn, vBiasIn, depthIn, *g)
+    f = lambda g: modFitFunc(hBiasIn, vBiasIn, depthIn, *g)
     result = minimize(f, guess)
     return result, extrapolateModDepth(hBiasIn, vBiasIn, depthIn, result['x'])
 
@@ -47,11 +54,16 @@ def extrapolateModDepth(hBiasIn, vBiasIn, depthIn, testBiases):
     current depths and current biases. Basically, it assumes that if you change the bias by x%,
     then the depth for every atom in that row/column will change by x%.
     """
-    for b in testBiases:
-        if b <= 0 or b >= 1:
-            return None
     hBiasTest = testBiases[:len(hBiasIn)]
+    if len(hBiasTest) > 1:
+        for b in hBiasTest:
+            if b <= 0 or b > 1:
+                return None
     vBiasTest = testBiases[len(hBiasIn):len(hBiasIn) + len(vBiasIn)]
+    if len(vBiasTest) > 1:
+        for b in vBiasTest:
+            if b <= 0 or b > 1:
+                return None
     # normalize tests
     hBiasTest /= np.sum(hBiasTest)
     vBiasTest /= np.sum(vBiasTest)
@@ -61,15 +73,8 @@ def extrapolateModDepth(hBiasIn, vBiasIn, depthIn, testBiases):
         modDepth[rowInc] = modDepth[rowInc] * (1-dif)
     for colInc, _ in enumerate(transpose(depthIn)):
         dif = (hBiasTest[colInc] - hBiasIn[colInc])/hBiasIn[colInc]
-        modDepth[:,colInc] = modDepth[:,colInc] * (1-dif)
+        modDepth[:, colInc] = modDepth[:, colInc] * (1-dif)
     return modDepth
-
-
-def modFitFunc(hBiasIn, vBiasIn, depthIn, *testBiases):
-    newDepths = extrapolateModDepth(hBiasIn, vBiasIn, depthIn, testBiases)
-    if newDepths is None:
-        return 1e9
-    return np.std(newDepths)
 
 
 def setPath(day, month, year):
@@ -109,6 +114,32 @@ def getLabels(plotType):
         xlabelText = plotType
         titleText = ""
     return xlabelText, titleText
+
+
+def fitWithClass(fitClass, key, vals):
+    """
+    fitClass is an class object *gasp*
+    """
+    xFit = (np.linspace(min(key), max(key), 1000) if len(key.shape) == 1 else np.linspace(min(transpose(key)[0]), max(transpose(key)[0]), 1000))
+    fitNom = fitStd = centerIndex = fitValues = fitErrs = fitCovs = None
+    from numpy.linalg import LinAlgError
+    try:
+        # 3 parameters
+        if len(key) < len(signature(fitClass.f).parameters) - 1:
+            print('Not enough data points to constrain a fit!')
+            raise RuntimeError()
+        fitValues, fitCovs = fit(fitClass.f, key, vals, p0=[fitClass.guess(key, vals)])
+        fitErrs = np.sqrt(np.diag(fitCovs))
+        corr_vals = unc.correlated_values(fitValues, fitCovs)
+        fitUncObject = fitClass.f_unc(xFit, *corr_vals)
+        fitNom = unp.nominal_values(fitUncObject)
+        fitStd = unp.std_devs(fitUncObject)
+        fitFinished = True
+    except (RuntimeError, LinAlgError, ValueError):
+        warn('Data Fit Failed!')
+        fitFinished = False
+    fitInfo = {'x': xFit, 'nom': fitNom, 'std': fitStd, 'vals': fitValues, 'errs': fitErrs, 'cov': fitCovs}
+    return fitInfo, fitFinished
 
 
 def combineData(data, key):
@@ -165,11 +196,14 @@ def getKeyFromHDF5(file):
     keyNames = []
     keyValues = []
     foundOne = False
-    for var in file['Master-Parameters']['Variables']:
-        if not file['Master-Parameters']['Variables'][var].attrs['Constant']:
+    for var in file['Master-Parameters']['Seq #1 Variables']:
+        if not file['Master-Parameters']['Seq #1 Variables'][var].attrs['Constant']:
+    # to look at older files...
+#    for var in file['Master-Parameters']['Variables']:
+#        if not file['Master-Parameters']['Variables'][var].attrs['Constant']:
             foundOne = True
             keyNames.append(var)
-            keyValues.append(arr(file['Master-Parameters']['Variables'][var]))
+            keyValues.append(arr(file['Master-Parameters']['Seq #1 Variables'][var]))
     if foundOne:
         if len(keyNames) > 1:
             return keyNames, arr(transpose(arr(keyValues)))
@@ -1077,8 +1111,7 @@ def computeMotNumber(sidemotPower, diagonalPower, motRadius, exposure, imagingLo
     return motNumber
 
 
-# TODO: for some reason this fitting is currently very finicky with respect to sigma_I. Don't understand why. should
-# fix this.
+# TODO: for some reason this fitting is currently very finicky with respect to sigma_I. Don't understand why. fix this.
 def calcMotTemperature(times, sigmas):
     print(sigmas[0])
     guess = [sigmas[0], 0.1]
@@ -1607,7 +1640,6 @@ def handleFitting(fitType, key, data):
     """
     xFit = (np.linspace(min(key), max(key), 1000) if len(key.shape) == 1 else np.linspace(min(transpose(key)[0]),
                                                                                           max(transpose(key)[0]), 1000))
-    # Eventually I should bundle this together to make
     fitNom = fitStd = centerIndex = fitValues = fitErrs = fitCovs = None
     if fitType == 'Quadratic-Bump':
         try:
@@ -1698,14 +1730,14 @@ def handleFitting(fitType, key, data):
         except RuntimeError:
             warn('Data Fit Failed!')
             fitType = None
-    elif fitType == 'RabiFlop':
+    elif fitType == 'DecayingSine':
         try:
             if len(key) < len(signature(fitFunc.RabiFlop).parameters) - 1:
                 print('Not enough data points to constrain a fit!')
                 raise RuntimeError()
             ampGuess = 1
             phiGuess = 0
-            OmegaGuess =16/(np.max(key))/np.pis
+            OmegaGuess = np.pi / np.max(key)
             # Omega is the Rabi rate
             fitValues, fitCovs = fit(fitFunc.RabiFlop, key, data, p0=[ampGuess, OmegaGuess, phiGuess])
             fitErrs = np.sqrt(np.diag(fitCovs))

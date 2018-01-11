@@ -210,7 +210,7 @@ def decayingCos(x, A, tau, f, phi, offset):
     if offset < 0:
         return x * 10**10
     # no growing fits.
-    if tau > 0:
+    if tau < 0:
         return x * 10**10
     return offset + (1 - A/2 * np.exp(-x/tau) * np.cos(2 * np.pi * f * x + phi))
 

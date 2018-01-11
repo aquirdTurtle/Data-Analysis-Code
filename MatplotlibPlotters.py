@@ -1,15 +1,368 @@
 __version__ = "1.1"
 
+from MainAnalysis import standardLoadingAnalysis
 from numpy import array as arr
 from random import randint
 from Miscellaneous import getColors, round_sig
 from matplotlib.pyplot import *
 import matplotlib as mpl
+from scipy.optimize import curve_fit as fit
 from AnalysisHelpers import (loadHDF5, loadDataRay, loadCompoundBasler, processSingleImage, orderData,
                              normalizeData, getBinData, getSurvivalData, getSurvivalEvents, fitDoubleGaussian,
                              guessGaussianPeaks, calculateAtomThreshold, getAvgPic, getEnsembleHits,
-                             getEnsembleStatistics, handleFitting, getLoadingData)
+                             getEnsembleStatistics, handleFitting, getLoadingData, loadDetailedKey, processImageData,
+                             fitPictures, fitGaussianBeamWaist, assemblePlotData, showPics, showBigPics,
+                             showPicComparisons, ballisticMotExpansion, simpleMotExpansion, calcMotTemperature,
+                             integrateData, computeMotNumber)
+import MarksConstants as consts
 import FittingFunctions as fitFunc
+
+
+def standardImages(data,
+                   # Cosmetic Parameters
+                   scanType="", xLabel="", plotTitle="", convertKey=False, showPictures=True, showPlot=True,
+                   allThePics=False, bigPics=False, colorMax=-1, individualColorBars=False, majorData='counts',
+                   # Global Data Manipulation Options
+                   loadType='andor', window=(0, 0, 0, 0), smartWindow=False, xMin=0, xMax=0, yMin=0, yMax=0,
+                   accumulations=1, key=arr([]), zeroCorners=False, dataRange=(0, 0), manualAccumulation=False,
+                   # Local Data Manipulation Options
+                   plottedData=None, bg=arr([0]), location=(-1, -1), fitBeamWaist=False, fitPics=False,
+                   cameraType='dataray', fitWidthGuess=80):
+    """
+    This function analyzes and plots fits pictures. It does not know anything about atoms,
+    it just looks at pixels or integrates regions of the picture. It is commonly used, to look at background noise
+    or the MOT.
+    :return key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams
+    ### Required parameters
+    :param data: the number of the fits file and (by default) the number of the key file. The function knows where to
+        look for the file with the corresponding name. Alternatively, an array of pictures to be used directly.
+    ### Cosmetic parameters
+    * Change the way the data is diplayed, but not how it is analyzed.
+    :param scanType: a string which characterizes what was scanned during the run. Depending on this string, axis names
+        are assigned to the axis of the plots produced by this function. This parameter, if it is to do
+        anything, must be one of a defined list of types, which can be looked up in the getLabels function.
+    :param xLabel: Specify the xlabel that appears on the plots. Will override an xlabel specified by the scan type,
+        but leave other scanType options un-marred.
+    :param plotTitle: Specify the title that appears on the plots. Will override a title specified by the scan type,
+        but leave other scanType options un-marred.
+    :param convertKey: For frequency scans. If this is true, use the dacToFrequency conversion constants declared in the
+        constants section of the base notebook to convert the key into frequency units instead of voltage
+        units. This should probably eventually be expanded to handle other conversions as well.
+    :param showPictures: if this is True, show all of the pictures taken during the experiment.
+    :param showPlot: if this is true, the function plots the integrated or point data. This would only be false if you
+        justwant the data arrays to do data visualization yourself.
+    :param allThePics: If this is true, then when the pictures are shown, the raw, -bg, and -avg pictures will all be
+        plotted side-by-side for comparison. showPictures must also be true.
+    :param bigPics: if this is true, then when the pictures are shown, instead of compressing the pictures to all fit
+        in a reasonably sized figure, each picture gets its own figure. allThePics must be false, showPictures must
+        be true.
+    :param colorMax: by default the colorbars in the displayed pictures are chosen to range from the minimum value in
+        the pic to the maximum value. If this is set, then instead you can specify an offset for the maximum (e.g. -5
+        for 5th highest value in the picture). This is usefull, e.g. if cosmic rays are messing with your pictures.
+    :param individualColorBars: by default, the pictures are all put on the same colorbar for comparison. If this is
+        true, each picture gets its own colorbar, which can make it easier to see features in each individual picture,
+        but generally makes comparison between pictures harder.
+    :param majorData: (expects one of 'counts', 'fits') Identifies the data to appear in the big plot, the other gets
+        shown in the small plot.
+    ### GLOBAL Data Manipulation Options
+    * these manipulate all the data that is analyzed and plotted.
+    :param manualAccumulation: manually add together "accumulations" pictures together to form accumulated pictures for
+        pictures for analysis.
+    :param cameraType: determines scaling of pixels
+    :param loadType: (expects one of 'fits', 'dataray', 'basler') determines the loading function used to load the image
+        data.
+    :param window: (expects format (xMin, xMax, yMin, xMax)). Specifies a window of the picture to be analyzed in lieu
+        of the entire picture. This command overrides the individual arguments (e.g. xMin) if both are present. The
+        rest of the picture is completely discarded and not used for any data analysis, e.g. fitting. This defaults to
+        cover the entire picture
+    :param xMin:
+    :param yMax:
+    :param yMin:
+    :param xMax: Specify a particular bound on the image to be analyzed; other parameters are left
+        untouched. See above description of the window parameter. These default to cover
+        the entire picture.
+    :param accumulations: If using accumulation mode on the Andor, set this parameter to the number of accumulations per
+        image so that the data can be properly normalized for comparison to other pictures, backgrounds, etc.
+        Defaults to 1.
+    :param key: give the function a custom key. By default, the function looks for a key in the raw data file, but
+        sometimes scans are done without the master code specifying the key.
+    :param zeroCorners: If this is true, average the four corners of the picture and subtract this average from every
+        picture. This applies to the raw, -bg, and -avg data. for the latter two, the average is calculated and
+        subtracted after the bg or avg is subtracted.
+    :param dataRange: Specify which key values to analyze. By default, analyze all of them. (0,-1) will drop the last
+        key value, etc.
+    :param smartWindow: Not properly implemented at the moment.
+    ### LOCAL Data Manipulation Parameters
+    * These add extra analysis or change certain parts of the data analysis while leaving other parts intact.
+    :param fitWidthGuess: a manual guess for the threshold fit.
+    :param plottedData: (can include "raw", "-bg", and or "-avg") An array of strings which tells the function which
+        data to plot. Can be used to plot multiple sets of data simultaneously, if needed. Defaults to raw. If only
+        a single set is plotted, then that set is also shown in the pictures. In the case that multiple are
+        shown, it's a bit funny right now.
+    :param bg: A background picture, or a constant value, which is subtracted from each picture.
+        defaults to subtracting nothing.
+    :param location: Specify a specific pixel to be analyzed instead of the whole picture.
+    :param fitPics: Attempt a 2D gaussian fit to each picture.
+    :param fitBeamWaist: Don't think this works yet. The idea is that if gaussianFitPics is also true, then you can
+    use this        to fit a gaussian beam profile to the expanding gaussian fits. This could be useful, e.g. when
+        calibrating the camera position.
+    """
+    if plottedData is None:
+        plottedData = ["raw"]
+    # Check for incompatible parameters.
+    if bigPics and allThePics:
+        raise ValueError("ERROR: can't use both bigPics and allThePics.")
+    if fitBeamWaist and not fitPics:
+        raise ValueError(
+            "ERROR: Can't use fitBeamWaist and not fitPics! The fitBeamWaist attempts to use the fit values "
+            "found by the gaussian fits.")
+    if bigPics and not showPictures:
+        raise ValueError("Can't show bigPics if not showPics!")
+    if allThePics and not showPictures:
+        raise ValueError("Can't show allThePics if not showPics!")
+
+    # the key
+    if key.size == 0:
+        origKey, keyName = loadDetailedKey(data)
+    else:
+        origKey = key
+    # this section could be expanded to handle different types of conversions.
+    if convertKey:
+        a = consts.opBeamDacToVoltageConversionConstants
+        key = [a[0] + x * a[1] + x ** 2 * a[2] + x ** 3 * a[3] for x in origKey]
+    else:
+        # both keys the same.
+        key = origKey
+
+    print("Key Values, in Time Order: ", key)
+    if len(key) == 0:
+        raise RuntimeError('key was empty!')
+
+    """ ### Handle data ### 
+    If the corresponding inputs are given, all data gets...
+    - normalized for accumulations
+    - normalized using the normData array
+    - like values in the key & data are averaged
+    - key and data is ordered in ascending order.
+    - windowed.
+    """
+    if type(data) == int or (type(data) == np.array and type(data[0]) == int):
+        if loadType == 'andor':
+            rawData, _, _, _ = loadHDF5(data)
+        elif loadType == 'scout':
+            rawData = loadCompoundBasler(data, 'scout')
+        elif loadType == 'ace':
+            rawData = loadCompoundBasler(data, 'ace')
+        elif loadType == 'dataray':
+            raise ValueError('Loadtype of "dataray" has become deprecated and needs to be reimplemented.')
+            # rawData = [[] for _ in range(data)]
+            # assume user inputted an array of ints.
+            # for _ in data:
+            #    rawData[keyInc][repInc] = loadDataRay(data)
+        else:
+            raise ValueError('Bad value for LoadType.')
+    else:
+        # assume the user inputted a picture or array of pictures.
+        print('Assuming input is a picture or array of pictures.')
+        rawData = data
+    print('Data Loaded.')
+    print('init shape: ' + str(rawData.shape))
+    (key, rawData, dataMinusBg, dataMinusAvg,
+     avgPic) = processImageData(key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulations, dataRange, zeroCorners,
+                                smartWindow, manuallyAccumulate=manualAccumulation)
+    print('after process: ' + str(rawData.shape))
+    if fitPics:
+        # should improve this to handle multiple sets.
+        if '-bg' in plottedData:
+            print('fitting background-subtracted data.')
+            pictureFitParams, pictureFitErrors = fitPictures(dataMinusBg, range(len(key)), guessSigma_x=fitWidthGuess,
+                                                             guessSigma_y=fitWidthGuess)
+        elif '-avg' in plottedData:
+            print('fitting average-subtracted data.')
+            pictureFitParams, pictureFitErrors = fitPictures(dataMinusAvg, range(len(key)), guessSigma_x=fitWidthGuess,
+                                                             guessSigma_y=fitWidthGuess)
+        else:
+            print('fitting raw data.')
+            pictureFitParams, pictureFitErrors = fitPictures(rawData, range(len(key)), guessSigma_x=fitWidthGuess,
+                                                             guessSigma_y=fitWidthGuess)
+    else:
+        pictureFitParams, pictureFitErrors = np.zeros((len(key), 7)), np.zeros((len(key), 7))
+
+    # convert to normal optics convention. the equation uses gaussian as exp(x^2/2sigma^2), I want the waist,
+    # which is defined as exp(2x^2/waist^2):
+    waists = 2 * arr([pictureFitParams[:, 3], pictureFitParams[:, 4]])
+    positions = arr([pictureFitParams[:, 1], pictureFitParams[:, 2]])
+    if cameraType == 'dataray':
+        pixelSize = consts.dataRayPixelSize
+    elif cameraType == 'andor':
+        pixelSize = consts.andorPixelSize
+    elif cameraType == 'ace':
+        pixelSize = consts.baslerAcePixelSize
+    elif cameraType == 'scout':
+        pixelSize = consts.baslerScoutPixelSize
+    else:
+        raise ValueError("Error: Bad Value for 'cameraType'.")
+
+    waists *= pixelSize
+    positions *= pixelSize
+
+    # average of the two dimensions
+    avgWaists = []
+    for pair in np.transpose(arr(waists)):
+        avgWaists.append((pair[0] + pair[1]) / 2)
+
+    if fitBeamWaist:
+        try:
+            waistFitParamsX, waistFitErrsX = fitGaussianBeamWaist(waists[0], key, 850e-9)
+            waistFitParamsY, waistFitErrsY = fitGaussianBeamWaist(waists[1], key, 850e-9)
+            waistFitParams = [waistFitParamsX, waistFitParamsY]
+            # assemble the data structures for plotting.
+            countData, fitData = assemblePlotData(rawData, dataMinusBg, dataMinusAvg, positions, waists,
+                                                  plottedData, scanType, xLabel, plotTitle, location,
+                                                  waistFits=waistFitParams, key=key)
+        except RuntimeError:
+            print('gaussian waist fit failed!')
+            # assemble the data structures for plotting.
+            countData, fitData = assemblePlotData(rawData, dataMinusBg, dataMinusAvg, positions, waists,
+                                                  plottedData, scanType, xLabel, plotTitle, location)
+    else:
+        # assemble the data structures for plotting.
+        countData, fitData = assemblePlotData(rawData, dataMinusBg, dataMinusAvg, positions, waists,
+                                              plottedData, scanType, xLabel, plotTitle, location)
+
+    if majorData == 'counts':
+        majorPlotData, minorPlotData = countData, fitData
+    elif majorData == 'fits':
+        minorPlotData, majorPlotData = countData, fitData
+    else:
+        raise ValueError("incorect 'majorData' argument")
+
+    if showPlot:
+        plotPoints(key, majorPlotData, minorPlot=minorPlotData, picture=avgPic, picTitle="Average Picture")
+
+    if showPlot and showPictures:
+        if allThePics:
+            data = []
+
+            for inc in range(len(rawData)):
+                data.append([rawData[inc], dataMinusBg[inc], dataMinusAvg[inc]])
+            showPicComparisons(arr(data), key, fitParameters=pictureFitParams)
+        else:
+            if "raw" in plottedData:
+                if bigPics:
+                    showBigPics(rawData, key, fitParameters=pictureFitParams, colorMax=colorMax,
+                                individualColorBars=individualColorBars)
+                else:
+                    showPics(rawData, key, fitParameters=pictureFitParams, colorMax=colorMax,
+                             individualColorBars=individualColorBars)
+            if "-bg" in plottedData:
+                if bigPics:
+                    showBigPics(dataMinusBg, key, fitParameters=pictureFitParams, colorMax=colorMax,
+                                individualColorBars=individualColorBars)
+                else:
+                    showPics(dataMinusBg, key, fitParameters=pictureFitParams, colorMax=colorMax,
+                             individualColorBars=individualColorBars)
+            if "-avg" in plottedData:
+                if bigPics:
+                    showBigPics(dataMinusAvg, key, fitParameters=pictureFitParams, colorMax=colorMax,
+                                individualColorBars=individualColorBars)
+                else:
+                    showPics(dataMinusAvg, key, fitParameters=pictureFitParams, colorMax=colorMax,
+                             individualColorBars=individualColorBars)
+    return key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams
+
+
+def plotMotTemperature(data, xLabel="", plotTitle="", window=(0, 0, 0, 0), xMin=0, xMax=0, yMin=0, yMax=0,
+                       accumulations=1, key=arr([]), dataRange=(0, 0), fitWidthGuess=100):
+    """
+    Calculate the mot temperature, and plot the data that led to this.
+
+    :param data:
+    :param xLabel:
+    :param plotTitle:
+    :param window:
+    :param xMin:
+    :param xMax:
+    :param yMin:
+    :param yMax:
+    :param accumulations:
+    :param key:
+    :param dataRange:
+    :param fitWidthGuess:
+    :return:
+    """
+    (key, rawData, dataMinusBg, dataMinusAvg, avgPic,
+     pictureFitParams) = standardImages(data, showPictures=False, showPlot=False, scanType="Time(ms)", xLabel=xLabel,
+                                        plotTitle=plotTitle, majorData='fits', loadType='scout',
+                                        window=window, xMin=xMin, xMax=xMax, yMin=yMin, yMax=yMax,
+                                        accumulations=accumulations, key=key, dataRange=dataRange, fitPics=True,
+                                        manualAccumulation=True, fitWidthGuess=fitWidthGuess)
+    # convert to meters
+    waists = 2 * consts.baslerScoutPixelSize * pictureFitParams[:, 3]
+    # convert to s
+    times = key / 1000
+    temp, simpleTemp, fitVals, fitCov, simpleFitVals, simpleFitCov = calcMotTemperature(times, waists / 2)
+    figure()
+    plot(times, waists, 'o', label='Raw Data Waist')
+    plot(times, 2 * ballisticMotExpansion(times, *fitVals, 100), label='balistic MOT expansion Fit Waist')
+    plot(times, 2 * simpleMotExpansion(times, *simpleFitVals), label='simple MOT expansion Fit Waist ')
+    title('Measured atom cloud size over time')
+    xlabel('time (s)')
+    ylabel('gaussian fit waist (m)')
+    legend()
+    showPics(rawData, key, fitParameters=pictureFitParams)
+    print("PGC Temperture (full ballistic):", temp * 1e6, 'uK')
+    # the simple balistic fit doesn't appear to work
+    print("MOT Temperature (simple (don't trust?)):", simpleTemp * 1e6, 'uK')
+
+
+def plotMotNumberAnalysis(dataSetNumber, motKey, exposureTime, window=(0, 0, 0, 0), cameraType='scout',
+                          showStandardImages=False, sidemotPower=2.05, diagonalPower=8, motRadius=8 * 8e-6,
+                          imagingLoss=0.8, detuning=10e6):
+    """
+    Calculate the MOT number and plot the data that resulted in the #.
+
+    :param dataSetNumber: the number corresponding to the data set you want to analyze.
+    :param motKey: the x-axis of the data. Should an array where each element corresponds to the time at which
+        its corresponding picture was taken.
+    :param exposureTime: the time the camera was exposed for to take the picture. Important in calculating the
+        actual fluorescence rate, and this can change significantly from experiment to experiment.
+    :param window: an optional specification of a subset region of the picture to analyze.
+    :param cameraType: type of camera used to take the picture. Important for converting counts to photons.
+    :param showStandardImages: show the images produced by the standardImages function, the actual images of the mot
+        at different times.
+    :param sidemotPower: measured sidemot power during the measurement.
+    :param diagonalPower: measured diagonal power (of a single beam) during the experiment.
+    :param motRadius: approximate radius of the MOT. Used to take into account the spread of intensity of the small
+        side-mot beam across the finite area of the MOT. Default number comes from something like 8 pixels
+        and 8um per pixel scaling, a calculation I don't have on me at the moment.
+    :param imagingLoss: the loss in the imaging path due to filtering, imperfect reflections, etc.
+    :param detuning: detuning of the mot beams during the imaging.
+    """
+    _, rawData, _, _, _, _ = standardImages(dataSetNumber, key=motKey, scanType="time (s)",
+                                            window=window, loadType=cameraType, showPlot=showStandardImages)
+    intRawData = integrateData(rawData)
+    try:
+        # its always an exponential saturation fit for this data.
+        popt, pcov = fit(fitFunc.exponentialSaturation, motKey, intRawData, p0=[np.min(intRawData) - np.max(intRawData),
+                                                                                1 / 2, np.max(intRawData)])
+    except RuntimeError:
+        print('MOT # Fit failed!')
+        # probably failed because of a bad guess. Show the user the guess fit to help them debug.
+        popt = [np.min(intRawData) - np.max(intRawData), 1 / 2, np.max(intRawData)]
+    figure()
+    plot(motKey, intRawData, 'bo', label='data', color='b')
+    xfitPts = np.linspace(min(motKey), max(motKey), 1000)
+    plot(xfitPts, fitFunc.exponentialSaturation(xfitPts, *popt), 'b-', label='fit', color='r', linestyle=':')
+    xlabel('loading time (s)')
+    ylabel('integrated counts')
+    title('Mot Fill Curve')
+    print("integrated saturated counts subtracting background =", -popt[0])
+    print("loading time 1/e =", popt[1], "s")
+    motNum = computeMotNumber(sidemotPower, diagonalPower, motRadius, exposureTime, imagingLoss, -popt[0],
+                              detuning=detuning)
+    print('MOT Number:', motNum)
+    return motNum
 
 
 def atomHist(key, atomLocs, pic1Data, bins, binData, fitVals, thresholds, avgPic, atomCount, variationNumber):
@@ -508,9 +861,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, accumulations=1, key=N
     return key, survivalData, survivalErrs, captureArray
 
 
-def Loading(fileNum, atomLocations, accumulations=1, key=None, picsPerExperiment=1,
-            analyzeTogether=False, plotLoadingRate=False, picture=0, manualThreshold=None,
-            loadingFitType=None, showIndividualHist=True, showTotalHist="def"):
+def Loading(fileNum, atomLocations, plotLoadingRate=True, plotCounts=False, **StandardArgs):
     """
     Standard data analysis package for looking at loading rates throughout an experiment.
 
@@ -519,92 +870,20 @@ def Loading(fileNum, atomLocations, accumulations=1, key=None, picsPerExperiment
     This routine is designed for analyzing experiments with only one picture per cycle. Typically
     These are loading exeriments, for example. There's no survival calculation.
     """
-    if type(atomLocations[0]) == int:
-        # assume atom grid format.
-        topLeftRow = atomLocations[0]
-        topLeftColumn = atomLocations[1]
-        spacing = atomLocations[2]
-        width = atomLocations[3]
-        height = atomLocations[4]
-        atomLocations = []
-        for widthInc in range(width):
-            for heightInc in range(height):
-                atomLocations.append([topLeftRow + spacing * heightInc, topLeftColumn + spacing * widthInc])
-
-    # ### Load Fits File & Get Dimensions
-    # Get the array from the fits file. That's all I care about.
-    rawData, keyName, key, repetitions = loadHDF5(fileNum)
-    # the .shape member of an array gives an array of the dimesnions of the array.
-    numOfPictures = rawData.shape[0]
-    numOfVariations = int(numOfPictures / repetitions)
-    # handle defaults.
-    if numOfVariations == 1:
-        if showTotalHist == "def":
-            showTotalHist = False
-        if key is None:
-            key = arr([0])
-    else:
-        if showTotalHist == 'def':
-            showTotalHist = True
-        if key is None:
-            key = arr([])
-    # make it the right size
-    if len(arr(atomLocations).shape) == 1:
-        atomLocations = [atomLocations]
-    print("Key Values, in experiment's order: ", key)
-    print('Total # of Pictures:', numOfPictures)
-    print('Number of Variations:', numOfVariations)
-
-    if not len(key) == numOfVariations:
-        raise ValueError("ERROR: The Length of the key doesn't match the data found.")
-    # ## Initial Data Analysis
-    s = rawData.shape
-    if analyzeTogether:
-        newShape = (1, s[0], s[1], s[2])
-    else:
-        newShape = (numOfVariations, repetitions, s[1], s[2])
-    groupedData = rawData.reshape(newShape)
-    groupedData, key = orderData(groupedData, key)
-    print('Data Shape:', groupedData.shape)
-    loadingRateList, loadingRateErr = [[[] for x in range(len(atomLocations))] for x in range(2)]
-    print('Analyzing Variation... ', end='')
-    for dataInc, data in enumerate(groupedData):
-        print(str(dataInc) + ', ', end='')
-        avgPic = getAvgPic(data)
-        # initialize empty lists
-        (pic1Data, pic1Atom, thresholds, thresholdFid, fitVals, bins, binData,
-         atomCount) = arr([[None] * len(atomLocations)] * 8)
-
-        # fill lists with data
-        for i, atomLoc in enumerate(atomLocations):
-            (pic1Data[i], pic1Atom[i], thresholds[i], thresholdFid[i],
-             fitVals[i], bins[i], binData[i], atomCount[i]) = getLoadingData(data, atomLoc, picture, picsPerExperiment,
-                                                                             manualThreshold, 10)
-            if plotLoadingRate:
-                loadingRateList[i].append(np.mean(pic1Atom[i]))
-                loadingRateErr[i].append(np.std(pic1Atom[i]) / np.sqrt(len(pic1Atom[i])))
-        if showIndividualHist:
-            atomHist(key, atomLocations, pic1Data, bins, binData, fitVals, thresholds, avgPic, atomCount,
-                     dataInc)
-    avgPic = getAvgPic(rawData)
-    (pic1Data, pic1Atom, thresholds, thresholdFid, fitVals, bins, binData,
-     atomCount) = arr([[None] * len(atomLocations)] * 8)
-    # loadingRateList, loadingRateErr = [[[] for x in range(len(atomLocations))]] * 2
-    # fill lists with data
-    for i, atomLoc in enumerate(atomLocations):
-        (pic1Data[i], pic1Atom[i], thresholds[i], thresholdFid[i],
-         fitVals[i], bins[i], binData[i], atomCount[i]) = getLoadingData(rawData, atomLoc, picture,
-                                                                  picsPerExperiment, manualThreshold, 5)
+    (pic1Data, thresholds, avgPic, key, loadingRateErr, loadingRateList, allLoadingRate, allLoadingErr, loadFits,
+     loadingFitType, keyName, totalPic1AtomData, rawData, showTotalHist, atomLocations,
+     avgFits) = standardLoadingAnalysis(fileNum, atomLocations, **StandardArgs)
+    pltColors, _ = getColors(len(atomLocations) + 1)
     if showTotalHist:
-        atomHist(key, atomLocations, pic1Data, bins, binData, fitVals, thresholds, avgPic, atomCount, None)
+        pass
+        # atomHist(key, atomLocations, pic1Data, bins, binData, fitVals, thresholds, avgPic, atomCount, None)
     if plotLoadingRate:
         # get colors
-        colors = getColors(atomLocations)
         figure()
         title('Loading Rate')
         for i, atomLoc in enumerate(atomLocations):
             errorbar(key, loadingRateList[i], yerr=loadingRateErr[i], marker='o', linestyle='', label=atomLoc,
-                     color=colors[i])
+                     color=pltColors[i])
         xlabel("key value")
         ylabel("loading rate")
         fitInfo, loadingFitType = handleFitting(loadingFitType, key, loadingRateList)
@@ -613,8 +892,8 @@ def Loading(fileNum, atomLocations, accumulations=1, key=None, picsPerExperiment
             center = fitInfo['center']
             fill_between(fitInfo['x'], fitInfo['nom'] - fitInfo['std'], fitInfo['nom'] + fitInfo['std'], alpha=0.1,
                          label=r'$\pm\sigma$ band', color='b')
-            axvspan(fitInfo['vals'][center ] - fitInfo['err'][center ],
-                    fitInfo['vals'][center ] + fitInfo['err'][center ],
+            axvspan(fitInfo['vals'][center ] - fitInfo['err'][center],
+                    fitInfo['vals'][center ] + fitInfo['err'][center],
                     color='b', alpha=0.1)
             axvline(fitInfo['vals'][center ], color='b', linestyle='-.', alpha=0.5,
                     label='fit center $= ' + str(round_sig(fitInfo['vals'][center ])) + '$')
@@ -622,6 +901,13 @@ def Loading(fileNum, atomLocations, accumulations=1, key=None, picsPerExperiment
         xlim(min(key) - keyRange / (2 * len(key)), max(key)
              + keyRange / (2 * len(key)))
         ylim(0, 1)
+        legend()
+    if plotCounts:
+        figure()
+        title('Plot Counts')
+        for i, atomLoc in enumerate(atomLocations):
+            scatter(list(range(pic1Data[i].flatten().size)), pic1Data[i].flatten(), marker='.',
+                    label=atomLoc, color=pltColors[i], s=1)
         legend()
     return key, loadingRateList, loadingRateErr
 
