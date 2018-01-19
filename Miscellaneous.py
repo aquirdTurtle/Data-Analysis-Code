@@ -6,6 +6,14 @@ from matplotlib.cm import get_cmap
 from pandas import DataFrame
 
 
+def prefix(num):
+    """
+    Convert number to nearest numbers with SI prefixes.
+    :param num: the number to convert
+    """
+
+
+
 def what(obj, callingLocals=locals()):
     """
     quick function to print name of input and value.

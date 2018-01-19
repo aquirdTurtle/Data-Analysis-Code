@@ -41,19 +41,36 @@ mu0 = 4e-7 * pi
 
 # rubidium 87 mass (inexact)
 Rb87_M = 86.909180527 * amu
+Rb87_GroundStateSplitting = 6.83468261090429e9
+Rb87_GroundStateSplitting_Uncertainty = 9e-5
+Rb87_GroundState_ToF2 = 2.56300597908911e9
+Rb87_GroundState_ToF2_Uncertainty = 4e-5
+Rb87_GroundState_ToF1 = Rb87_GroundState_ToF2 - Rb87_GroundStateSplitting
+Rb87_GroundState_ToF1_Uncertainty = 6e-5
+# Lande` G-factors (g_F) in Hz/Gauss
+Rb87_GroundState_F2_g_F = 0.70e6
+Rb87_GroundState_F1_g_F = -0.70e6
 # linewidths, in s^-1
 Rb87_D1Gamma = 36.10e6
-Rb87_D1GammaUncertainty = 0.05e6
+Rb87_D1Gamma_Uncertainty = 0.05e6
 Rb87_D2Gamma = 38.11e6
-Rb87_D2GammaUncertainty = 0.06e6
+Rb87_D2Gamma_Uncertainty = 0.06e6
+# splittings of the excited 5^2 P_(3/2) state (D2 Line), in Hz
+Rb87_5P3halves_ToF3 = 193.7408e6
+Rb87_5P3halves_ToF3_Uncertainty = 4.6e3
+Rb87_5P3halves_ToF2 = -72.9113e6
+Rb87_5P3halves_ToF2_Uncertainty = 3.2e3
+Rb87_5P3halves_ToF1 = -229.8518e6
+Rb87_5P3halves_ToF1_Uncertainty = 5.6e3
+Rb87_5P3halves_ToF0 = -302.0738e6
+Rb87_5P3halves_ToF0_Uncertainty = 8.8e3
+
 # for far-detuned approximations only.
 # strictly, I should probably weight by Clebsch-Gordon coefficients or something to get
 # a better far-detuned approximation.
 Rb87_AvgGamma = (Rb87_D1Gamma + Rb87_D2Gamma)/2
-
 # in mW/cm^2, 2-3', resonant & isotropic light.
 Rb87_I_ResonantIsotropicSaturationIntensity = 3.576
-
 # wavelengths are in vacuum.
 # in m
 Rb87_D2LineWavelength = 780.241209686e-9
@@ -61,7 +78,10 @@ Rb87_D2LineWavelengthUncertainty = 1.3e-17
 # in Hz (1/s)
 Rb87_D2LineFrequency = 384.2304844685e12
 Rb87_D2LineFrequencyUncertainty = 6.2e3
-# etc.
+Rb87_D2_F2toFp3 = Rb87_D2LineFrequency - Rb87_GroundState_ToF2 + Rb87_5P3halves_ToF3
+Rb87_D2_F1toFp0 = Rb87_D2LineFrequency - Rb87_GroundState_ToF1 + Rb87_5P3halves_ToF0
+
+# etc.s
 Rb87_D1LineWavelength = 794.9788509e-9
 Rb87_D1LineWavelengthUncertainty = 8e-16
 Rb87_D1LineFrequency = 377.1074635e12

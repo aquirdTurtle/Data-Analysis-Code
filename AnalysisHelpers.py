@@ -1107,6 +1107,8 @@ def computeMotNumber(sidemotPower, diagonalPower, motRadius, exposure, imagingLo
     imagingLensFocalLength = 10
     fluorescence = computeFlorescence(greyscaleReading, imagingLoss, imagingLensDiameter, imagingLensFocalLength,
                                       exposure)
+
+    print('Light Scattered off of full MOT:', fluorescence * consts.h * consts.Rb87_D2LineFrequency * 1e9, "nW")
     motNumber = fluorescence / rate
     return motNumber
 

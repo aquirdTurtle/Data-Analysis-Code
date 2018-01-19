@@ -30,7 +30,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, key=None, manualThresh
     (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate, pic1Data, keyName, key,
      repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPic, otherDimValues,
      locsList) = standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=key, picsPerRep=picsPerRep,
-                                          manualThreshold=manualThreshold, fitType=fitType, window=window, xMin=xMin,
+                                          manualThreshold=manualThreshold, fitModule=fitType, window=window, xMin=xMin,
                                           xMax=xMax, yMin=yMin, yMax=yMax, dataRange=dataRange,
                                           histSecondPeakGuess=histSecondPeakGuess, keyOffset=keyOffset,
                                           sumAtoms=sumAtoms, outputMma=outputMma, dimSlice=dimSlice,
@@ -280,13 +280,13 @@ def Loading(fileNum, atomLocations, showLoadingRate=True, showLoadingPic=False, 
                                         showlegend=False, mode='markers', line={'color': '#000000', 'width': 1},
                                         hoverinfo='none', legendgroup=str(atom), marker={'color': color, 'size':1}))
     indvHistFig = []
+    alphaVal = 1.0 / (len(atomLocations) ** 0.7)
     if indvHist:
         for atom, color in zip(atomLocations, colors):
-            indvHistFig.append(go.Histogram(x=pic1Data[atom].flatten(), nbinsx=100, legendgroup='avg',
+            indvHistFig.append(go.Histogram(x=pic1Data[atom].flatten(), nbinsx=100, legendgroup=str(atom),
                                             showlegend=False, xbins=dict(start=min(pic1Data[atom].flatten()),
                                                                          end=max(pic1Data[atom].flatten())),
-                                            marker=dict(color=color)))
-
+                                            marker=dict(color=color), opacity=alphaVal))
     if showLoadingPic:
         loadingPic = np.zeros(avgPic.shape)
         locFromKey = []
@@ -297,7 +297,6 @@ def Loading(fileNum, atomLocations, showLoadingRate=True, showLoadingPic=False, 
         for i, loc in enumerate(locFromKey):
             loadingPic[loc[1]][loc[0]] = max(loadingRateList[i])
     if showLoadingRate:
-        alphaVal = 1.0 / (len(atomLocations) ** 0.7)
         avgFig, mainPlot = [[] for _ in range(2)]
         avgFig.append(go.Heatmap(z=avgPic, colorscale='Viridis', colorbar=go.ColorBar(x=1, y=0.15, len=0.3)))
         for err, loc, color, load, fitData in zip(loadingRateErr, atomLocations, colors, loadingRateList, loadFits):
@@ -383,18 +382,19 @@ def Loading(fileNum, atomLocations, showLoadingRate=True, showLoadingPic=False, 
 
 
 def Assembly(fileNumber, atomLocs1, pic1Num, atomLocs2=None, keyOffset=0, window=None,
-             picsPerRep=2, histSecondPeakGuess=None, manualThreshold=None, fitType=None, allAtomLocs1=None,
+             picsPerRep=2, histSecondPeakGuess=None, manualThreshold=None, fitModule=None, allAtomLocs1=None,
              allAtomLocs2=None, keyInput=None):
     """
     This function checks the efficiency of generating a picture;
     I.e. finding atoms at multiple locations at the same time.
     """
+    print('hi!')
     (atomLocs1, atomLocs2, key, thresholds, pic1Data, pic2Data, fit, ensembleStats, avgPic, atomCounts, keyName,
      indvStatistics, lossAvg,
      lossErr) = standardAssemblyAnalysis(fileNumber, atomLocs1, pic1Num, atomLocs2=atomLocs2, keyOffset=keyOffset,
                                          window=window, picsPerRep=picsPerRep, histSecondPeakGuess=histSecondPeakGuess,
-                                         manualThreshold=manualThreshold, fitType=fitType, allAtomLocs1=allAtomLocs1,
-                                         allAtomLocs2=allAtomLocs2, keyInput=keyInput)
+                                         manualThreshold=manualThreshold, fitModule=fitModule,
+                                         allAtomLocs1=allAtomLocs1, allAtomLocs2=allAtomLocs2, keyInput=keyInput)
     # ######################## Plotting
     # get the colors for the plot.
     colors, colors2 = getColors(len(atomLocs1) + 1)
