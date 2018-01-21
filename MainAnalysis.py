@@ -19,7 +19,7 @@ from AnalysisHelpers import (loadHDF5, getAvgPic, getBinData, getEnsembleHits, g
                              getAtomInPictureStatistics, normalizeData, fitDoubleGaussian,
                              getSurvivalData, getSurvivalEvents, unpackAtomLocations, guessGaussianPeaks,
                              calculateAtomThreshold, outputDataToMmaNotebook, getLoadingData, orderData,
-                             applyDataRange, postSelectOnAssembly, fitWithClass)
+                             applyDataRange, postSelectOnAssembly, fitWithClass, getNetLossStats)
 
 
 def analyzeCodeTimingData(num, talk=True, numTimes=3):
@@ -108,7 +108,7 @@ def plotNiawg(fileIndicator, points=300):
 
 
 def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPerRep=2, manualThreshold=None,
-                             fitType=None, window=None, xMin=None, xMax=None, yMin=None, yMax=None, dataRange=None,
+                             fitModule=None, window=None, xMin=None, xMax=None, yMin=None, yMax=None, dataRange=None,
                              histSecondPeakGuess=None, keyOffset=0, sumAtoms=True, outputMma=False, dimSlice=None,
                              varyingDim=None, subtractEdgeCounts=True, loadPic=0, transferPic=1, postSelectionPic=None):
     """
@@ -121,7 +121,7 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
     :param key:
     :param picsPerRep:
     :param manualThreshold:
-    :param fitType:
+    :param fitModule:
     :param window:
     :param xMin:
     :param xMax:
@@ -204,9 +204,9 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
      otherDims) = groupMultidimensionalData(key, varyingDim, atomLocs1, survivalData, survivalErrs, loadingRate)
     # need to change for loop!
     fits = [None] * len(locationsList)
-    if fitType is not None:
+    if fitModule is not None:
         for i, _ in enumerate(locationsList):
-            fits[i], _ = fitWithClass(fitType, key, survivalData[i])
+            fits[i], _ = fitWithClass(fitModule, key, survivalData[i])
     pic1Data = arr(pic1Data.tolist())
     atomCounts = arr(atomCounts.tolist())
     # calculate average values
@@ -215,8 +215,8 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
         # weight the sum with loading percentage
         avgSurvivalData = sum(survivalData*loadingRate)/sum(loadingRate)
         avgSurvivalErr = np.sqrt(np.sum(survivalErrs**2))/len(atomLocs1)
-        if fitType is not None:
-            avgFit, _ = fitWithClass(fitType, key, avgSurvivalData)
+        if fitModule is not None:
+            avgFit, _ = fitWithClass(fitModule, key, avgSurvivalData)
     if outputMma:
         outputDataToMmaNotebook(fileNumber, survivalData, survivalErrs, loadingRate, key)
     return (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate,
@@ -224,12 +224,26 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
             avgSurvivalData, avgSurvivalErr, avgFit, avgPic, otherDims, locationsList)
 
 
-def standardLoadingAnalysis(fileNum, atomLocations, picsPerExperiment=1, analyzeTogether=False, loadingPicture=0,
-                            manualThreshold=None, loadingFitType=None, showTotalHist=True, keyInput=None ):
+def standardLoadingAnalysis(fileNum, atomLocations, picsPerRep=1, analyzeTogether=False, loadingPicture=0,
+                            manualThreshold=None, loadingFitModule=None, showTotalHist=True, keyInput=None):
+    """
+    
+    :param fileNum:
+    :param atomLocations:
+    :param picsPerRep:
+    :param analyzeTogether:
+    :param loadingPicture:
+    :param manualThreshold:
+    :param loadingFitModule:
+    :param showTotalHist: 
+    :param keyInput: if not none, this will be used instead of the key in the HDF5 file. 
+    :return: pic1Data, thresholds, avgPic, key, loadingRateErr, loadingRateList, allLoadingRate, allLoadingErr, loadFits,
+            loadingFitType, keyName, totalPic1AtomData, rawData, showTotalHist, atomLocations, avgFits
+    """
     atomLocations = unpackAtomLocations(atomLocations)
     rawData, keyName, key, repetitions = loadHDF5(fileNum)
     numOfPictures = rawData.shape[0]
-    numOfVariations = int(numOfPictures / (repetitions * picsPerExperiment))
+    numOfVariations = int(numOfPictures / (repetitions * picsPerRep))
     # handle defaults.
     if numOfVariations == 1:
         if showTotalHist is None:
@@ -256,7 +270,7 @@ def standardLoadingAnalysis(fileNum, atomLocations, picsPerExperiment=1, analyze
     if analyzeTogether:
         newShape = (1, s[0], s[1], s[2])
     else:
-        newShape = (numOfVariations, repetitions*picsPerExperiment, s[1], s[2])
+        newShape = (numOfVariations, repetitions * picsPerRep, s[1], s[2])
     groupedData = rawData.reshape(newShape)
     groupedData, key, _ = orderData(groupedData, key)
     print('Data Shape:', groupedData.shape)
@@ -273,7 +287,7 @@ def standardLoadingAnalysis(fileNum, atomLocations, picsPerExperiment=1, analyze
         for i, atomLoc in enumerate(atomLocations):
             (pic1Data[dataInc][i], pic1Atom[dataInc][i], thresholds[dataInc][i], thresholdFid[dataInc][i],
              fitVals[dataInc][i], bins[dataInc][i], binData[dataInc][i],
-             atomCount[dataInc][i]) = getLoadingData(data, atomLoc, loadingPicture, picsPerExperiment, manualThreshold,
+             atomCount[dataInc][i]) = getLoadingData(data, atomLoc, loadingPicture, picsPerRep, manualThreshold,
                                                      10)
             totalPic1AtomData.append(pic1Atom[dataInc][i])
             allAtomPicData.append(np.mean(pic1Atom[dataInc][i]))
@@ -282,8 +296,8 @@ def standardLoadingAnalysis(fileNum, atomLocations, picsPerExperiment=1, analyze
         allLoadingRate[dataInc] = np.mean(allAtomPicData)
         allLoadingErr[dataInc] = np.std(allAtomPicData) / np.sqrt(len(allAtomPicData))
     for i, load in enumerate(loadingRateList):
-        loadFits[i] = handleFitting(loadingFitType, key, load)
-    avgFits = handleFitting(loadingFitType, key, allLoadingRate)
+        loadFits[i] = handleFitting(loadingFitModule, key, load)
+    avgFits = handleFitting(loadingFitModule, key, allLoadingRate)
     avgPic = getAvgPic(rawData)
     # get averages across all variations
     (pic1Data, pic1Atom, thresholds, thresholdFid, fitVals, bins, binData,
@@ -291,15 +305,15 @@ def standardLoadingAnalysis(fileNum, atomLocations, picsPerExperiment=1, analyze
     for i, atomLoc in enumerate(atomLocations):
         (pic1Data[i], pic1Atom[i], thresholds[i], thresholdFid[i],
          fitVals[i], bins[i], binData[i], atomCount[i]) = getLoadingData(rawData, atomLoc, loadingPicture,
-                                                                         picsPerExperiment, manualThreshold, 5)
+                                                                         picsPerRep, manualThreshold, 5)
     pic1Data = arr(pic1Data.tolist())
     return (pic1Data, thresholds, avgPic, key, loadingRateErr, loadingRateList, allLoadingRate, allLoadingErr, loadFits,
-            loadingFitType, keyName, totalPic1AtomData, rawData, showTotalHist, atomLocations, avgFits)
+            loadingFitModule, keyName, totalPic1AtomData, rawData, showTotalHist, atomLocations, avgFits)
 
 
 def standardAssemblyAnalysis(fileNumber, atomLocs1, pic1Num, atomLocs2=None, keyOffset=0,
                              window=None, picsPerRep=2, dataRange=None, histSecondPeakGuess=None,
-                             manualThreshold=None, fitType=None, allAtomLocs1=None, allAtomLocs2=None, keyInput=None):
+                             manualThreshold=None, fitModule=None, allAtomLocs1=None, allAtomLocs2=None, keyInput=None):
     """
     
     :param fileNumber:
@@ -312,7 +326,7 @@ def standardAssemblyAnalysis(fileNumber, atomLocs1, pic1Num, atomLocs2=None, key
     :param dataRange: 
     :param histSecondPeakGuess: 
     :param manualThreshold: 
-    :param fitType: 
+    :param fitModule: 
     :param allAtomLocs1: 
     :param allAtomLocs2: 
     :return: 
@@ -398,7 +412,7 @@ def standardAssemblyAnalysis(fileNumber, atomLocs1, pic1Num, atomLocs2=None, key
     ensembleHits = (getEnsembleHits(pic1Atoms) if pic1Num == 1 else getEnsembleHits(pic2Atoms))
     ensembleStats = getEnsembleStatistics(ensembleHits, repetitions)
     indvStatistics = getAtomInPictureStatistics(pic1Atoms if pic1Num == 1 else pic2Atoms, repetitions)
-    fitData = handleFitting(fitType, key, ensembleStats['avg'])
+    fitData = handleFitting(fitModule, key, ensembleStats['avg'])
     avgPic = getAvgPic(rawData)
     pic1Data = arr(pic1Data.tolist())
     pic2Data = arr(pic2Data.tolist())

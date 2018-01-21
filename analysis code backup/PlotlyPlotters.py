@@ -30,7 +30,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, key=None, manualThresh
     (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate, pic1Data, keyName, key,
      repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPic, otherDimValues,
      locsList) = standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=key, picsPerRep=2,
-                                          manualThreshold=manualThreshold, fitType=fitType, window=window, xMin=xMin,
+                                          manualThreshold=manualThreshold, fitModule=fitType, window=window, xMin=xMin,
                                           xMax=xMax, yMin=yMin, yMax=yMax, dataRange=dataRange,
                                           histSecondPeakGuess=histSecondPeakGuess, keyOffset=keyOffset,
                                           sumAtoms=sumAtoms, outputMma=outputMma, dimSlice=dimSlice,
@@ -326,7 +326,7 @@ def Assembly(fileNumber, atomLocs1, pic1Num, atomLocs2=None, pic2Num=None, keyOf
      lossErr) = standardAssemblyAnalysis(fileNumber, atomLocs1, pic1Num, atomLocs2=atomLocs2,
                                          pic2Num=pic2Num, keyOffset=keyOffset, window=window,
                                          picsPerRep=picsPerRep, histSecondPeakGuess=histSecondPeakGuess,
-                                         manualThreshold=manualThreshold, fitType=fitType,
+                                         manualThreshold=manualThreshold, fitModule=fitType,
                                          allAtomLocs1=allAtomLocs1, allAtomLocs2=allAtomLocs2)
     # ######################## Plotting
     # get the colors for the plot.

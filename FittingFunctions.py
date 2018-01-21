@@ -1,5 +1,8 @@
 __version__ = "1.0"
 
+# THIS MODULE HAS BEEN DEPRECATED.
+# we no longer use this module, instead we use the fitters module and submodules within.
+
 import numpy as np
 import uncertainties.unumpy as unp
 
