@@ -1275,15 +1275,15 @@ def calculateAtomThreshold(fitVals):
 def postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic):
     ensembleHits = (getEnsembleHits(pic1Atoms) if postSelectionPic == 1 else getEnsembleHits(pic2Atoms))
     # ps for post-selected
-    psPic1Atoms, psPic2Atoms = [[], []]
-    for i, ensembleVariation in enumerate(ensembleHits):
+    psPic1Atoms, psPic2Atoms = [[[] for _ in range(len(pic1Atoms))] for _ in range(2)]
+    for i, ensembleHit in enumerate(ensembleHits):
         psPic1Atoms.append([])
         psPic2Atoms.append([])
-        for hit in ensembleVariation:
-            if hit:
-                psPic1Atoms[-1].append(pic1Atoms[i])
-                psPic2Atoms[-1].append(pic2Atoms[i])
-            # else nothing!
+        if ensembleHit:
+            for atomInc in range(len(psPic1Atoms)):
+                psPic1Atoms[atomInc].append(pic1Atoms[atomInc][i])
+                psPic2Atoms[atomInc].append(pic2Atoms[atomInc][i])
+        # else nothing!
     return psPic1Atoms, psPic2Atoms
 
 
@@ -1933,7 +1933,7 @@ def getAtomInPictureStatistics(atomsInPicData, reps):
     return stats
 
 
-def getEnsembleHits(atomsList):
+def getEnsembleHits(atomsList, hitCondition=None):
     """
     This function determines whether an ensemble of atoms was hit in a given picture. Give it whichever
     picture data you need.

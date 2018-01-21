@@ -110,7 +110,8 @@ def plotNiawg(fileIndicator, points=300):
 def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPerRep=2, manualThreshold=None,
                              fitModule=None, window=None, xMin=None, xMax=None, yMin=None, yMax=None, dataRange=None,
                              histSecondPeakGuess=None, keyOffset=0, sumAtoms=True, outputMma=False, dimSlice=None,
-                             varyingDim=None, subtractEdgeCounts=True, loadPic=0, transferPic=1, postSelectionPic=None):
+                             varyingDim=None, subtractEdgeCounts=True, loadPic=0, transferPic=1, postSelectionPic=None,
+                             groupData=False):
     """
     Standard data analysis package for looking at survival rates throughout an experiment.
     Returns key, survivalData, survivalErrors
@@ -156,8 +157,14 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
     # ## Initial Data Analysis
     # Group data into variations.
     numberOfPictures = int(rawData.shape[0])
+    if groupData:
+        key = [1]
+        repetitions = int(numberOfPictures / picsPerRep)
     # numberOfRuns = int(numberOfPictures / picsPerRep)
     numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
+    for i in (numberOfVariations, repetitions * picsPerRep, rawData.shape[1],
+              rawData.shape[2]):
+        print(type(i))
     groupedDataRaw = rawData.reshape((numberOfVariations, repetitions * picsPerRep, rawData.shape[1],
                                       rawData.shape[2]))
     (key, slicedData, otherDimValues,
