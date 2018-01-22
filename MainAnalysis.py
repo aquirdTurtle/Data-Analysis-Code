@@ -224,8 +224,8 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
             avgSurvivalData, avgSurvivalErr, avgFit, avgPic, otherDims, locationsList)
 
 
-def standardLoadingAnalysis(fileNum, atomLocations, picsPerRep=1, analyzeTogether=False, loadingPicture=0,
-                            manualThreshold=None, loadingFitModule=None, showTotalHist=True, keyInput=None):
+def standardLoadingAnalysis( fileNum, atomLocations, picsPerRep=1, analyzeTogether=False, loadingPicture=0,
+                             manualThreshold=None, loadingFitModule=None, showTotalHist=True, keyInput=None):
     """
     
     :param fileNum:

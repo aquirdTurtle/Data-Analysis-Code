@@ -1273,17 +1273,17 @@ def calculateAtomThreshold(fitVals):
 
 
 def postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic):
-    ensembleHits = (getEnsembleHits(pic1Atoms) if postSelectionPic == 1 else getEnsembleHits(pic2Atoms))
+    ensembleHits = ((getEnsembleHits(pic1Atoms, postSelectionPic) if True
+                    else getEnsembleHits(pic2Atoms, postSelectionPic)))
     # ps for post-selected
-    psPic1Atoms, psPic2Atoms = [[], []]
-    for i, ensembleVariation in enumerate(ensembleHits):
-        psPic1Atoms.append([])
-        psPic2Atoms.append([])
-        for hit in ensembleVariation:
-            if hit:
-                psPic1Atoms[-1].append(pic1Atoms[i])
-                psPic2Atoms[-1].append(pic2Atoms[i])
+    psPic1Atoms, psPic2Atoms = [[[] for _ in pic1Atoms] for _ in range(2)]
+    for i, hit in enumerate(ensembleHits):
+        if hit:
+            for atom1, orig1, atom2, orig2 in zip(psPic1Atoms, pic1Atoms, psPic2Atoms, pic2Atoms):
+                atom1.append(orig1[i])
+                atom2.append(orig2[i])
             # else nothing!
+    print('Post-Selecting on assembly condition:', postSelectionPic, '. Number of hits:', len(psPic1Atoms[0]))
     return psPic1Atoms, psPic2Atoms
 
 
@@ -1398,6 +1398,8 @@ def getSurvivalData(survivalData, repetitionsPerVariation):
     survivalAverages = np.array([])
     loadingProbability = np.array([])
     survivalErrors = np.array([])
+    if survivalData.size < repetitionsPerVariation:
+        repetitionsPerVariation = survivalData.size
     for variationInc in range(0, int(survivalData.size / repetitionsPerVariation)):
         survivalList = np.array([])
         for repetitionInc in range(0, repetitionsPerVariation):
@@ -1933,19 +1935,42 @@ def getAtomInPictureStatistics(atomsInPicData, reps):
     return stats
 
 
-def getEnsembleHits(atomsList):
+def getEnsembleHits(atomsList, hitCondition=None, requireConsecutive=False):
     """
     This function determines whether an ensemble of atoms was hit in a given picture. Give it whichever
     picture data you need.
 
+    NEW: this function is now involved in post-selection work
+
     atomsList should be a 2 dimensional array. 1 Dim for each atom location, one for each picture.
     """
+    if hitCondition is None:
+        hitCondition = np.ones(atomsList.shape[0])
     ensembleHits = []
-    for inc, atoms in enumerate(transpose(atomsList)):
-        ensembleHits.append(True)
-        for atom in atoms:
-            if not atom:
-                ensembleHits[inc] = False
+    if type(hitCondition) is int:
+        # condition is, e.g, 5 out of 6 of the ref pic.
+        for inc, atoms in enumerate(transpose(atomsList)):
+            matches = 0
+            consecutive = True
+            for atom in atoms:
+                if atom:
+                    matches += 1
+                # else there's no atom. 3 possibilities: before string of atoms, after string, or in middle.
+                # if in middle, consecutive requirement is not met.
+                elif 0 < matches < hitCondition:
+                    consecutive = False
+            if requireConsecutive:
+                ensembleHits.append((matches == hitCondition) and consecutive)
+            else:
+                ensembleHits.append(matches == hitCondition)
+    else:
+        for inc, atoms in enumerate(transpose(atomsList)):
+            ensembleHits.append(True)
+            for atom, needAtom in zip(atoms, hitCondition):
+                if not atom and needAtom:
+                    ensembleHits[inc] = False
+                if atom and not needAtom:
+                    ensembleHits[inc] = False
     return ensembleHits
 
 

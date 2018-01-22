@@ -11,7 +11,28 @@ def prefix(num):
     Convert number to nearest numbers with SI prefixes.
     :param num: the number to convert
     """
-
+    # determine which range it lies in, r1/r2 means reduction 1 or reduction 2
+    divisors = [1e-24 * pow(10, 3 * x) for x in range(17)]
+    prefixes = list(reversed(['Yotta (Y)', 'Zetta (Z)', 'Exa (E)', 'Peta (P)', 'Tera (T)', 'Giga (G)', 'Mega (M)',
+                              'Kilo (K)', '', 'Milli (m)', 'Micro ($\mu$)', 'Nano (n)', 'Pico (p)', 'Femto (f)',
+                              'Atto (a)', 'Zepto (z)', 'Yocto (y)']))
+    exp = np.floor(np.log10(np.abs(num)))
+    if exp < 0:
+        exp -= 3
+    expIndex = int(exp / 3) + 8
+    expIndex = 0 if expIndex < 0 else expIndex
+    expIndex = len(prefixes)-1 if expIndex >= len(prefixes) else expIndex
+    r1 = prefixes[expIndex]
+    num1 = num / divisors[expIndex]
+    if expIndex != len(prefixes):
+        r2 = prefixes[expIndex + 1]
+        num2 = num / divisors[expIndex + 1]
+    else:
+        num2 = None
+    retStr = str(num1) + ' ' + r1
+    if num2 is not None:
+        retStr += '\nor\n' + str(num2) + ' ' + r2
+    return retStr
 
 
 def what(obj, callingLocals=locals()):
