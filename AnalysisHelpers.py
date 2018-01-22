@@ -482,7 +482,7 @@ def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1):
     except RuntimeError:
         popt = np.zeros(len(initial_guess))
         pcov = np.zeros((len(initial_guess), len(initial_guess)))
-        warn('Fit Failed!')
+        warn('Fit Pic Failed!')
     if showFit:
         data_fitted = fitFunc.gaussian_2D((x, y), *popt)
         fig, ax = subplots(1, 1)
@@ -534,7 +534,7 @@ def fitDoubleGaussian(binCenters, binnedData, fitGuess):
                                            fitFunc.doubleGaussian(x, a1, a2, a3, a4, a5, a6, 0),
                                            binCenters, binnedData, fitGuess)
     except:
-        warn('Fit Failed!')
+        warn('Double-Gaussian Fit Failed!')
         fitVals = (0, 0, 0, 0, 0, 0)
     return fitVals
 
@@ -1272,18 +1272,19 @@ def calculateAtomThreshold(fitVals):
     return threshold, fidelity
 
 
-def postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic):
-    ensembleHits = (getEnsembleHits(pic1Atoms) if postSelectionPic == 1 else getEnsembleHits(pic2Atoms))
+def postSelectOnAssembly(pic1Atoms, pic2Atoms, hitCondition, connected=False):
+    ensembleHits = getEnsembleHits(pic1Atoms, hitCondition=hitCondition, connected=connected)
     # ps for post-selected
     psPic1Atoms, psPic2Atoms = [[[] for _ in range(len(pic1Atoms))] for _ in range(2)]
     for i, ensembleHit in enumerate(ensembleHits):
-        psPic1Atoms.append([])
-        psPic2Atoms.append([])
         if ensembleHit:
             for atomInc in range(len(psPic1Atoms)):
                 psPic1Atoms[atomInc].append(pic1Atoms[atomInc][i])
                 psPic2Atoms[atomInc].append(pic2Atoms[atomInc][i])
         # else nothing!
+    psPic1Atoms = arr(psPic1Atoms)
+    psPic2Atoms = arr(psPic2Atoms)
+    print('Post-Selecting on Condition:', hitCondition, '. Hits:', len(psPic2Atoms[0]))
     return psPic1Atoms, psPic2Atoms
 
 
@@ -1398,6 +1399,8 @@ def getSurvivalData(survivalData, repetitionsPerVariation):
     survivalAverages = np.array([])
     loadingProbability = np.array([])
     survivalErrors = np.array([])
+    if survivalData.size < repetitionsPerVariation:
+        repetitionsPerVariation = survivalData.size
     for variationInc in range(0, int(survivalData.size / repetitionsPerVariation)):
         survivalList = np.array([])
         for repetitionInc in range(0, repetitionsPerVariation):
@@ -1933,7 +1936,7 @@ def getAtomInPictureStatistics(atomsInPicData, reps):
     return stats
 
 
-def getEnsembleHits(atomsList, hitCondition=None):
+def getEnsembleHits(atomsList, hitCondition=None, connected=False):
     """
     This function determines whether an ensemble of atoms was hit in a given picture. Give it whichever
     picture data you need.
@@ -1942,10 +1945,23 @@ def getEnsembleHits(atomsList, hitCondition=None):
     """
     ensembleHits = []
     for inc, atoms in enumerate(transpose(atomsList)):
-        ensembleHits.append(True)
-        for atom in atoms:
-            if not atom:
-                ensembleHits[inc] = False
+        if hitCondition is None:
+            ensembleHits.append(True)
+            for atom in atoms:
+                if not atom:
+                    ensembleHits[inc] = False
+        else:
+            continuous = True
+            atomNum = 0
+            for atom in atoms:
+                if atom:
+                    atomNum += 1
+                elif connected and (0 < atomNum < hitCondition):
+                    continuous = False
+            if connected:
+                ensembleHits.append(atomNum == hitCondition and continuous)
+            else:
+                ensembleHits.append(atomNum == hitCondition)
     return ensembleHits
 
 

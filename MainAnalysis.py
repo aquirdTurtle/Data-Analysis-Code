@@ -111,7 +111,7 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
                              fitModule=None, window=None, xMin=None, xMax=None, yMin=None, yMax=None, dataRange=None,
                              histSecondPeakGuess=None, keyOffset=0, sumAtoms=True, outputMma=False, dimSlice=None,
                              varyingDim=None, subtractEdgeCounts=True, loadPic=0, transferPic=1, postSelectionPic=None,
-                             groupData=False):
+                             groupData=False, quiet=False, postSelectionConnected=False):
     """
     Standard data analysis package for looking at survival rates throughout an experiment.
     Returns key, survivalData, survivalErrors
@@ -162,9 +162,6 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
         repetitions = int(numberOfPictures / picsPerRep)
     # numberOfRuns = int(numberOfPictures / picsPerRep)
     numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
-    for i in (numberOfVariations, repetitions * picsPerRep, rawData.shape[1],
-              rawData.shape[2]):
-        print(type(i))
     groupedDataRaw = rawData.reshape((numberOfVariations, repetitions * picsPerRep, rawData.shape[1],
                                       rawData.shape[2]))
     (key, slicedData, otherDimValues,
@@ -176,8 +173,9 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
     numberOfPictures = int(groupedData.shape[0] * groupedData.shape[1])
     # numberOfRuns = int(numberOfPictures / picsPerRep)
     numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
-    print('Total # of Pictures:', numberOfPictures, '\n', 'Number of Variations:', numberOfVariations)
-    print('Data Shape:', groupedData.shape)
+    if not quiet:
+        print('Total # of Pictures:', numberOfPictures, '\n', 'Number of Variations:', numberOfVariations)
+        print('Data Shape:', groupedData.shape)
     if not len(key) == numberOfVariations:
         raise RuntimeError("The Length of the key (" + str(len(key)) + ") doesn't match the data found ("
                            + str(numberOfVariations) + ").")
@@ -202,7 +200,7 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
             pic2Atoms[i].append(point2 > thresholds[i])
 
     if postSelectionPic is not None:
-        pic1Atoms, pic2Atoms = postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic)
+        pic1Atoms, pic2Atoms = postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic, postSelectionConnected)
 
     for i in range(len(atomLocs1)):
         survivalList = getSurvivalEvents(pic1Atoms[i], pic2Atoms[i])

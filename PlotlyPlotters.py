@@ -22,7 +22,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, key=None, manualThresh
              fitType=None, window=None, xMin=None, xMax=None, yMin=None, yMax=None, dataRange=None,
              histSecondPeakGuess=None, keyOffset=0, sumAtoms=True, outputMma=False, dimSlice=None,
              varyingDim=None, showCounts=False, loadPic=0, transferPic=1, postSelectionPic=None,
-             subtractEdgeCounts=True, picsPerRep=2, groupData=False):
+             subtractEdgeCounts=True, picsPerRep=2, groupData=False, postSelectionConnected=False):
     """
     Standard data analysis package for looking at survival rates throughout an experiment.
     Returns key, survivalData, survivalErrors
@@ -35,7 +35,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, key=None, manualThresh
                                           histSecondPeakGuess=histSecondPeakGuess, keyOffset=keyOffset,
                                           sumAtoms=sumAtoms, outputMma=outputMma, dimSlice=dimSlice,
                                           varyingDim=varyingDim, loadPic=loadPic, transferPic=transferPic,
-                                          postSelectionPic=postSelectionPic, subtractEdgeCounts=subtractEdgeCounts,
+                                          postSelectionPic=postSelectionPic, postSelectionConnected=postSelectionConnected,subtractEdgeCounts=subtractEdgeCounts,
                                           groupData=groupData)
     if not show:
         return key, survivalData, survivalErrs, loadingRate
