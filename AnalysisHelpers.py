@@ -482,7 +482,7 @@ def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1):
     except RuntimeError:
         popt = np.zeros(len(initial_guess))
         pcov = np.zeros((len(initial_guess), len(initial_guess)))
-        warn('Fit Failed!')
+        warn('Fit Pic Failed!')
     if showFit:
         data_fitted = fitFunc.gaussian_2D((x, y), *popt)
         fig, ax = subplots(1, 1)
@@ -534,7 +534,7 @@ def fitDoubleGaussian(binCenters, binnedData, fitGuess):
                                            fitFunc.doubleGaussian(x, a1, a2, a3, a4, a5, a6, 0),
                                            binCenters, binnedData, fitGuess)
     except:
-        warn('Fit Failed!')
+        warn('Double-Gaussian Fit Failed!')
         fitVals = (0, 0, 0, 0, 0, 0)
     return fitVals
 
