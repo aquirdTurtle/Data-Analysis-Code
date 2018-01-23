@@ -200,7 +200,7 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
             pic2Atoms[i].append(point2 > thresholds[i])
 
     if postSelectionPic is not None:
-        pic1Atoms, pic2Atoms = postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic, postSelectionConnected)
+        pic1Atoms, pic2Atoms = postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic)
 
     for i in range(len(atomLocs1)):
         survivalList = getSurvivalEvents(pic1Atoms[i], pic2Atoms[i])
