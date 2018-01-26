@@ -37,6 +37,23 @@ def modFitFunc(hBiasIn, vBiasIn, depthIn, *testBiases):
     return np.std(newDepths)
 
 
+def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias):
+    result, modDepth = extrapolateEveningBiases(prev_H_Bias, prev_V_Bias, prevDepth);
+    new_H_Bias = result['x'][:len(prev_H_Bias)]
+    new_V_Bias = result['x'][len(prev_H_Bias):]
+    print('Horizontal Changes')
+    for prev, new in zip(prev_H_Bias, new_H_Bias):
+        print(prev, '->', new)
+    print('Vertical Changes')
+    for prev, new in zip(prev_V_Bias, new_V_Bias):
+        print(prev, '->', new, (new - prev) / prev, '%')
+    print('Previous Depth Variation:', np.std(prevDepth), ', mean:', np.mean(prevDepth))
+    print('Expected new Depth Variation:', np.std(modDepth))
+    for v in new_V_Bias:
+        print(v, ',', end=' ')
+    print(result['success'])
+
+
 def extrapolateEveningBiases(hBiasIn, vBiasIn, depthIn):
     # normalize biases
     hBiasIn /= np.sum(hBiasIn)
@@ -1272,9 +1289,8 @@ def calculateAtomThreshold(fitVals):
     return threshold, fidelity
 
 
-def postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic):
-    ensembleHits = ((getEnsembleHits(pic1Atoms, postSelectionPic) if True
-                    else getEnsembleHits(pic2Atoms, postSelectionPic)))
+def postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic, connected=False):
+    ensembleHits = getEnsembleHits(pic1Atoms, postSelectionPic, requireConsecutive=connected)
     # ps for post-selected
     psPic1Atoms, psPic2Atoms = [[[] for _ in pic1Atoms] for _ in range(2)]
     for i, hit in enumerate(ensembleHits):
