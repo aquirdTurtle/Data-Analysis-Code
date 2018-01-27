@@ -15,11 +15,12 @@ from scipy.optimize import curve_fit as fit
 import FittingFunctions as fitFunc
 
 from AnalysisHelpers import (loadHDF5, getAvgPic, getBinData, getEnsembleHits, getEnsembleStatistics,
-                             handleFitting, sliceMultidimensionalData, groupMultidimensionalData, getNetLoss,
+                             handleFitting, groupMultidimensionalData, getNetLoss,
                              getAtomInPictureStatistics, normalizeData, fitDoubleGaussian,
                              getSurvivalData, getSurvivalEvents, unpackAtomLocations, guessGaussianPeaks,
                              calculateAtomThreshold, outputDataToMmaNotebook, getLoadingData, orderData,
-                             applyDataRange, postSelectOnAssembly, fitWithClass, getNetLossStats)
+                             postSelectOnAssembly, fitWithClass, getNetLossStats, organizeTransferData,
+                             getGenerationEvents, getGenStatistics)
 
 
 def analyzeCodeTimingData(num, talk=True, numTimes=3):
@@ -84,34 +85,76 @@ def analyzeNiawgWave(fileIndicator):
         return tPts, chan1, chan2, fftInfoC1, fftInfoC2
 
 
-def plotNiawg(fileIndicator, points=300):
+def analyzeScatterData(fileNumber, atomLocs1, connected=False, loadPic=1, transferPic=2, picsPerRep=3,
+                       subtractEdgeCounts=True,histSecondPeakGuess=False, manualThreshold=None,
+                       normalizeForLoadingRate=False, **transferOrganizeArgs):
     """
-    plots the first part of the niawg wave and the fourier transform of the total wave.
+        does all the post-selection conditions and only one import of the data. previously I did this by importing the data
+        for each condition.
+
+    :param fileNumber:
+    :param atomLocs1:
+    :param connected:
+    :param loadPic:
+    :param transferPic:
+    :param picsPerRep:
+    :param subtractEdgeCounts:
+    :param histSecondPeakGuess:
+    :param manualThreshold:
+    :param normalizeForLoadingRate:
+    :param transferOrganizeArgs:
+    :return:
     """
-    t, c1, c2, fftc1, fftc2 = analyzeNiawgWave(fileIndicator)
-    plot(t[:points], c1[:points], 'o:', label='Vertical Channel', markersize=4, linewidth=1)
-    plot(t[:points], c2[:points], 'o:', label='Horizontal Channel', markersize=4, linewidth=1)
-    title('Niawg Output, first ' + str(points) + ' points.')
-    ylabel('Relative Voltage (before NIAWG Gain)')
-    xlabel('Time (s)')
-    legend()
-    figure()
-    semilogy(fftc1['Freq'], abs(fftc1['Amp']) ** 2, 'o:', label='Vertical Channel', markersize=4, linewidth=1)
-    semilogy(fftc2['Freq'], abs(fftc2['Amp']) ** 2, 'o:', label='Horizontal Channel', markersize=4, linewidth=1)
-    title('Fourier Transform of NIAWG output')
-    ylabel('Transform amplitude')
-    xlabel('Frequency (Hz)')
-    legend()
-    # this is half the niawg sample rate. output is mirrored around x=0.
-    xlim(0, 160e6)
-    show()
+
+    (groupedData, atomLocs1, atomLocs2, keyName, repetitions,
+     key) = organizeTransferData(fileNumber, atomLocs1, atomLocs1, picsPerRep=picsPerRep,
+                                 **transferOrganizeArgs)
+    avgPic = getAvgPic(groupedData)
+    # initialize arrays
+    (pic1Data, pic2Data, atomCounts, bins, binnedData, thresholds, survivalData, survivalErrs,
+     loadingRate, pic1Atoms, pic2Atoms) = arr([[None] * len(atomLocs1)] * 11)
+    for i, (loc1, loc2) in enumerate(zip(atomLocs1, atomLocs2)):
+        pic1Data[i] = normalizeData(groupedData, loc1, loadPic, picsPerRep, subtractBorders=subtractEdgeCounts)
+        pic2Data[i] = normalizeData(groupedData, loc2, transferPic, picsPerRep, subtractBorders=subtractEdgeCounts)
+        atomCounts[i] = arr([a for a in arr(list(zip(pic1Data[i], pic2Data[i]))).flatten()])
+        bins[i], binnedData[i] = getBinData(10, pic1Data[i])
+        guess1, guess2 = guessGaussianPeaks(bins[i], binnedData[i])
+        guess = arr([max(binnedData[i]), guess1, 30, max(binnedData[i])*0.75,
+                     200 if histSecondPeakGuess is not None else histSecondPeakGuess, 10])
+        gaussianFitVals = fitDoubleGaussian(bins[i], binnedData[i], guess)
+        thresholds[i], thresholdFid = (((manualThreshold, 0) if manualThreshold is not None
+                                       else calculateAtomThreshold(gaussianFitVals)))
+        pic1Atoms[i], pic2Atoms[i] = [[] for _ in range(2)]
+        for point1, point2 in zip(pic1Data[i], pic2Data[i]):
+            pic1Atoms[i].append(point1 > thresholds[i])
+            pic2Atoms[i].append(point2 > thresholds[i])
+
+    key, psSurvivals, psErrors = [], [], []
+    for condition in range(len(pic2Atoms)):
+        temp_pic1Atoms, temp_pic2Atoms = postSelectOnAssembly(pic1Atoms, pic2Atoms, condition+1,
+                                                              connected=connected)
+        if len(temp_pic1Atoms[0]) != 0:
+            for i in range(len(atomLocs1)):
+                survivalList = getSurvivalEvents(temp_pic1Atoms[i], temp_pic2Atoms[i])
+                survivalData[i], survivalErrs[i], loadingRate[i] = getSurvivalData(survivalList, repetitions)
+            # weight the sum with loading percentage
+            if normalizeForLoadingRate:
+                psSurvivals.append(sum(survivalData*loadingRate)/sum(loadingRate))
+                # the errors here are not normalized for the loading rate!
+                psErrors.append(np.sqrt(np.sum(survivalErrs ** 2)) / len(atomLocs1))
+            else:
+                psSurvivals.append(np.mean(survivalData))
+                psErrors.append(np.sqrt(np.sum(survivalErrs**2))/len(atomLocs1))
+            key.append(condition+1)
+    return key, psSurvivals, psErrors
 
 
 def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPerRep=2, manualThreshold=None,
                              fitModule=None, window=None, xMin=None, xMax=None, yMin=None, yMax=None, dataRange=None,
                              histSecondPeakGuess=None, keyOffset=0, sumAtoms=True, outputMma=False, dimSlice=None,
                              varyingDim=None, subtractEdgeCounts=True, loadPic=0, transferPic=1, postSelectionPic=None,
-                             groupData=False, quiet=False, postSelectionConnected=False):
+                             groupData=False, quiet=False, postSelectionConnected=False, getGenerationStats=True,
+                             normalizeForLoadingRate=False):
     """
     Standard data analysis package for looking at survival rates throughout an experiment.
     Returns key, survivalData, survivalErrors
@@ -141,48 +184,15 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
     :param postSelectionPic:
     :return:
     """
-    atomLocs1 = unpackAtomLocations(atomLocs1)
-    atomLocs2 = unpackAtomLocations(atomLocs2)
-    # ### Load Fits File & Get Dimensions
-    # Get the array from the fits file. That's all I care about.
-    rawData, keyName, hdf5Key, repetitions = loadHDF5(fileNumber)
-    if key is None:
-        key = hdf5Key
-    if len(key.shape) == 1:
-        key -= keyOffset
-    # window the images images.
-    if window is not None:
-        xMin, yMin, xMax, yMax = window
-    rawData = np.copy(arr(rawData[:, yMin:yMax, xMin:xMax]))
-    # ## Initial Data Analysis
-    # Group data into variations.
-    numberOfPictures = int(rawData.shape[0])
-    if groupData:
-        key = [1]
-        repetitions = int(numberOfPictures / picsPerRep)
-    # numberOfRuns = int(numberOfPictures / picsPerRep)
-    numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
-    groupedDataRaw = rawData.reshape((numberOfVariations, repetitions * picsPerRep, rawData.shape[1],
-                                      rawData.shape[2]))
-    (key, slicedData, otherDimValues,
-     varyingDim) = sliceMultidimensionalData(dimSlice, key, groupedDataRaw, varyingDim=varyingDim)
-    slicedOrderedData, key, otherDimValues = orderData(slicedData, key, keyDim=varyingDim,
-                                                       otherDimValues=otherDimValues)
-    key, groupedData = applyDataRange(dataRange, slicedOrderedData, key)
-    # gather some info about the run
-    numberOfPictures = int(groupedData.shape[0] * groupedData.shape[1])
-    # numberOfRuns = int(numberOfPictures / picsPerRep)
-    numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
-    if not quiet:
-        print('Total # of Pictures:', numberOfPictures, '\n', 'Number of Variations:', numberOfVariations)
-        print('Data Shape:', groupedData.shape)
-    if not len(key) == numberOfVariations:
-        raise RuntimeError("The Length of the key (" + str(len(key)) + ") doesn't match the data found ("
-                           + str(numberOfVariations) + ").")
+    (groupedData, atomLocs1, atomLocs2, keyName,
+     repetitions, key) = organizeTransferData(fileNumber, atomLocs1, atomLocs2, key=key, window=window, xMin=xMin, xMax=xMax,
+                                         yMin=yMin, yMax=yMax, dataRange=dataRange, keyOffset=keyOffset,
+                                         picsPerRep=picsPerRep, dimSlice=dimSlice, varyingDim=varyingDim,
+                                         groupData=groupData, quiet=quiet)
     avgPic = getAvgPic(groupedData)
     # initialize arrays
     (pic1Data, pic2Data, atomCounts, bins, binnedData, thresholds, survivalData, survivalErrs,
-     loadingRate, pic1Atoms, pic2Atoms) = arr([[None] * len(atomLocs1)] * 11)
+     loadingRate, pic1Atoms, pic2Atoms, genAvgs, genErrs) = arr([[None] * len(atomLocs1)] * 13)
     for i, (loc1, loc2) in enumerate(zip(atomLocs1, atomLocs2)):
         pic1Data[i] = normalizeData(groupedData, loc1, loadPic, picsPerRep, subtractBorders=subtractEdgeCounts)
         pic2Data[i] = normalizeData(groupedData, loc2, transferPic, picsPerRep, subtractBorders=subtractEdgeCounts)
@@ -190,7 +200,7 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
         bins[i], binnedData[i] = getBinData(10, pic1Data[i])
         guess1, guess2 = guessGaussianPeaks(bins[i], binnedData[i])
         guess = arr([max(binnedData[i]), guess1, 30, max(binnedData[i])*0.75,
-                     200 if histSecondPeakGuess else histSecondPeakGuess, 10])
+                     200 if histSecondPeakGuess is not None else histSecondPeakGuess, 10])
         gaussianFitVals = fitDoubleGaussian(bins[i], binnedData[i], guess)
         thresholds[i], thresholdFid = (((manualThreshold, 0) if manualThreshold is not None
                                        else calculateAtomThreshold(gaussianFitVals)))
@@ -200,11 +210,17 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
             pic2Atoms[i].append(point2 > thresholds[i])
 
     if postSelectionPic is not None:
-        pic1Atoms, pic2Atoms = postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic, postSelectionConnected)
+        pic1Atoms, pic2Atoms = postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic,
+                                                    connected=postSelectionConnected)
 
     for i in range(len(atomLocs1)):
         survivalList = getSurvivalEvents(pic1Atoms[i], pic2Atoms[i])
         survivalData[i], survivalErrs[i], loadingRate[i] = getSurvivalData(survivalList, repetitions)
+        if getGenerationStats:
+            genList = getGenerationEvents(pic1Atoms[i], pic2Atoms[i])
+            genAvgs[i], genErrs[i] = getGenStatistics(genList, repetitions)
+        else:
+            genAvgs[i], genErrs[i] = [None, None]
     (key, locationsList, survivalErrs, survivalData, loadingRate,
      otherDims) = groupMultidimensionalData(key, varyingDim, atomLocs1, survivalData, survivalErrs, loadingRate)
     # need to change for loop!
@@ -218,15 +234,19 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
     avgSurvivalData, avgSurvivalErr, avgFit = [None]*3
     if sumAtoms:
         # weight the sum with loading percentage
-        avgSurvivalData = sum(survivalData*loadingRate)/sum(loadingRate)
+        if normalizeForLoadingRate:
+            avgSurvivalData = sum(survivalData*loadingRate)/sum(loadingRate)
+        else:
+            avgSurvivalData = np.mean(survivalData)
         avgSurvivalErr = np.sqrt(np.sum(survivalErrs**2))/len(atomLocs1)
+
         if fitModule is not None:
             avgFit, _ = fitWithClass(fitModule, key, avgSurvivalData)
     if outputMma:
         outputDataToMmaNotebook(fileNumber, survivalData, survivalErrs, loadingRate, key)
     return (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate,
             pic1Data, keyName, key, repetitions, thresholds, fits,
-            avgSurvivalData, avgSurvivalErr, avgFit, avgPic, otherDims, locationsList)
+            avgSurvivalData, avgSurvivalErr, avgFit, avgPic, otherDims, locationsList, genAvgs, genErrs)
 
 
 def standardLoadingAnalysis(fileNum, atomLocations, picsPerRep=1, analyzeTogether=False, loadingPicture=0,

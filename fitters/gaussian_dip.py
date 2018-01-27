@@ -6,6 +6,10 @@ def center():
     return 1
 
 
+def args():
+    return 'Amp', 'Center', r'$\sigma$', 'offset'
+
+
 def f(x, A1, x01, sig1, offset):
     """
     The normal function call for this function. Performs checks on valid arguments, then calls the "raw" function.

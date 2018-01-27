@@ -20,6 +20,7 @@ from scipy.optimize import minimize, basinhopping, curve_fit as fit
 import scipy.special as special
 import scipy.interpolate as interp
 
+
 import MarksConstants as consts
 import FittingFunctions as fitFunc
 
@@ -29,77 +30,11 @@ from copy import deepcopy
 dataAddress = None
 
 
-def organizeTransferData(fileNumber, atomLocs1, atomLocs2, key=None, window=None, xMin=None, xMax=None, yMin=None,
-                         yMax=None, dataRange=None, keyOffset=0, dimSlice=None, varyingDim=None, groupData=False,
-                         quiet=False, picsPerRep=2 ):
-    atomLocs1 = unpackAtomLocations(atomLocs1)
-    atomLocs2 = unpackAtomLocations(atomLocs2)
-    # ### Load Fits File & Get Dimensions
-    # Get the array from the fits file. That's all I care about.
-    rawData, keyName, hdf5Key, repetitions = loadHDF5(fileNumber)
-    if key is None:
-        key = hdf5Key
-    if len(key.shape) == 1:
-        key -= keyOffset
-    # window the images images.
-    if window is not None:
-        xMin, yMin, xMax, yMax = window
-    rawData = np.copy(arr(rawData[:, yMin:yMax, xMin:xMax]))
-    # ## Initial Data Analysis
-    # Group data into variations.
-    numberOfPictures = int(rawData.shape[0])
-    if groupData:
-        key = [1]
-        repetitions = int(numberOfPictures / picsPerRep)
-    # numberOfRuns = int(numberOfPictures / picsPerRep)
-    numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
-    groupedDataRaw = rawData.reshape((numberOfVariations, repetitions * picsPerRep, rawData.shape[1],
-                                      rawData.shape[2]))
-    (key, slicedData, otherDimValues,
-     varyingDim) = sliceMultidimensionalData(dimSlice, key, groupedDataRaw, varyingDim=varyingDim)
-    slicedOrderedData, key, otherDimValues = orderData(slicedData, key, keyDim=varyingDim,
-                                                       otherDimValues=otherDimValues)
-    key, groupedData = applyDataRange(dataRange, slicedOrderedData, key)
-    # gather some info about the run
-    numberOfPictures = int(groupedData.shape[0] * groupedData.shape[1])
-    # numberOfRuns = int(numberOfPictures / picsPerRep)
-    numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
-    if not quiet:
-        print('Total # of Pictures:', numberOfPictures, '\n', 'Number of Variations:', numberOfVariations)
-        print('Data Shape:', groupedData.shape)
-    if not len(key) == numberOfVariations:
-        raise RuntimeError("The Length of the key (" + str(len(key)) + ") doesn't match the data found ("
-                           + str(numberOfVariations) + ").")
-    return groupedData, atomLocs1, atomLocs2, keyName, repetitions, key
-
-
 def modFitFunc(hBiasIn, vBiasIn, depthIn, *testBiases):
     newDepths = extrapolateModDepth(hBiasIn, vBiasIn, depthIn, testBiases)
     if newDepths is None:
         return 1e9
     return np.std(newDepths)
-
-
-def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias):
-    result, modDepth = extrapolateEveningBiases(prev_H_Bias, prev_V_Bias, prevDepth);
-    new_H_Bias = result['x'][:len(prev_H_Bias)]
-    new_V_Bias = result['x'][len(prev_H_Bias):]
-    print('Horizontal Changes')
-    for prev, new in zip(prev_H_Bias, new_H_Bias):
-        print(prev, '->', new)
-    print('Vertical Changes')
-    for prev, new in zip(prev_V_Bias, new_V_Bias):
-        print(prev, '->', new, (new - prev) / prev, '%')
-    print('Previous Depth Variation:', np.std(prevDepth), ', mean:', np.mean(prevDepth))
-    print('Expected new Depth Variation:', np.std(modDepth))
-    print('New Vertical Biases \n[',end='')
-    for v in new_V_Bias:
-        print(v, ',', end=' ')
-    print(']\nNew Horizontal Biases \n[', end='')
-    for h in new_H_Bias:
-        print(h, ',', end=' ')
-    print(']\n')
-    print(result['success'])
 
 
 def extrapolateEveningBiases(hBiasIn, vBiasIn, depthIn):
@@ -264,8 +199,8 @@ def getKeyFromHDF5(file):
     for var in file['Master-Parameters']['Seq #1 Variables']:
         if not file['Master-Parameters']['Seq #1 Variables'][var].attrs['Constant']:
     # to look at older files...
-    #for var in file['Master-Parameters']['Variables']:
-    #    if not file['Master-Parameters']['Variables'][var].attrs['Constant']:
+#    for var in file['Master-Parameters']['Variables']:
+#        if not file['Master-Parameters']['Variables'][var].attrs['Constant']:
             foundOne = True
             keyNames.append(var)
             keyValues.append(arr(file['Master-Parameters']['Seq #1 Variables'][var]))
@@ -1337,8 +1272,10 @@ def calculateAtomThreshold(fitVals):
     return threshold, fidelity
 
 
-def postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic, connected=False):
-    ensembleHits = getEnsembleHits(pic1Atoms, postSelectionPic, requireConsecutive=connected)
+<<<<<<< HEAD
+def postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic):
+    ensembleHits = ((getEnsembleHits(pic1Atoms, postSelectionPic) if True
+                    else getEnsembleHits(pic2Atoms, postSelectionPic)))
     # ps for post-selected
     psPic1Atoms, psPic2Atoms = [[[] for _ in pic1Atoms] for _ in range(2)]
     for i, hit in enumerate(ensembleHits):
@@ -1348,6 +1285,21 @@ def postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic, connected=False
                 atom2.append(orig2[i])
             # else nothing!
     print('Post-Selecting on assembly condition:', postSelectionPic, '. Number of hits:', len(psPic1Atoms[0]))
+=======
+def postSelectOnAssembly(pic1Atoms, pic2Atoms, hitCondition, connected=False):
+    ensembleHits = getEnsembleHits(pic1Atoms, hitCondition=hitCondition, connected=connected)
+    # ps for post-selected
+    psPic1Atoms, psPic2Atoms = [[[] for _ in range(len(pic1Atoms))] for _ in range(2)]
+    for i, ensembleHit in enumerate(ensembleHits):
+        if ensembleHit:
+            for atomInc in range(len(psPic1Atoms)):
+                psPic1Atoms[atomInc].append(pic1Atoms[atomInc][i])
+                psPic2Atoms[atomInc].append(pic2Atoms[atomInc][i])
+        # else nothing!
+    psPic1Atoms = arr(psPic1Atoms)
+    psPic2Atoms = arr(psPic2Atoms)
+    print('Post-Selecting on Condition:', hitCondition, '. Hits:', len(psPic2Atoms[0]))
+>>>>>>> 2aa20b43f0a60d509d2c74e69d9e3d993d4c46e2
     return psPic1Atoms, psPic2Atoms
 
 
@@ -1429,58 +1381,6 @@ def getBinData(binWidth, data):
     binCenters = binsBorders[0:binsBorders.size-1]
     return binCenters, binnedData
 
-
-def getGenStatistics(genData, repetitionsPerVariation):
-    # Take the previous data, which includes entries when there was no atom in the first picture, and convert it to
-    # an array of just loaded and survived or loaded and died.
-    genAverages = np.array([])
-    genErrors = np.array([])
-    if genData.size < repetitionsPerVariation:
-        repetitionsPerVariation = genData.size
-    for variationInc in range(0, int(genData.size / repetitionsPerVariation)):
-        genList = np.array([])
-        for repetitionInc in range(0, repetitionsPerVariation):
-            if genData[variationInc * repetitionsPerVariation + repetitionInc] != -1:
-                genList = np.append(genList, genData[variationInc * repetitionsPerVariation + repetitionInc])
-        if genList.size == 0:
-            # catch the case where there's no relevant data, typically if laser becomes unlocked.
-            genErrors = np.append(genErrors, [0])
-            genAverages = np.append(genAverages, [0])
-        else:
-            # normal case
-            genErrors = np.append(genErrors, np.std(genList) / np.sqrt(genList.size))
-            genAverages = np.append(genAverages, np.average(genList))
-    return genAverages, genErrors
-
-
-def getGenerationEvents(pic1Atoms, pic2Atoms):
-    """
-    This is more or less the opposite of "GetSurvivalEvents". It counts events as +1 when you start with no atom and end
-    with an atom. This could be used to characterize all sorts of things, e.g. hopping, backgruond catches, etc.
-
-    :param pic1Atoms:
-    :param pic2Atoms:
-    :return:
-    """
-    # this will include entries for when there is no atom in the first picture.
-    genData = np.array([])
-    genData.astype(int)
-    # flattens variations & locations?
-    # if len(data.shape) == 4:
-    #     data.reshape((data.shape[0] * data.shape[1], data.shape[2], data.shape[3]))
-
-    # this doesn't take into account loss, since these experiments are feeding-back on loss.
-    for atom1, atom2 in zip(pic1Atoms, pic2Atoms):
-        if atom1:
-            # not interesting for generation
-            genData = np.append(genData, [-1])
-        elif atom2:
-            # atom was generated.
-            genData = np.append(genData, [1])
-        else:
-            # never an atom.
-            genData = np.append(genData, [0])
-    return genData
 
 def getSurvivalEvents(pic1Atoms, pic2Atoms):
     """
@@ -2051,7 +1951,11 @@ def getAtomInPictureStatistics(atomsInPicData, reps):
     return stats
 
 
+<<<<<<< HEAD
 def getEnsembleHits(atomsList, hitCondition=None, requireConsecutive=False):
+=======
+def getEnsembleHits(atomsList, hitCondition=None, connected=False):
+>>>>>>> 2aa20b43f0a60d509d2c74e69d9e3d993d4c46e2
     """
     This function determines whether an ensemble of atoms was hit in a given picture. Give it whichever
     picture data you need.
@@ -2063,6 +1967,7 @@ def getEnsembleHits(atomsList, hitCondition=None, requireConsecutive=False):
     if hitCondition is None:
         hitCondition = np.ones(atomsList.shape[0])
     ensembleHits = []
+<<<<<<< HEAD
     if type(hitCondition) is int:
         # condition is, e.g, 5 out of 6 of the ref pic.
         for inc, atoms in enumerate(transpose(atomsList)):
@@ -2087,6 +1992,26 @@ def getEnsembleHits(atomsList, hitCondition=None, requireConsecutive=False):
                     ensembleHits[inc] = False
                 if atom and not needAtom:
                     ensembleHits[inc] = False
+=======
+    for inc, atoms in enumerate(transpose(atomsList)):
+        if hitCondition is None:
+            ensembleHits.append(True)
+            for atom in atoms:
+                if not atom:
+                    ensembleHits[inc] = False
+        else:
+            continuous = True
+            atomNum = 0
+            for atom in atoms:
+                if atom:
+                    atomNum += 1
+                elif connected and (0 < atomNum < hitCondition):
+                    continuous = False
+            if connected:
+                ensembleHits.append(atomNum == hitCondition and continuous)
+            else:
+                ensembleHits.append(atomNum == hitCondition)
+>>>>>>> 2aa20b43f0a60d509d2c74e69d9e3d993d4c46e2
     return ensembleHits
 
 
