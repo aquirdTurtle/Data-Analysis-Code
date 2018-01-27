@@ -18,6 +18,29 @@ import MarksConstants as consts
 import FittingFunctions as fitFunc
 
 
+def plotNiawg(fileIndicator, points=300):
+    """
+    plots the first part of the niawg wave and the fourier transform of the total wave.
+    """
+    t, c1, c2, fftc1, fftc2 = analyzeNiawgWave(fileIndicator)
+    plot(t[:points], c1[:points], 'o:', label='Vertical Channel', markersize=4, linewidth=1)
+    plot(t[:points], c2[:points], 'o:', label='Horizontal Channel', markersize=4, linewidth=1)
+    title('Niawg Output, first ' + str(points) + ' points.')
+    ylabel('Relative Voltage (before NIAWG Gain)')
+    xlabel('Time (s)')
+    legend()
+    figure()
+    semilogy(fftc1['Freq'], abs(fftc1['Amp']) ** 2, 'o:', label='Vertical Channel', markersize=4, linewidth=1)
+    semilogy(fftc2['Freq'], abs(fftc2['Amp']) ** 2, 'o:', label='Horizontal Channel', markersize=4, linewidth=1)
+    title('Fourier Transform of NIAWG output')
+    ylabel('Transform amplitude')
+    xlabel('Frequency (Hz)')
+    legend()
+    # this is half the niawg sample rate. output is mirrored around x=0.
+    xlim(0, 160e6)
+    show()
+
+
 def standardImages(data,
                    # Cosmetic Parameters
                    scanType="", xLabel="", plotTitle="", convertKey=False, showPictures=True, showPlot=True,

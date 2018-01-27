@@ -8,9 +8,27 @@ import plotly.graph_objs as go
 from plotly.offline import iplot
 from plotly.tools import make_subplots
 from MainAnalysis import standardAssemblyAnalysis, standardLoadingAnalysis, standardTransferAnalysis, \
-    AnalyzeRearrangeMoves
+    AnalyzeRearrangeMoves, analyzeScatterData
 import FittingFunctions as fitFunc
 from pandas import DataFrame
+from fitters import linear
+from scipy.optimize import curve_fit
+
+
+def ScatterData(fileNumber, atomLocs1, **scatterOptions):
+    key, psSurvivals, psErrors = analyzeScatterData(fileNumber, atomLocs1, **scatterOptions)
+    surv = arr(psSurvivals).flatten()
+    err = arr(psErrors).flatten()
+    print(surv, err, key)
+    fitxpts = np.linspace(min(key), max(key), 1000)
+    fitVals, cov = curve_fit(linear.f, key, surv, p0=[linear.guess(key, surv)], sigma=err, absolute_sigma=True)
+    core = go.Scatter(x=key, y=surv, mode='markers', error_y=dict(type='data', array=err, visible=True))
+    fits = go.Scatter(x=fitxpts, y=arr(linear.f(fitxpts, *fitVals)), mode = 'line', name='fit')
+    l = go.Layout(title='Survival Vs. Atoms Loaded', xaxis={'title': 'Atoms loaded'}, yaxis=dict(title='Survival %'))
+    f = go.Figure(data=[core, fits], layout=l)
+    iplot(f)
+    print('Fit Vals:', fitVals)
+    print('Fit errs:', np.sqrt(np.diag(cov)))
 
 
 def Survival(fileNumber, atomLocs, **TransferArgs):
@@ -18,25 +36,17 @@ def Survival(fileNumber, atomLocs, **TransferArgs):
     return Transfer(fileNumber, atomLocs, atomLocs, **TransferArgs)
 
 
-def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, key=None, manualThreshold=None,
-             fitType=None, window=None, xMin=None, xMax=None, yMin=None, yMax=None, dataRange=None,
-             histSecondPeakGuess=None, keyOffset=0, sumAtoms=True, outputMma=False, dimSlice=None,
-             varyingDim=None, showCounts=False, loadPic=0, transferPic=1, postSelectionPic=None,
-             subtractEdgeCounts=True, picsPerRep=2, groupData=False, postSelectionConnected=False):
+def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, key=None, fitModule=None,
+             showCounts=False, showGenerationData=False, **standardTransferArgs):
     """
     Standard data analysis package for looking at survival rates throughout an experiment.
     Returns key, survivalData, survivalErrors
     """
+    res = standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=key, fitModule=fitModule,
+                                   **standardTransferArgs)
     (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate, pic1Data, keyName, key,
      repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPic, otherDimValues,
-     locsList) = standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=key, picsPerRep=picsPerRep,
-                                          manualThreshold=manualThreshold, fitModule=fitType, window=window, xMin=xMin,
-                                          xMax=xMax, yMin=yMin, yMax=yMax, dataRange=dataRange,
-                                          histSecondPeakGuess=histSecondPeakGuess, keyOffset=keyOffset,
-                                          sumAtoms=sumAtoms, outputMma=outputMma, dimSlice=dimSlice,
-                                          varyingDim=varyingDim, loadPic=loadPic, transferPic=transferPic,
-                                          postSelectionPic=postSelectionPic, postSelectionConnected=postSelectionConnected,subtractEdgeCounts=subtractEdgeCounts,
-                                          groupData=groupData)
+     locsList, genAvgs, genErrs) = res
     if not show:
         return key, survivalData, survivalErrs, loadingRate
 
@@ -59,9 +69,9 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, key=None, manualThresh
     avgFig.append(go.Heatmap(z=avgPic, colorscale='Viridis', colorbar=go.ColorBar(x=1, y=0.15, len=0.3)))
     centers = []
     # Fit displaying...
-    if fitType is not None:
+    if fitModule is not None:
         fitDataFrame = DataFrame()
-        for argnum, arg in enumerate(fitType.args()):
+        for argnum, arg in enumerate(fitModule.args()):
             vals = []
             for fitData in fits:
                 vals.append(fitData['vals'][argnum])
@@ -89,16 +99,20 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, key=None, manualThresh
         fitDataFrame.index = indexStr
         display(fitDataFrame)
 
-    for data, err, loc, color, legend, fitData in zip(survivalData, survivalErrs, locsList, pltColors,
-                                                      legends, fits):
+    for data, err, loc, color, legend, fitData, gen, genErr in zip(survivalData, survivalErrs, locsList, pltColors,
+                                                      legends, fits, genAvgs, genErrs):
         mainPlot.append(go.Scatter(x=key, y=data, opacity=alphaVal, mode="markers", name=legend,
                                    error_y={"type": 'data', "array": err, 'color': color},
                                    marker={'color': color}, legendgroup=legend))
-        if fitType is not None:
+        if showGenerationData:
+            mainPlot.append(go.Scatter(x=key, y=gen, opacity=alphaVal, mode="markers", name=legend,
+                                       error_y={"type": 'data', "array": genErr, 'color': color},
+                                       marker={'color': color, 'symbol': 'star'}, legendgroup=legend, showlegend=False))
+        if fitModule is not None:
             if fitData['vals'] is None:
                 print(loc, 'Fit Failed!')
                 continue
-            centerIndex = fitType.center()
+            centerIndex = fitModule.center()
             if centerIndex is not None:
                 centers.append(fitData['vals'][centerIndex])
             mainPlot.append(go.Scatter(x=fitData['x'], y=fitData['nom'], line={'color': color},
@@ -111,23 +125,18 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, key=None, manualThresh
                                        legendgroup=legend, fill='tonexty', showlegend=False,
                                        hoverinfo='none', fillcolor='rgba(7, 164, 181, ' + str(alphaVal/2) + ')'))
 
-    if fitType is not None and fitType.center() is not None:
-        print('Fit Center Statistics:')
+    if fitModule is not None and fitModule.center() is not None:
+        print('Fit Centers:')
         transferPic = np.zeros(avgPic.shape)
         for i, loc in enumerate(atomLocs1):
             transferPic[loc[0], loc[1]] = np.mean(survivalData[i])
-        # transferFig = [go.Heatmap(z=transferPic, colorscale='Viridis', colorbar=go.ColorBar(x=1, y=0.15, len=0.3))]
-        # layout = go.Layout(title='Transfer Pic')
-        # iplot(go.Figure(data=transferFig, layout=layout))
         print(centers)
-        display(getStats(centers))
         fitCenterPic = np.ones(avgPic.shape) * np.mean(centers)
         for i, loc in enumerate(atomLocs1):
             fitCenterPic[loc[0], loc[1]] = centers[i]
         fitCenterFig = [go.Heatmap(z=fitCenterPic, colorscale='Viridis', colorbar=go.ColorBar(x=1, y=0.15, len=0.3))]
         layout = go.Layout(title='Fit-Center Pic')
         iplot(go.Figure(data=fitCenterFig, layout=layout))
-
 
     # countsFig.append(go.Scatter(y=atomCounts, mode='markers', opacity=0.1, marker={'color':color, 'size':1},
     #            legendgroup='avg', showlegend=False))
@@ -155,7 +164,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, key=None, manualThresh
     mainPlot.append(go.Scatter(x=key, y=avgSurvivalData, mode="markers", name='avg',
                                error_y={"type": 'data', "array": avgSurvivalErr, 'color': '#000000'},
                                marker={'color': '#000000'}, legendgroup='avg'))
-    if fitType is not None:
+    if fitModule is not None:
         mainPlot.append(go.Scatter(x=avgFit['x'], y=avgFit['nom'], line={'color': '#000000'},
                                    legendgroup='avg', showlegend=False, opacity=alphaVal))
         mainPlot.append(go.Scatter(x=avgFit['x'], y=avgFit['nom'] + avgFit['std'],
@@ -234,7 +243,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, key=None, manualThresh
     fig['layout']['yaxis1'].update(title=scanType + " %", range=[0, 1])
     fig['layout']['xaxis1'].update(title=str(keyName))
     iplot(fig)
-    return key, survivalData, survivalErrs, loadingRate, fits, avgFit
+    return key, survivalData, survivalErrs, loadingRate, fits, avgFit, genAvgs, genErrs
 
 
 def Loading(fileNum, atomLocations, showLoadingRate=True, showLoadingPic=False, plotCounts=False, countsMain=False,
