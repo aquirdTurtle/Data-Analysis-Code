@@ -199,8 +199,8 @@ def getKeyFromHDF5(file):
     for var in file['Master-Parameters']['Seq #1 Variables']:
         if not file['Master-Parameters']['Seq #1 Variables'][var].attrs['Constant']:
     # to look at older files...
-#    for var in file['Master-Parameters']['Variables']:
-#        if not file['Master-Parameters']['Variables'][var].attrs['Constant']:
+    #for var in file['Master-Parameters']['Variables']:
+    #    if not file['Master-Parameters']['Variables'][var].attrs['Constant']:
             foundOne = True
             keyNames.append(var)
             keyValues.append(arr(file['Master-Parameters']['Seq #1 Variables'][var]))
