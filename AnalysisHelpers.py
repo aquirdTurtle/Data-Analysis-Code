@@ -51,7 +51,6 @@ def organizeTransferData(fileNumber, atomLocs1, atomLocs2, key=None, window=None
     if groupData:
         key = [1]
         repetitions = int(numberOfPictures / picsPerRep)
-    # numberOfRuns = int(numberOfPictures / picsPerRep)
     numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
     groupedDataRaw = rawData.reshape((numberOfVariations, repetitions * picsPerRep, rawData.shape[1],
                                       rawData.shape[2]))
@@ -62,7 +61,6 @@ def organizeTransferData(fileNumber, atomLocs1, atomLocs2, key=None, window=None
     key, groupedData = applyDataRange(dataRange, slicedOrderedData, key)
     # gather some info about the run
     numberOfPictures = int(groupedData.shape[0] * groupedData.shape[1])
-    # numberOfRuns = int(numberOfPictures / picsPerRep)
     numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
     if not quiet:
         print('Total # of Pictures:', numberOfPictures, '\n', 'Number of Variations:', numberOfVariations)
@@ -181,27 +179,34 @@ def getLabels(plotType):
     return xlabelText, titleText
 
 
-def fitWithClass(fitClass, key, vals):
+def fitWithClass(fitClass, key, vals, errs=None):
     """
     fitClass is an class object *gasp*
     """
-    xFit = (np.linspace(min(key), max(key), 1000) if len(key.shape) == 1 else np.linspace(min(transpose(key)[0]), max(transpose(key)[0]), 1000))
-    fitNom = fitStd = centerIndex = fitValues = fitErrs = fitCovs = None
+    key = arr(key)
+    xFit = (np.linspace(min(key), max(key), 1000) if len(key.shape) == 1 else np.linspace(min(transpose(key)[0]),
+                                                                                          max(transpose(key)[0]), 1000))
+    fitNom = fitStd = fitValues = fitErrs = fitCovs = None
     from numpy.linalg import LinAlgError
     try:
         # 3 parameters
         if len(key) < len(signature(fitClass.f).parameters) - 1:
             print('Not enough data points to constrain a fit!')
             raise RuntimeError()
-        fitValues, fitCovs = fit(fitClass.f, key, vals, p0=[fitClass.guess(key, vals)])
+        if errs is not None:
+            fitValues, fitCovs = fit(fitClass.f, key, vals, p0=[fitClass.guess(key, vals)], sigma=errs,
+                                     absolute_sigma=True)
+        else:
+            fitValues, fitCovs = fit(fitClass.f, key, vals, p0=[fitClass.guess(key, vals)])
         fitErrs = np.sqrt(np.diag(fitCovs))
         corr_vals = unc.correlated_values(fitValues, fitCovs)
         fitUncObject = fitClass.f_unc(xFit, *corr_vals)
         fitNom = unp.nominal_values(fitUncObject)
         fitStd = unp.std_devs(fitUncObject)
         fitFinished = True
-    except (RuntimeError, LinAlgError, ValueError):
+    except (RuntimeError, LinAlgError, ValueError) as e:
         warn('Data Fit Failed!')
+        print(e)
         fitFinished = False
     fitInfo = {'x': xFit, 'nom': fitNom, 'std': fitStd, 'vals': fitValues, 'errs': fitErrs, 'cov': fitCovs}
     return fitInfo, fitFinished
@@ -289,18 +294,23 @@ def getPicsFromHDF5(file):
     return pics
 
 
-def loadHDF5(fileId):
+def loadHDF5(fileId, quiet=False):
     """
     Loads the key info from the hdf5 file and returns it.
     returns pics, keyName, key, reps
 
     :param fileId:
+    :param quiet:
     :return:
     """
+    if not quiet:
+        print('Loading HDF5 File...', end='')
     file = openHDF5(fileId)
     keyName, key = getKeyFromHDF5(file)
     reps = file['Master-Parameters']['Repetitions'][0]
     pics = getPicsFromHDF5(file)
+    if not quiet:
+        print('Loaded File Successfully.')
     return pics, keyName, key, reps
 
 

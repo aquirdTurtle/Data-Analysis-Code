@@ -12,23 +12,53 @@ from MainAnalysis import standardAssemblyAnalysis, standardLoadingAnalysis, stan
 import FittingFunctions as fitFunc
 from pandas import DataFrame
 from fitters import linear
-from scipy.optimize import curve_fit
 
 
 def ScatterData(fileNumber, atomLocs1, **scatterOptions):
-    key, psSurvivals, psErrors = analyzeScatterData(fileNumber, atomLocs1, **scatterOptions)
+    (key, psSurvivals, psErrors, fitData, fitFin, survivalData, survivalErrs,
+     survivalFits) = analyzeScatterData(fileNumber, atomLocs1, **scatterOptions)
     surv = arr(psSurvivals).flatten()
     err = arr(psErrors).flatten()
-    print(surv, err, key)
-    fitxpts = np.linspace(min(key), max(key), 1000)
-    fitVals, cov = curve_fit(linear.f, key, surv, p0=[linear.guess(key, surv)], sigma=err, absolute_sigma=True)
-    core = go.Scatter(x=key, y=surv, mode='markers', error_y=dict(type='data', array=err, visible=True))
-    fits = go.Scatter(x=fitxpts, y=arr(linear.f(fitxpts, *fitVals)), mode = 'line', name='fit')
+    # print(surv, err, key)
+    mainPlot = []
+    color = '#000000'
+    legend = 'Site-Avg'
+    mainPlot.append(go.Scatter(x=key, y=surv, mode='markers',
+                               error_y=dict(type='data', array=err, visible=True, color=color),
+                               marker={'color': color}, name=legend, legendgroup=legend))
+    mainPlot.append(go.Scatter(x=fitData['x'], y=arr(linear.f(fitData['x'], *fitData['vals'])), mode='line',
+                               line={'color': color}, legendgroup=legend, showlegend=False))
+    alphaVal = 0.5
+    mainPlot.append(go.Scatter(x=fitData['x'], y=fitData['nom'], line={'color': color},
+                               legendgroup=legend, showlegend=False))
+    mainPlot.append(go.Scatter(x=fitData['x'], y=fitData['nom'] + fitData['std'],
+                               opacity=alphaVal / 2, line={'color': color},
+                               legendgroup=legend, showlegend=False, hoverinfo='none'))
+    mainPlot.append(go.Scatter(x=fitData['x'], y=fitData['nom'] - fitData['std'],
+                               opacity=alphaVal / 2, line={'color': color},
+                               legendgroup=legend, fill='tonexty', showlegend=False,
+                               hoverinfo='none', fillcolor='rgba(0, 0, 0, ' + str(alphaVal / 2) + ')'))
+    legends = [str(loc) for loc in atomLocs1]
+    pltColors, pltColors2 = getColors(len(atomLocs1) + 1)
+    for atomData, color, fit, legend in zip(survivalData, pltColors, survivalFits, legends):
+        mainPlot.append(go.Scatter(x=key, y=atomData, mode='markers',
+                                   error_y=dict(type='data', array=err, visible=True, color=color),
+                                   marker={'color': color}, legendgroup=legend, name=legend))
+        mainPlot.append(go.Scatter(x=fit['x'], y=fit['nom'], line={'color': color},
+                                   legendgroup=legend, showlegend=False))
+        mainPlot.append(go.Scatter(x=fit['x'], y=fit['nom'] + fit['std'],
+                                   opacity=alphaVal / 2, line={'color': color},
+                                   legendgroup=legend, showlegend=False, hoverinfo='none'))
+        mainPlot.append(go.Scatter(x=fit['x'], y=fit['nom'] - fit['std'],
+                                   opacity=alphaVal / 2, line={'color': color},
+                                   legendgroup=legend, fill='tonexty', showlegend=False,
+                                   hoverinfo='none', fillcolor='rgba(0, 0, 0, ' + str(alphaVal / 2) + ')'))
+
     l = go.Layout(title='Survival Vs. Atoms Loaded', xaxis={'title': 'Atoms loaded'}, yaxis=dict(title='Survival %'))
-    f = go.Figure(data=[core, fits], layout=l)
+    f = go.Figure(data=mainPlot, layout=l)
     iplot(f)
-    print('Fit Vals:', fitVals)
-    print('Fit errs:', np.sqrt(np.diag(cov)))
+    print('Fit Vals:', fitData['vals'])
+    print('Fit errs:', fitData['errs'])
 
 
 def Survival(fileNumber, atomLocs, **TransferArgs):
