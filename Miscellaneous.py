@@ -117,3 +117,55 @@ def round_sig(x, sig=3):
         return round(x, sig-int(np.floor(np.log10(abs(x)+2*np.finfo(float).eps)))-1)
     except ValueError:
         print(abs(x))
+
+
+def getExp(val):
+    return np.floor(np.log10(np.abs(val)))
+
+
+def round_sig_str(x, sig=3):
+    """
+    round a float to some number of significant digits
+    :param x: the numebr to round
+    :param sig: the number of significant digits to use in the rounding
+    :return the rounded number, as a string.
+    """
+    if sig<=0:
+        return "0"
+    if np.isnan(x):
+        x = 0
+    try:
+        num = round(x, sig-int(np.floor(np.log10(abs(x)+2*np.finfo(float).eps)))-1)
+        decimals = sig-getExp(num)-1
+        if decimals <= 0:
+            decimals = 0
+        result = ("{0:."+str(int(decimals))+"f}").format(num)
+        # make sure result has the correct number of significant digits given the precision.
+        return result
+    except ValueError:
+        print(abs(x))
+
+
+def errString(val, err, precision=3):
+    """
+    takes the input value and error and makes a nice error string. e.g.
+    inputs of
+    1.423, 0.086, 3 gives
+    1.42(9)
+    :param val:
+    :param err:
+    :param precision:
+    :return:
+    """
+    valE = getExp(val)
+    # determine number of values of err to show.
+    errE = getExp(err)
+    num = int(errE-valE+precision)
+    if num < 0:
+        num = 0
+    expFactor = -getExp(err)+num-1
+    if expFactor <= 0:
+        expFactor = 0
+    errNum = int(round(err*10**expFactor))
+    result = round_sig_str(val, precision) + '(' + round_sig_str(errNum, num) + ')'
+    return result

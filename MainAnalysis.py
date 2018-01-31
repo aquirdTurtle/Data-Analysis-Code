@@ -158,44 +158,58 @@ def analyzeScatterData(fileNumber, atomLocs1, connected=False, loadPic=1, transf
     fitInfo, fitFinished = fitWithClass(fitters.linear, key, psSurvivals.flatten(), errs=psErrors.flatten())
     for i, (data, err) in enumerate(zip(survivalData, survivalErrs)):
         survivalFits[i], _ = fitWithClass(fitters.linear, key, data.flatten(), errs=err.flatten())
-    return key, psSurvivals, psErrors, fitInfo, fitFinished, survivalData, survivalErrs, survivalFits
+    return key, psSurvivals, psErrors, fitInfo, fitFinished, survivalData, survivalErrs, survivalFits, atomLocs1
 
 
 def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPerRep=2, manualThreshold=None,
                              fitModule=None, window=None, xMin=None, xMax=None, yMin=None, yMax=None, dataRange=None,
-                             histSecondPeakGuess=None, keyOffset=0, sumAtoms=True, outputMma=False, dimSlice=None,
-                             varyingDim=None, subtractEdgeCounts=True, loadPic=0, transferPic=1, postSelectionPic=None,
-                             groupData=False, quiet=False, postSelectionConnected=False, getGenerationStats=True,
-                             normalizeForLoadingRate=False):
+                             histSecondPeakGuess=None, keyOffset=0, outputMma=False, dimSlice=None,
+                             varyingDim=None, subtractEdgeCounts=True, loadPic=0, transferPic=1,
+                             postSelectionCondition=None, groupData=False, quiet=False, postSelectionConnected=False,
+                             getGenerationStats=True, normalizeForLoadingRate=False, rerng=False):
     """
     Standard data analysis package for looking at survival rates throughout an experiment.
     Returns key, survivalData, survivalErrors
 
-    :param fileNumber:
-    :param atomLocs1:
+    :param fileNumber: for the HDF5 File. Path is automatic.
+    :param atomLocs1: usually the loading picture arrangement.
     :param atomLocs2:
-    :param key:
-    :param picsPerRep:
+    :param key: manually entered key. Overrides key from HDF5 file.
     :param manualThreshold:
-    :param fitModule:
-    :param window:
+    :param fitModule: a submodule from the fitters module for fitting.
+    :param window: (left, top, right bottom)? quick way of setting xmin/max and ymin/max.
     :param xMin:
     :param xMax:
     :param yMin:
     :param yMax:
-    :param dataRange:
+    :param dataRange: which data points to use. 0-indexed. For example, use this to remove bad points to do a proper
+        fit with the remaining points.
     :param histSecondPeakGuess:
-    :param keyOffset:
-    :param sumAtoms:
-    :param outputMma:
-    :param dimSlice:
-    :param varyingDim:
-    :param subtractEdgeCounts:
-    :param loadPic:
-    :param transferPic:
-    :param postSelectionPic:
-    :return:
+    :param keyOffset: added to all key values. e.g. for microwave, this can be set to ~6.34e9 to get the actual freqs
+        on the x-axis.
+    :param outputMma: an option used by tobias and Yiheng because they wanted to work in mathematica (for some reason).
+    :param dimSlice: for multidimensional scans.
+    :param varyingDim: for multidimensional scans.
+    :param subtractEdgeCounts: subtracts background from each picture individually. Background calculated as the average
+        from the edge of the picture.
+    :param loadPic: 0-indexed.
+    :param transferPic: 0-indexed.
+    :param picsPerRep: e.g. 1 for simple load, 2 for simple survival, 3 for rearrange-based things or probe images, etc.
+    :param postSelectionCondition: can be "which atoms of the atomLocs1 to require" or if an int, this is the # of
+        atomLocs required during the post-selection. e.g. "5" when atomLocs is 6 locs means 5/6 locations must have been
+        loaded.
+    :param rerng: if true, set loadPic=1, transferPic=2, picsPerRep=3. This is a simple shortcut.
+    :param groupData: collapses many variations into a single data point.
+    :param quiet: doesn't output text during analysis if true.
+    :param postSelectionConnected: requrie that a # of atoms required by the postSelectionCondition arg are
+        consecutive.
+    :param getGenerationStats: get "generation" events, where no atom was loaded but an atom appears in the second pic.
+    :param normalizeForLoadingRate:
+
+    :return: a lot.
     """
+    if rerng:
+        loadPic, transferPic, picsPerRep = 1, 2, 3
     (groupedData, atomLocs1, atomLocs2, keyName,
      repetitions, key) = organizeTransferData(fileNumber, atomLocs1, atomLocs2, key=key, window=window, xMin=xMin, xMax=xMax,
                                          yMin=yMin, yMax=yMax, dataRange=dataRange, keyOffset=keyOffset,
@@ -221,8 +235,8 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
             pic1Atoms[i].append(point1 > thresholds[i])
             pic2Atoms[i].append(point2 > thresholds[i])
 
-    if postSelectionPic is not None:
-        pic1Atoms, pic2Atoms = postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic,
+    if postSelectionCondition is not None:
+        pic1Atoms, pic2Atoms = postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionCondition,
                                                     connected=postSelectionConnected)
 
     for i in range(len(atomLocs1)):
@@ -244,21 +258,20 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
     atomCounts = arr(atomCounts.tolist())
     # calculate average values
     avgSurvivalData, avgSurvivalErr, avgFit = [None]*3
-    if sumAtoms:
-        # weight the sum with loading percentage
-        if normalizeForLoadingRate:
-            avgSurvivalData = sum(survivalData*loadingRate)/sum(loadingRate)
-        else:
-            avgSurvivalData = np.mean(survivalData)
-        avgSurvivalErr = np.sqrt(np.sum(survivalErrs**2))/len(atomLocs1)
+    # weight the sum with loading percentage
+    if normalizeForLoadingRate:
+        avgSurvivalData = sum(survivalData*loadingRate)/sum(loadingRate)
+    else:
+        avgSurvivalData = np.mean(survivalData)
+    avgSurvivalErr = np.sqrt(np.sum(survivalErrs**2))/len(atomLocs1)
 
-        if fitModule is not None:
-            avgFit, _ = fitWithClass(fitModule, key, avgSurvivalData)
+    if fitModule is not None:
+        avgFit, _ = fitWithClass(fitModule, key, avgSurvivalData)
     if outputMma:
         outputDataToMmaNotebook(fileNumber, survivalData, survivalErrs, loadingRate, key)
-    return (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate,
-            pic1Data, keyName, key, repetitions, thresholds, fits,
-            avgSurvivalData, avgSurvivalErr, avgFit, avgPic, otherDims, locationsList, genAvgs, genErrs)
+    return (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate, pic1Data, keyName, key,
+            repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPic, otherDims, locationsList,
+            genAvgs, genErrs)
 
 
 def standardLoadingAnalysis(fileNum, atomLocations, picsPerRep=1, analyzeTogether=False, loadingPicture=0,

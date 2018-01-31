@@ -35,7 +35,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, key=None, manualThresh
                                           histSecondPeakGuess=histSecondPeakGuess, keyOffset=keyOffset,
                                           sumAtoms=sumAtoms, outputMma=outputMma, dimSlice=dimSlice,
                                           varyingDim=varyingDim, loadPic=loadPic, transferPic=transferPic,
-                                          postSelectionPic=postSelectionPic)
+                                          postSelectionCondition=postSelectionPic)
     if not show:
         return key, survivalData, survivalErrs, loadingRate
 

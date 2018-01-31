@@ -31,7 +31,7 @@ dataAddress = None
 
 def organizeTransferData(fileNumber, atomLocs1, atomLocs2, key=None, window=None, xMin=None, xMax=None, yMin=None,
                          yMax=None, dataRange=None, keyOffset=0, dimSlice=None, varyingDim=None, groupData=False,
-                         quiet=False, picsPerRep=2 ):
+                         quiet=False, picsPerRep=2):
     atomLocs1 = unpackAtomLocations(atomLocs1)
     atomLocs2 = unpackAtomLocations(atomLocs2)
     # ### Load Fits File & Get Dimensions

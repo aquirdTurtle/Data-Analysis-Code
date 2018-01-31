@@ -3,7 +3,7 @@ __version__ = "1.5"
 import numpy as np
 from numpy import array as arr
 from IPython.display import display
-from Miscellaneous import round_sig, getStats, transpose, getColors
+from Miscellaneous import transpose, getColors, errString
 import plotly.graph_objs as go
 from plotly.offline import iplot
 from plotly.tools import make_subplots
@@ -14,9 +14,9 @@ from pandas import DataFrame
 from fitters import linear
 
 
-def ScatterData(fileNumber, atomLocs1, **scatterOptions):
+def ScatterData(fileNumber, atomLocs1, plotfit=True, **scatterOptions):
     (key, psSurvivals, psErrors, fitData, fitFin, survivalData, survivalErrs,
-     survivalFits) = analyzeScatterData(fileNumber, atomLocs1, **scatterOptions)
+     survivalFits, atomLocs1) = analyzeScatterData(fileNumber, atomLocs1, **scatterOptions)
     surv = arr(psSurvivals).flatten()
     err = arr(psErrors).flatten()
     # print(surv, err, key)
@@ -26,33 +26,35 @@ def ScatterData(fileNumber, atomLocs1, **scatterOptions):
     mainPlot.append(go.Scatter(x=key, y=surv, mode='markers',
                                error_y=dict(type='data', array=err, visible=True, color=color),
                                marker={'color': color}, name=legend, legendgroup=legend))
-    mainPlot.append(go.Scatter(x=fitData['x'], y=arr(linear.f(fitData['x'], *fitData['vals'])), mode='line',
-                               line={'color': color}, legendgroup=legend, showlegend=False))
-    alphaVal = 0.5
-    mainPlot.append(go.Scatter(x=fitData['x'], y=fitData['nom'], line={'color': color},
-                               legendgroup=legend, showlegend=False))
-    mainPlot.append(go.Scatter(x=fitData['x'], y=fitData['nom'] + fitData['std'],
-                               opacity=alphaVal / 2, line={'color': color},
-                               legendgroup=legend, showlegend=False, hoverinfo='none'))
-    mainPlot.append(go.Scatter(x=fitData['x'], y=fitData['nom'] - fitData['std'],
-                               opacity=alphaVal / 2, line={'color': color},
-                               legendgroup=legend, fill='tonexty', showlegend=False,
-                               hoverinfo='none', fillcolor='rgba(0, 0, 0, ' + str(alphaVal / 2) + ')'))
+    if plotfit:
+        mainPlot.append(go.Scatter(x=fitData['x'], y=arr(linear.f(fitData['x'], *fitData['vals'])), mode='line',
+                                   line={'color': color}, legendgroup=legend, showlegend=False))
+        alphaVal = 0.5
+        mainPlot.append(go.Scatter(x=fitData['x'], y=fitData['nom'], line={'color': color},
+                                   legendgroup=legend, showlegend=False))
+        mainPlot.append(go.Scatter(x=fitData['x'], y=fitData['nom'] + fitData['std'],
+                                   opacity=alphaVal / 2, line={'color': color},
+                                   legendgroup=legend, showlegend=False, hoverinfo='none'))
+        mainPlot.append(go.Scatter(x=fitData['x'], y=fitData['nom'] - fitData['std'],
+                                   opacity=alphaVal / 2, line={'color': color},
+                                   legendgroup=legend, fill='tonexty', showlegend=False,
+                                   hoverinfo='none', fillcolor='rgba(0, 0, 0, ' + str(alphaVal / 2) + ')'))
     legends = [str(loc) for loc in atomLocs1]
     pltColors, pltColors2 = getColors(len(atomLocs1) + 1)
     for atomData, color, fit, legend in zip(survivalData, pltColors, survivalFits, legends):
         mainPlot.append(go.Scatter(x=key, y=atomData, mode='markers',
                                    error_y=dict(type='data', array=err, visible=True, color=color),
                                    marker={'color': color}, legendgroup=legend, name=legend))
-        mainPlot.append(go.Scatter(x=fit['x'], y=fit['nom'], line={'color': color},
-                                   legendgroup=legend, showlegend=False))
-        mainPlot.append(go.Scatter(x=fit['x'], y=fit['nom'] + fit['std'],
-                                   opacity=alphaVal / 2, line={'color': color},
-                                   legendgroup=legend, showlegend=False, hoverinfo='none'))
-        mainPlot.append(go.Scatter(x=fit['x'], y=fit['nom'] - fit['std'],
-                                   opacity=alphaVal / 2, line={'color': color},
-                                   legendgroup=legend, fill='tonexty', showlegend=False,
-                                   hoverinfo='none', fillcolor='rgba(0, 0, 0, ' + str(alphaVal / 2) + ')'))
+        if plotfit:
+            mainPlot.append(go.Scatter(x=fit['x'], y=fit['nom'], line={'color': color},
+                                       legendgroup=legend, showlegend=False))
+            mainPlot.append(go.Scatter(x=fit['x'], y=fit['nom'] + fit['std'],
+                                       opacity=alphaVal / 2, line={'color': color},
+                                       legendgroup=legend, showlegend=False, hoverinfo='none'))
+            mainPlot.append(go.Scatter(x=fit['x'], y=fit['nom'] - fit['std'],
+                                       opacity=alphaVal / 2, line={'color': color},
+                                       legendgroup=legend, fill='tonexty', showlegend=False,
+                                       hoverinfo='none', fillcolor='rgba(0, 0, 0, ' + str(alphaVal / 2) + ')'))
 
     l = go.Layout(title='Survival Vs. Atoms Loaded', xaxis={'title': 'Atoms loaded'}, yaxis=dict(title='Survival %'))
     f = go.Figure(data=mainPlot, layout=l)
@@ -82,15 +84,19 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, key=None, fitModule=No
 
     # get the colors for the plots.
     pltColors, pltColors2 = getColors(len(locsList) + 1)
-    scanType = "Survival" if atomLocs1 == atomLocs2 else "Transfer"
-    if otherDimValues[0] is not None:
-        legends = [r"%d,%d>%d,%d @%d" % (loc1[0], loc1[1], loc2[0], loc2[1], other) +
-                   (scanType + " % = " + str(round_sig(d[0])) + "+-" + str(round_sig(e[0])) if len(d) == 1 else "")
+    scanType = "S." if atomLocs1 == atomLocs2 else "T."
+    if scanType == "S.":
+        legends = [r"%d,%d " % (loc1[0], loc1[1]) + (scanType + "% = " + str(errString(d[0], e[0])) if len(d) == 1
+                   else "") for loc1, d, e in zip(locsList, survivalData, survivalErrs)]
+
+    elif otherDimValues[0] is not None:
+        legends = [r"%d,%d>%d,%d @%d " % (loc1[0], loc1[1], loc2[0], loc2[1], other) +
+                   (scanType + "%=" + str(errString(d[0]), e[0]) if len(d) == 1 else "")
                    for loc1, loc2, d, e, other in zip(locsList, locsList, survivalData, survivalErrs,
                                                       otherDimValues)]
     else:
-        legends = [r"%d,%d>%d,%d" % (loc1[0], loc1[1], loc2[0], loc2[1]) +
-                   (scanType + " % = " + str(round_sig(d[0])) + "+-" + str(round_sig(e[0])) if len(d) == 1 else "")
+        legends = [r"%d,%d>%d,%d " % (loc1[0], loc1[1], loc2[0], loc2[1]) +
+                   (scanType + "%=" + str(errString(d[0]), e[0]) if len(d) == 1 else "")
                    for loc1, loc2, d, e in zip(locsList, locsList, survivalData, survivalErrs)]
     survivalErrs = list(survivalErrs)
     # Make the plots
@@ -323,9 +329,9 @@ def Loading(fileNum, atomLocations, showLoadingRate=True, showLoadingPic=False, 
     alphaVal = 1.0 / (len(atomLocations) ** 0.7)
     if indvHist:
         for atom, color in zip(atomLocations, colors):
-            indvHistFig.append(go.Histogram(x=pic1Data[atom].flatten(), nbinsx=100, legendgroup=str(atom),
-                                            showlegend=False, xbins=dict(start=min(pic1Data[atom].flatten()),
-                                                                         end=max(pic1Data[atom].flatten())),
+            indvHistFig.append(go.Histogram(x=pic1Data[atom].flatten(), legendgroup=str(atom),
+                                            showlegend=simplePlot, xbins=dict(start=min(pic1Data.flatten()),
+                                                                         end=max(pic1Data.flatten()), size=10),
                                             marker=dict(color=color), opacity=alphaVal))
     if showLoadingPic:
         loadingPic = np.zeros(avgPic.shape)
@@ -344,7 +350,7 @@ def Loading(fileNum, atomLocations, showLoadingRate=True, showLoadingPic=False, 
                                        mode='markers', name=str(loc), legendgroup=str(loc),
                                        marker={'color': color}, opacity=alphaVal))
             if loadingFitType is not None:
-                print(loc, round_sig(fitData['vals'][1], 4), '+-', round_sig(fitData['errs'][1], 2))
+                print(loc, errString(fitData['vals'][1], fitData['errs'][1], 4))
                 mainPlot.append(go.Scatter(x=fitData['x'], y=fitData['nom'], line={'color': color},
                                            legendgroup=str(loc), showlegend=False, opacity=alphaVal))
                 mainPlot.append(go.Scatter(x=fitData['x'], y=fitData['nom'] + fitData['std'],
@@ -358,7 +364,7 @@ def Loading(fileNum, atomLocations, showLoadingRate=True, showLoadingPic=False, 
                                    error_y={'type': 'data', 'array': allLoadingErr, 'color': "#000000"},
                                    mode='markers', name='avg', legendgroup='avg'))
         if loadingFitType is not None:
-            print('avg fit:', round_sig(avgFits['vals'][1], 4), '+-', round_sig(avgFits['errs'][1], 2))
+            print('avg fit:', errString(avgFits['vals'][1], avgFits['errs'][1], 4))
             mainPlot.append(go.Scatter(x=avgFits['x'], y=avgFits['nom'], line={'color': '#000000'},
                                        legendgroup='avg', showlegend=False, opacity=alphaVal))
             mainPlot.append(go.Scatter(x=avgFits['x'], y=avgFits['nom'] + avgFits['std'],
@@ -372,9 +378,18 @@ def Loading(fileNum, atomLocations, showLoadingRate=True, showLoadingPic=False, 
             if countsMain:
                 plotData = countsFig
                 layout = go.Layout(xaxis={'title': 'Pic #'}, yaxis={'title': 'Count #'})
+            elif histMain:
+                if showTotalHist:
+                    histToShow = totalHist
+                elif indvHist:
+                    histToShow = indvHistFig
+                else:
+                    histToShow = []
+                plotData = histToShow
+                layout = go.Layout(xaxis={'title': 'Pic #'}, yaxis={'title': 'Count #'}, barmode='overlay')
             else:
                 plotData = mainPlot
-                layout = go.Layout(xaxis={'title': keyName}, yaxis={'title': 'Loading %', 'range':[0,1]})
+                layout = go.Layout(xaxis={'title': keyName}, yaxis={'title': 'Loading %', 'range': [0,1]})
             fig = go.Figure(data=plotData, layout=layout)
         else:
             fig = make_subplots(
