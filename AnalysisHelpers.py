@@ -29,6 +29,11 @@ from copy import deepcopy
 dataAddress = None
 
 
+def splitData(data, picsPerSplit, picsPerRep, runningOverlap=0):
+    data = np.reshape(data, (picsPerSplit, int(data.shape[1]/picsPerSplit), data.shape[2], data.shape[3]))
+    return data, int(picsPerSplit/picsPerRep), np.arange(0,int(data.shape[1]))
+
+
 def organizeTransferData(fileNumber, atomLocs1, atomLocs2, key=None, window=None, xMin=None, xMax=None, yMin=None,
                          yMax=None, dataRange=None, keyOffset=0, dimSlice=None, varyingDim=None, groupData=False,
                          quiet=False, picsPerRep=2):
