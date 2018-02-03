@@ -1,9 +1,3 @@
-__version__ = "1.0"
-
-"""
-Each class in this module contains all the information required for fitting data. That is, each class follows the
-following TEMPLATE:
-"""
 
 import numpy as np
 import uncertainties.unumpy as unp
@@ -14,30 +8,31 @@ def center():
 
 
 def args():
-    return None
+    return ["Amplitude", "Decay-Constant", "Offset"]
 
 
-def f():
+def f(t, A, tau, offset):
     """
     The normal function call for this function. Performs checks on valid arguments, then calls the "raw" function.
     :return:
     """
-    return f_raw()
+    return f_raw(t, A, tau, offset)
 
 
-def f_raw():
+def f_raw(t, A, tau, offset):
     """
     The raw function call, performs no checks on valid parameters..
     :return:
     """
-    return  # ...
+    return A * np.exp(-t/tau) + offset
 
 
-def f_unc():
+def f_unc(t, A, tau, offset):
     """
     similar to the raw function call, but uses unp instead of np for uncertainties calculations.
     :return:
     """
+    return A * unp.exp(-t/tau) + offset
 
 
 def guess(key, values):
@@ -48,3 +43,4 @@ def guess(key, values):
     :param values:
     :return:
     """
+    return [max(values)-min(values), (max(key)-min(key))/2, min(values)]

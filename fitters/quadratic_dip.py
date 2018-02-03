@@ -2,7 +2,11 @@ import numpy as np
 
 
 def center():
-    return 3
+    return 2
+
+
+def args():
+    return 'Offset', 'Slope', 'Center'
 
 
 def f(x, a, b, x0):
@@ -41,3 +45,4 @@ def guess(key, values):
     :param values:
     :return:
     """
+    return [min(values), 2*(max(values)-min(values))/(max(key) - min(key)), key[np.argmin(values)]]
