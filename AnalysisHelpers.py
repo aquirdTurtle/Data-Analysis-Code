@@ -22,7 +22,6 @@ import scipy.interpolate as interp
 
 import MarksConstants as consts
 import FittingFunctions as fitFunc
-
 from Miscellaneous import transpose, round_sig
 from copy import deepcopy
 
@@ -34,14 +33,52 @@ def splitData(data, picsPerSplit, picsPerRep, runningOverlap=0):
     return data, int(picsPerSplit/picsPerRep), np.arange(0,int(data.shape[1]))
 
 
+def parseRearrangeInfo(addr):
+    moveList = []
+    readyForAtomList = False
+    with open(addr) as centerLog:
+        for i, line in enumerate(centerLog):
+            if i < 8:
+                continue
+            txt = line.split(' ')
+            if txt[0] == 'Rep':
+                moveList.append({'Rep': txt[2]})
+                continue
+            if txt[0] == 'Moves:\n':
+                continue
+            if txt[0] == 'Source:':
+                moveList[-1]['Source'] = []
+                for loc in txt[1:]:
+                    if loc != ';' and loc != '\n':
+                        moveList[-1]['Source'].append(int(loc[:-1]))
+                continue
+            if txt[0] == 'Target' and txt[1] == 'Location:':
+                moveList[-1]['Target-Location'] = txt[2] + ',' + txt[3]
+                moveList[-1]['Moves'] = []
+                continue
+            if not readyForAtomList:
+                moveList[-1]['Moves'].append({'Flashed': bool(int(txt[1])), 'Direction': txt[2]})
+                moveList[-1]['Moves'][-1]['Atoms'] = []
+                readyForAtomList = True
+                continue
+            if len(txt) != 1:
+                moveList[-1]['Moves'][-1]['Atoms'].append((txt[0], txt[1]))
+            else:
+                readyForAtomList = False
+    return moveList
+
+
 def organizeTransferData(fileNumber, atomLocs1, atomLocs2, key=None, window=None, xMin=None, xMax=None, yMin=None,
                          yMax=None, dataRange=None, keyOffset=0, dimSlice=None, varyingDim=None, groupData=False,
-                         quiet=False, picsPerRep=2):
+                         quiet=False, picsPerRep=2, repRange=None):
     atomLocs1 = unpackAtomLocations(atomLocs1)
     atomLocs2 = unpackAtomLocations(atomLocs2)
     # ### Load Fits File & Get Dimensions
     # Get the array from the fits file. That's all I care about.
     rawData, keyName, hdf5Key, repetitions = loadHDF5(fileNumber)
+    if repRange is not None:
+        repetitions = repRange[1] - repRange[0]
+        rawData = rawData[repRange[0]*picsPerRep:repRange[1]*picsPerRep]
     if key is None:
         key = hdf5Key
     if len(key.shape) == 1:
@@ -84,28 +121,33 @@ def modFitFunc(hBiasIn, vBiasIn, depthIn, *testBiases):
 
 
 def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias):
+    if type(prevDepth) is not type(arr([])) or type(prevDepth[0]) is not type(arr([])):
+        raise TypeError('ERROR: previous depth array must be 2D numpy array')
     result, modDepth = extrapolateEveningBiases(prev_H_Bias, prev_V_Bias, prevDepth);
     new_H_Bias = result['x'][:len(prev_H_Bias)]
     new_V_Bias = result['x'][len(prev_H_Bias):]
     print('Horizontal Changes')
     for prev, new in zip(prev_H_Bias, new_H_Bias):
-        print(prev, '->', new)
+        print(round_sig(prev,4), '->', round_sig(new,4), str(round_sig((new - prev) / prev, 2)) + '%')
     print('Vertical Changes')
     for prev, new in zip(prev_V_Bias, new_V_Bias):
-        print(prev, '->', new, (new - prev) / prev, '%')
+        print(round_sig(prev,4), '->', round_sig(new,4), str(round_sig((new - prev) / prev, 2)) + '%')
     print('Previous Depth Variation:', np.std(prevDepth), ', mean:', np.mean(prevDepth))
     print('Expected new Depth Variation:', np.std(modDepth))
     print('New Vertical Biases \n[',end='')
     for v in new_V_Bias:
-        print(v, ',', end=' ')
+        print(round_sig(v,4), ',', end=' ')
     print(']\nNew Horizontal Biases \n[', end='')
     for h in new_H_Bias:
-        print(h, ',', end=' ')
+        print(round_sig(h,4), ',', end=' ')
     print(']\n')
     print(result['success'])
 
 
 def extrapolateEveningBiases(hBiasIn, vBiasIn, depthIn):
+    """
+    depth in is some measure of the trap depth which is assumed to be roughly linear with the trap depth. It need not be in the right units.
+    """
     # normalize biases
     hBiasIn /= np.sum(hBiasIn)
     vBiasIn /= np.sum(vBiasIn)
@@ -162,9 +204,6 @@ def setPath(day, month, year):
 
 def getLabels(plotType):
     """
-
-    :param plotType:
-    :return:
     """
     if plotType == "Detuning":
         xlabelText = "Detuning (dac value)"
@@ -212,6 +251,8 @@ def fitWithClass(fitClass, key, vals, errs=None):
     except (RuntimeError, LinAlgError, ValueError) as e:
         warn('Data Fit Failed!')
         print(e)
+        fitValues = fitClass.guess(key, vals)
+        fitNom = fitClass.f(xFit, *fitValues)
         fitFinished = False
     fitInfo = {'x': xFit, 'nom': fitNom, 'std': fitStd, 'vals': fitValues, 'errs': fitErrs, 'cov': fitCovs}
     return fitInfo, fitFinished
@@ -695,6 +736,8 @@ def load_RSA_6114A(fileLocation):
 # ### Some AOM Optimizations
 
 def getOptimalAomBiases(minX, minY, spacing, widthX, widthY):
+    # This function has been deprecated. It was only valid for the old Gooch and Housego aoms.
+    return "FUNCTION-DEPRECATED"
     """
 
     :param minX:
@@ -722,19 +765,20 @@ def getOptimalAomBiases(minX, minY, spacing, widthX, widthY):
     return xFreqs, xAmps, yFreqs, yAmps
 
 
-def maximizeAomPerformance(minX, minY, spacing, widthX, widthY, iterations=10):
+def maximizeAomPerformance(horCenterFreq, vertCenterFreq, spacing, numTweezersHor, numTweezersVert, iterations=10):
     """
     computes the amplitudes and phases to maximize the AOM performance.
-    :param minX:
-    :param minY:
+    :param horCenterFreq:
+    :param vertCenterFreq:
     :param spacing:
-    :param widthX:
-    :param widthY:
+    :param numTweezersHor:
+    :param numTweezersVert:
     :param iterations:
     :return:
     """
-
-    xFreqs, xAmps, yFreqs, yAmps = getOptimalAomBiases(minX, minY, spacing, widthX, widthY)
+    horFreqs  = [horCenterFreq - spacing * (numTweezersHor  - 1) / 2.0 + i * spacing for i in range(numTweezersHor )]
+    vertFreqs = [horCenterFreq - spacing * (numTweezersVert - 1) / 2.0 + i * spacing for i in range(numTweezersVert)]
+    vertAmps = horAmps = np.ones(numTweezersHor)
 
     def calcWave(xPts, phases, freqs, amps):
         volts = np.zeros(len(xPts))
@@ -744,39 +788,39 @@ def maximizeAomPerformance(minX, minY, spacing, widthX, widthY, iterations=10):
 
     def getXMax(phases):
         x = np.linspace(0, 10e-6, 10000)
-        return max(calcWave(x, phases, xFreqs, xAmps))
+        return max(calcWave(x, phases, horFreqs, horAmps))
 
     def getYMax(phases):
         x = np.linspace(0, 10e-6, 10000)
-        return max(calcWave(x, phases, yFreqs, yAmps))
+        return max(calcWave(x, phases, vertFreqs, vertAmps))
 
-    xBounds = [(0, 2 * consts.pi) for _ in range(widthX)]
-    xGuess = arr([0 for _ in range(widthX)])
+    xBounds = [(0, 2 * consts.pi) for _ in range(numTweezersHor)]
+    xGuess = arr([0 for _ in range(numTweezersHor)])
     minimizer_kwargs = dict(method="L-BFGS-B", bounds=xBounds)
     xPhases = basinhopping(getXMax, xGuess, minimizer_kwargs=minimizer_kwargs, niter=iterations, stepsize=0.2)
-    print('xFreqs', xFreqs)
-    print('xAmps', xAmps)
+    print('horFreqs', horFreqs)
+    print('horAmps', horAmps)
     print('X-Phases', xPhases.x)
 
-    yGuess = arr([0 for _ in range(widthY)])
-    yBounds = [(0, 2 * consts.pi) for _ in range(widthY)]
+    yGuess = arr([0 for _ in range(numTweezersVert)])
+    yBounds = [(0, 2 * consts.pi) for _ in range(numTweezersVert)]
     minimizer_kwargs = dict(method="L-BFGS-B", bounds=yBounds)
     yPhases = basinhopping(getYMax, yGuess, minimizer_kwargs=minimizer_kwargs, niter=iterations, stepsize=0.2)
-    print('yFreqs', yFreqs)
-    print('yAmps', yAmps)
+    print('vertFreqs', vertFreqs)
+    print('vertAmps', vertAmps)
     print('Y-Phases', yPhases.x)
 
     xpts = np.linspace(0, 10e-6, 10000)
-    ypts = calcWave(xpts, xPhases.x, xFreqs, xAmps)
-    yptsOrig = calcWave(xpts, xGuess, xFreqs, xAmps)
+    ypts = calcWave(xpts, xPhases.x, horFreqs, horAmps)
+    yptsOrig = calcWave(xpts, xGuess, horFreqs, horAmps)
     title('X-Axis')
     plot(xpts, ypts, ':', label='X-Optimization')
     plot(xpts, yptsOrig, ':', label='X-Worst-Case')
     legend()
 
     figure()
-    yptsOrig = calcWave(xpts, yGuess, yFreqs, yAmps)
-    ypts = calcWave(xpts, yPhases.x, yFreqs, yAmps)
+    yptsOrig = calcWave(xpts, yGuess, vertFreqs, vertAmps)
+    ypts = calcWave(xpts, yPhases.x, vertFreqs, vertAmps)
     title('Y-Axis')
     plot(xpts, ypts, ':', label='Y-Optimization')
     plot(xpts, yptsOrig, ':', label='Y-Worst-Case')

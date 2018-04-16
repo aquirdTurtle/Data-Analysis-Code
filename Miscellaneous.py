@@ -6,6 +6,22 @@ from matplotlib.cm import get_cmap
 from pandas import DataFrame
 
 
+def revList(l):
+    return list(reversed(l))
+
+
+def femtowattDetectorConversion(volts):
+    """
+    based on the newport model 2151 femtowatt detector, for 780-850 or so nm light, for DC gain.
+    :return: power in W
+    """
+    # factor of 0.5 comes from approximate responsivity at this wavelength range.
+    # 0.5 A/W photodetector sensitivity
+    # 2*10**10 dc gain.
+    convFactor = 0.5 * 2 * 10**10
+    return volts / convFactor
+
+
 def prefix(num):
     """
     Convert number to nearest numbers with SI prefixes.
@@ -14,7 +30,7 @@ def prefix(num):
     # determine which range it lies in, r1/r2 means reduction 1 or reduction 2
     divisors = [1e-24 * pow(10, 3 * x) for x in range(17)]
     prefixes = list(reversed(['Yotta (Y)', 'Zetta (Z)', 'Exa (E)', 'Peta (P)', 'Tera (T)', 'Giga (G)', 'Mega (M)',
-                              'Kilo (K)', '', 'Milli (m)', 'Micro ($\mu$)', 'Nano (n)', 'Pico (p)', 'Femto (f)',
+                              'Kilo (K)', '', 'Milli (m)', 'Micro (mu)', 'Nano (n)', 'Pico (p)', 'Femto (f)',
                               'Atto (a)', 'Zepto (z)', 'Yocto (y)']))
     exp = np.floor(np.log10(np.abs(num)))
     if exp < 0:
@@ -93,8 +109,9 @@ def getColors(num, rgb=False):
     :param num: number of colors to get
     :return: the array of colors, hex or rgb (see above)
     """
-    cmapRGB = get_cmap('nipy_spectral', num)
-    c = [cmapRGB(i)[:-1] for i in range(num)][1:]
+    cmapRGB = get_cmap('brg', num-1)
+    #cmapRGB = get_cmap('nipy_spectral', num)
+    c = [cmapRGB(i)[:-1] for i in range(num)][:]
     if rgb:
         return c
     # the negative of the first color
@@ -120,6 +137,8 @@ def round_sig(x, sig=3):
 
 
 def getExp(val):
+    if val == 0:
+        return 0
     return np.floor(np.log10(np.abs(val)))
 
 
@@ -137,6 +156,8 @@ def round_sig_str(x, sig=3):
     try:
         num = round(x, sig-int(np.floor(np.log10(abs(x)+2*np.finfo(float).eps)))-1)
         decimals = sig-getExp(num)-1
+        if decimals == float('inf'):
+            decimals = 3
         if decimals <= 0:
             decimals = 0
         result = ("{0:."+str(int(decimals))+"f}").format(num)
@@ -157,13 +178,22 @@ def errString(val, err, precision=3):
     :param precision:
     :return:
     """
+    if err == 0:
+        return round_sig_str(val, precision) + '(0)'
     valE = getExp(val)
     # determine number of values of err to show.
     errE = getExp(err)
-    num = int(errE-valE+precision)
-    if num < 0:
+    if valE == float('Inf') or valE == float('-Inf') or errE == float('Inf') or errE == float('-Inf'):
+        return "?(?)"
+    try:
+        num = int(errE-valE+precision)
+        if num < 0:
+            num = 0
+        expFactor = -getExp(err) + num - 1
+    except ValueError:
+        print('bad number!')
         num = 0
-    expFactor = -getExp(err)+num-1
+        expFactor=0
     if expFactor <= 0:
         expFactor = 0
     errNum = int(round(err*10**expFactor))

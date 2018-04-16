@@ -1,40 +1,44 @@
+
 import numpy as np
 import uncertainties.unumpy as unp
 
 
 def center():
-    return None
+    return None  # or the arg-number of the center.
 
 
-def f(x, a, tau, c):
+def args():
+    return ['Omega', 'resonance']
+
+
+def f(o, O, o_0):
     """
     The normal function call for this function. Performs checks on valid arguments, then calls the "raw" function.
     :return:
     """
-    # saturation!
-    if a > 0:
-        return np.ones(len(x)) * 1e10
-    return f_raw(x, a, tau, c)
+    return f_raw(o, O, o_0)
 
 
-def args():
-    return ['Amplitude', 'tau', 'Offset']
-
-
-def f_raw(x, a, tau, c):
+def f_raw(o, O, o_0):
     """
     The raw function call, performs no checks on valid parameters..
     :return:
     """
-    return a * np.exp(- x / tau) + c
+    t = 0.045e-3
+    t1 = O**2 / ((o-o_0)**2 + O**2)
+    sin_arg = t / 2 * np.sqrt((o-o_0)**2 + O**2)
+    return t1 * np.sin(sin_arg)**2
 
 
-def f_unc(x, a, tau, c):
+def f_unc(o, O, o_0):
     """
     similar to the raw function call, but uses unp instead of np for uncertainties calculations.
     :return:
     """
-    return a * unp.exp(-x/tau) + c
+    t = 0.045e-3
+    t1 = O**2 / ((o-o_0)**2 + O**2)
+    sin_arg = t / 2 * unp.sqrt((o-o_0)**2 + O**2)
+    return t1 * unp.sin(sin_arg)**2
 
 
 def guess(key, values):
@@ -45,4 +49,4 @@ def guess(key, values):
     :param values:
     :return:
     """
-    return [min(values)-max(values), (max(key)-min(key))/3, min(values)]
+    return [100000, 6.840930e9]
