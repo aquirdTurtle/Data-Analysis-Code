@@ -57,7 +57,7 @@ def analyzeCodeTimingData(num, talk=True, numTimes=3):
         return allTimes
 
 
-def analyzeNiawgWave(fileIndicator):
+def analyzeNiawgWave(fileIndicator, ftPts=None):
     """
     fileIndicator: can be a number (in which case assumes Debug-Output folder), or a full file address
 
@@ -79,8 +79,12 @@ def analyzeNiawgWave(fileIndicator):
         chan1 = data[::2]
         chan2 = data[1::2]
         tPts = [t / sampleRate for t in range(len(chan1))]
-        fftInfoC1 = fft(chan1, tPts, normalize=True)
-        fftInfoC2 = fft(chan2, tPts, normalize=True)
+        if ftPts is None:
+            fftInfoC1 = fft(chan1, tPts, normalize=True)
+            fftInfoC2 = fft(chan2, tPts, normalize=True)
+        else:
+            fftInfoC1 = fft(chan1[:ftPts], tPts[:ftPts], normalize=True)
+            fftInfoC2 = fft(chan2[:ftPts], tPts[:ftPts], normalize=True)
         # returns {'Freq': freqs, 'Amp': fieldFFT}
         return tPts, chan1, chan2, fftInfoC1, fftInfoC2
 

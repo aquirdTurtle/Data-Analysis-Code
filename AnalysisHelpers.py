@@ -336,12 +336,15 @@ def loadDataRay(num):
 
 
 def loadCompoundBasler(num, cameraName='ace'):
-    if cameraName == 'ace':
-        path = dataAddress + "AceData_" + str(num) + ".txt"
-    elif cameraName == 'scout':
-        path = dataAddress + "ScoutData_" + str(num) + ".txt"
+    if type(num) is not type('hi'):
+        if cameraName == 'ace':
+            path = dataAddress + "AceData_" + str(num) + ".txt"
+        elif cameraName == 'scout':
+            path = dataAddress + "ScoutData_" + str(num) + ".txt"
+        else:
+            raise ValueError('cameraName bad value for Basler camera.')
     else:
-        raise ValueError('cameraName bad value for Basler camera.')
+        path = num
     with open(path) as file:
         original = file.read()
         pics = original.split(";")
@@ -693,6 +696,8 @@ def load_RSA_6114A(fileLocation):
 
 # ##########################
 # ### Some AOM Optimizations
+from scipy.interpolate import InterpolatedUnivariateSpline
+from scipy import interp as base_interp
 
 def getOptimalAomBiases(minX, minY, spacing, widthX, widthY):
     """
@@ -706,23 +711,33 @@ def getOptimalAomBiases(minX, minY, spacing, widthX, widthY):
     """
     # these calibrations were taken on 9/11/2017\n",
     # At Vertical Frequency = 80 MHz. \n",
-    horFreq = [70, 75, 65, 67.5, 72.5, 80, 85, 90, 95, 60, 50, 55, 45, 62.5, 57.5, 52.5]
-    powerInRail = [209, 197, 180, 198, 205, 186, 156, 130, 72.5, 181, 109, 179, 43.5, 174, 182, 165]
-    relativeHorPowerInRail = arr(powerInRail)/max(powerInRail) * 100
-    horAomCurve = interp.interp1d(horFreq, relativeHorPowerInRail)
+    horFreq =     [70,   75,  65, 67.5, 72.5,  80,  85,  90,  95,   60,  50,  55,   45, 62.5, 57.5, 52.5]
+    powerInRail = [209, 197, 180,  198,  205, 186, 156, 130, 72.5, 181, 109, 179, 43.5,  174,  182, 165]
+    #def orderData(data, key, keyDim=None, otherDimValues=None):
+    powerInRail, horFreq, _ = orderData(powerInRail, horFreq)
+    relativeHorPowerInRail = arr(powerInRail) / max(powerInRail) * 100
+    horAomCurve = interp.InterpolatedUnivariateSpline(horFreq, relativeHorPowerInRail)
     # at horizontal freq of 70MHz\n",
     vertFreq = [80, 82.5, 77.5, 75, 85, 90, 95, 100, 105, 70, 65, 60, 55, 50, 52.5, 57.5, 62.5]
     vertPowerInRail = [206, 204, 202, 201, 197, 184, 145, 126, 64, 193, 185, 140, 154, 103, 141, 140, 161]
+    vertPowerInRail, vertFreq, _ = orderData(vertPowerInRail, vertFreq)
     relativeVertPowerInRail = arr(vertPowerInRail) / max(vertPowerInRail) * 100
-    vertAomCurve = interp.interp1d(vertFreq, relativeVertPowerInRail)
+    #vertAomCurve = interp.interp1d(vertFreq, relativeVertPowerInRail)
+    vertAomCurve = interp.InterpolatedUnivariateSpline(vertFreq, relativeVertPowerInRail)
     xFreqs = [minX + num * spacing for num in range(widthX)]
-    xAmps = [100 / horAomCurve(xFreq) for xFreq in xFreqs]
+    #xAmps = arr([100 / base_interp(xFreq, horFreq, relativeHorPowerInRail) for xFreq in xFreqs])
+    xAmps = arr([100 / horAomCurve(xFreq) for xFreq in xFreqs])
+    xAmps /= np.sum(xAmps) / len(xAmps)
     yFreqs = [minY + num * spacing for num in range(widthY)]
-    yAmps = [100 / vertAomCurve(yFreq) for yFreq in yFreqs]
+    #yAmps = arr([100 / base_interp(yFreq, vertFreq, relativeVertPowerInRail) for yFreq in yFreqs])
+    yAmps = arr([100 / vertAomCurve(yFreq) for yFreq in yFreqs])
+    yAmps /= np.sum(yAmps) / len(yAmps)
+    #yAmps = [100 / vertAomCurve(yFreq) for yFreq in yFreqs]
     return xFreqs, xAmps, yFreqs, yAmps
 
+from scipy.optimize import curve_fit
 
-def maximizeAomPerformance(minX, minY, spacing, widthX, widthY, iterations=10):
+def maximizeAomPerformance(minX, minY, spacing, widthX, widthY, iterations=10, xAmps=None, yAmps=None, metric='max', paperGuess=True):
     """
     computes the amplitudes and phases to maximize the AOM performance.
     :param minX:
@@ -733,54 +748,78 @@ def maximizeAomPerformance(minX, minY, spacing, widthX, widthY, iterations=10):
     :param iterations:
     :return:
     """
-
-    xFreqs, xAmps, yFreqs, yAmps = getOptimalAomBiases(minX, minY, spacing, widthX, widthY)
+    if xAmps is None:
+        xAmps = np.ones(widthX)
+    if yAmps is None:
+        yAmps = np.ones(widthY)
+    xFreqs, _, yFreqs, _ = getOptimalAomBiases(minX, minY, spacing, widthX, widthY)
+    #if optimizeBiases:
+        #xFreqs, xAmps, yFreqs, yAmps = getOptimalAomBiases(minX, minY, spacing, widthX, widthY)
+    #else:
+    #    xFreqs, _, yFreqs, _ = getOptimalAomBiases(minX, minY, spacing, widthX, widthY)
+    #    xAmps = np.ones(len(xFreqs))
+    #    yAmps = np.ones(len(yFreqs))
 
     def calcWave(xPts, phases, freqs, amps):
         volts = np.zeros(len(xPts))
         for phase, freq, amp in zip(phases, freqs, amps):
-            volts += amp * np.cos(freq * 1e6 * xPts + phase)
+            volts += amp * np.cos(2*np.pi*freq * 1e6 * xPts + phase)
         return volts
+    
+    def getXMetric(phases):
+        x = np.linspace(0, 3e-6, 20000)
+        if metric=='max':
+            return max(abs(calcWave(x, phases, xFreqs, xAmps)))
+        elif metric == 'std':
+            return np.std(calcWave(x, phases, xFreqs, xAmps))
 
-    def getXMax(phases):
-        x = np.linspace(0, 10e-6, 10000)
-        return max(calcWave(x, phases, xFreqs, xAmps))
-
-    def getYMax(phases):
-        x = np.linspace(0, 10e-6, 10000)
-        return max(calcWave(x, phases, yFreqs, yAmps))
+    def getYMetric(phases):
+        x = np.linspace(0, 3e-6, 20000)
+        if metric=='max':
+            return max(abs(calcWave(x, phases, yFreqs, yAmps)))
+        elif metric == 'std':
+            return np.std(calcWave(x, phases, yFreqs, yAmps))
+    
 
     xBounds = [(0, 2 * consts.pi) for _ in range(widthX)]
-    xGuess = arr([0 for _ in range(widthX)])
+    #
+    if paperGuess:
+        xGuess = arr([np.pi * i**2/widthX for i in range(widthX)])
+    else:
+        xGuess = arr([0 for _ in range(widthX)])
     minimizer_kwargs = dict(method="L-BFGS-B", bounds=xBounds)
-    xPhases = basinhopping(getXMax, xGuess, minimizer_kwargs=minimizer_kwargs, niter=iterations, stepsize=0.2)
+    xPhases = basinhopping(getXMetric, xGuess, minimizer_kwargs=minimizer_kwargs, niter=iterations, stepsize=0.2)
     print('xFreqs', xFreqs)
     print('xAmps', xAmps)
     print('X-Phases', xPhases.x)
 
-    yGuess = arr([0 for _ in range(widthY)])
+    if paperGuess:
+        yGuess = arr([np.pi * i**2/widthY for i in range(widthY)])
+    else:
+        yGuess = arr([0 for _ in range(widthY)])
     yBounds = [(0, 2 * consts.pi) for _ in range(widthY)]
     minimizer_kwargs = dict(method="L-BFGS-B", bounds=yBounds)
-    yPhases = basinhopping(getYMax, yGuess, minimizer_kwargs=minimizer_kwargs, niter=iterations, stepsize=0.2)
+    yPhases = basinhopping(getYMetric, yGuess, minimizer_kwargs=minimizer_kwargs, niter=iterations, stepsize=0.2)
     print('yFreqs', yFreqs)
     print('yAmps', yAmps)
     print('Y-Phases', yPhases.x)
 
-    xpts = np.linspace(0, 10e-6, 10000)
-    ypts = calcWave(xpts, xPhases.x, xFreqs, xAmps)
-    yptsOrig = calcWave(xpts, xGuess, xFreqs, xAmps)
+    xpts = np.linspace(0, 1e-6, 10000)
+    ypts_x = calcWave(xpts, xPhases.x, xFreqs, xAmps)
+    yptsOrig = calcWave(xpts, arr([0 for _ in range(widthX)]), xFreqs, xAmps)
     title('X-Axis')
-    plot(xpts, ypts, ':', label='X-Optimization')
+    plot(xpts, ypts_x, ':', label='X-Optimization')
     plot(xpts, yptsOrig, ':', label='X-Worst-Case')
     legend()
 
     figure()
-    yptsOrig = calcWave(xpts, yGuess, yFreqs, yAmps)
-    ypts = calcWave(xpts, yPhases.x, yFreqs, yAmps)
+    yptsOrig = calcWave(xpts, arr([0 for _ in range(widthY)]), yFreqs, yAmps)
+    ypts_y = calcWave(xpts, yPhases.x, yFreqs, yAmps)
     title('Y-Axis')
-    plot(xpts, ypts, ':', label='Y-Optimization')
+    plot(xpts, ypts_y, ':', label='Y-Optimization')
     plot(xpts, yptsOrig, ':', label='Y-Worst-Case')
     legend()
+    return xpts, ypts_x, ypts_y, 
 
 
 def integrateData(pictures):
@@ -1219,7 +1258,6 @@ def calcMotTemperature(times, sigmas):
 
 def orderData(data, key, keyDim=None, otherDimValues=None):
     """
-
     :param data:
     :param key:
     :param keyDim:

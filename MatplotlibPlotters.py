@@ -1,6 +1,6 @@
 __version__ = "1.1"
 
-from MainAnalysis import standardLoadingAnalysis
+from MainAnalysis import standardLoadingAnalysis, analyzeNiawgWave
 from numpy import array as arr
 from random import randint
 from Miscellaneous import getColors, round_sig
@@ -18,24 +18,41 @@ import MarksConstants as consts
 import FittingFunctions as fitFunc
 
 
-def plotNiawg(fileIndicator, points=300):
+def plotNiawg(fileIndicator, points=300, plotTogether=True, plotVolts=False):
     """
     plots the first part of the niawg wave and the fourier transform of the total wave.
     """
-    t, c1, c2, fftc1, fftc2 = analyzeNiawgWave(fileIndicator)
-    plot(t[:points], c1[:points], 'o:', label='Vertical Channel', markersize=4, linewidth=1)
-    plot(t[:points], c2[:points], 'o:', label='Horizontal Channel', markersize=4, linewidth=1)
-    title('Niawg Output, first ' + str(points) + ' points.')
-    ylabel('Relative Voltage (before NIAWG Gain)')
-    xlabel('Time (s)')
-    legend()
-    figure()
-    semilogy(fftc1['Freq'], abs(fftc1['Amp']) ** 2, 'o:', label='Vertical Channel', markersize=4, linewidth=1)
-    semilogy(fftc2['Freq'], abs(fftc2['Amp']) ** 2, 'o:', label='Horizontal Channel', markersize=4, linewidth=1)
+    t, c1, c2, fftc1, fftc2 = analyzeNiawgWave(fileIndicator, ftPts=points)
+    if plotVolts:
+        figure(figsize=(20,10))
+        title('Niawg Output, first ' + str(points) + ' points.')
+        ylabel('Relative Voltage (before NIAWG Gain)')
+        xlabel('Time (s)')
+        plot(t[:points], c1[:points], 'o:', label='Vertical Channel', markersize=4, linewidth=1)
+        legend()    
+        if not plotTogether:
+            figure(figsize=(20,10))
+            title('Niawg Output, first ' + str(points) + ' points.')
+            ylabel('Relative Voltage (before NIAWG Gain)')
+            xlabel('Time (s)')
+        plot(t[:points], c2[:points], 'o:', label='Horizontal Channel', markersize=4, linewidth=1)
+        if not plotTogether:
+            legend()
+    figure(figsize=(20,10))
     title('Fourier Transform of NIAWG output')
     ylabel('Transform amplitude')
     xlabel('Frequency (Hz)')
+    semilogy(fftc1['Freq'], abs(fftc1['Amp']) ** 2, 'o:', label='Vertical Channel', markersize=4, linewidth=1)
     legend()
+    if not plotTogether:
+        figure(figsize=(20,10))
+        title('Fourier Transform of NIAWG output')
+        ylabel('Transform amplitude')
+        xlabel('Frequency (Hz)')
+    semilogy(fftc2['Freq'], abs(fftc2['Amp']) ** 2, 'o:', label='Horizontal Channel', markersize=4, linewidth=1)
+    if not plotTogether:
+        legend()
+    
     # this is half the niawg sample rate. output is mirrored around x=0.
     xlim(0, 160e6)
     show()

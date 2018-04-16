@@ -6,10 +6,6 @@ def center():
     return [2, 3]  # or the arg-number of the center.
 
 
-def args():
-    return 'amp', 'x0', 'y0', 'sig_x', 'sig_y', 'theta', 'offset'
-
-
 def f(coordinates, amplitude, xo, yo, sigma_x, sigma_y, theta, offset):
     """
     The normal function call for this function. Performs checks on valid arguments, then calls the "raw" function.
@@ -20,18 +16,6 @@ def f(coordinates, amplitude, xo, yo, sigma_x, sigma_y, theta, offset):
     if theta > np.pi/4 or theta < -np.pi/4:
         return 1e10
     return f_raw(coordinates, amplitude, xo, yo, sigma_x, sigma_y, theta, offset)
-
-
-def f_noravel(coordinates, amplitude, xo, yo, sigma_x, sigma_y, theta, offset):
-    x = coordinates[0]
-    y = coordinates[1]
-    xo = float(xo)
-    yo = float(yo)
-    a = (np.cos(theta)**2)/(2*sigma_x**2) + (np.sin(theta)**2)/(2*sigma_y**2)
-    b = -(np.sin(2*theta))/(4*sigma_x**2) + (np.sin(2*theta))/(4*sigma_y**2)
-    c = (np.sin(theta)**2)/(2*sigma_x**2) + (np.cos(theta)**2)/(2*sigma_y**2)
-    g = offset + amplitude*np.exp(- (a*((x-xo)**2) + 2*b*(x-xo)*(y-yo) + c*((y-yo)**2)))
-    return g
 
 
 def f_raw(coordinates, amplitude, xo, yo, sigma_x, sigma_y, theta, offset):
