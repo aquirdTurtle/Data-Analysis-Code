@@ -627,7 +627,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, accumulations=1, key=N
     # Group data into variations.
     newShape = (numberOfVariations, repetitions * picsPerRep, rawData.shape[1], rawData.shape[2])
     groupedDataRaw = rawData.reshape(newShape)
-    groupedDataRaw, key = orderData(groupedDataRaw, key)
+    groupedDataRaw, key, _ = orderData(groupedDataRaw, key)
     if dataRange is not None:
         groupedData, newKey = [[] for _ in range(2)]
         for count, variation in enumerate(groupedDataRaw):

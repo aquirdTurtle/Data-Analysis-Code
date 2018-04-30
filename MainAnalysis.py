@@ -223,7 +223,8 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
                                          yMin=yMin, yMax=yMax, dataRange=dataRange, keyOffset=keyOffset,
                                          picsPerRep=picsPerRep, dimSlice=dimSlice, varyingDim=varyingDim,
                                          groupData=groupData, quiet=quiet, repRange=repRange)
-    avgPic = getAvgPic(groupedData)
+    allPics = getAvgPics(groupedData)
+    avgPics = [allPics[loadPic], allPics[transferPic]]
     # initialize arrays
     (pic1Data, pic2Data, atomCounts, bins, binnedData, thresholds, survivalData, survivalErrs,
      loadingRate, pic1Atoms, pic2Atoms, genAvgs, genErrs) = arr([[None] * len(atomLocs1)] * 13)
@@ -278,7 +279,7 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
     if outputMma:
         outputDataToMmaNotebook(fileNumber, survivalData, survivalErrs, loadingRate, key)
     return (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate, pic1Data, keyName, key,
-            repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPic, otherDims, locationsList,
+            repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPics, otherDims, locationsList,
             genAvgs, genErrs)
 
 
@@ -388,6 +389,10 @@ def standardAssemblyAnalysis(fileNumber, atomLocs1, pic1Num, atomLocs2=None, key
     :param allAtomLocs2: 
     :return: 
     """
+    if pic1Num <= 0:
+        raise ValueError('pic1Num should not be zero or negative')
+    if pic1Num > picsPerRep:
+        raise ValueError('Pic1Num should not be larger than the number of pics per repetition.')
     atomLocs1 = unpackAtomLocations(atomLocs1)
     atomLocs2 = (atomLocs1[:] if atomLocs2 is None else unpackAtomLocations(atomLocs2))
     allAtomLocs1 = (atomLocs1[:] if allAtomLocs1 is None else unpackAtomLocations(allAtomLocs1))

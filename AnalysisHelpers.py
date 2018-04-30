@@ -22,10 +22,81 @@ import scipy.interpolate as interp
 
 import MarksConstants as consts
 import FittingFunctions as fitFunc
-from Miscellaneous import transpose, round_sig
+from Miscellaneous import transpose, round_sig, round_sig_str
 from copy import deepcopy
 
 dataAddress = None
+
+
+def loadHDF5(fileId, quiet=False):
+    """
+    Loads the key info from the hdf5 file and returns it.
+    returns pics, keyName, key, reps
+
+    :param fileId:
+    :param quiet:
+    :return:
+    """
+    if not quiet:
+        print('Loading HDF5 File...', end='')
+    file = openHDF5(fileId)
+    keyName, key = getKeyFromHDF5(file)
+    reps = file['Master-Parameters']['Repetitions'][0]
+    pics = getPicsFromHDF5(file)
+    if not quiet:
+        print('Loaded File Successfully.')
+    return pics, keyName, key, reps
+
+def openHDF5(fileId):
+    """
+
+    :param fileId:
+    :return:
+    """
+    if type(fileId) == int:
+        path = dataAddress + "data_" + str(fileId) + ".h5"
+    else:
+        # assume a file address itself
+        path = fileId
+    file = h5.File(path, 'r')
+    return file
+
+
+def getKeyFromHDF5(file):
+    """
+
+    :param file:
+    :return:
+    """
+    keyNames = []
+    keyValues = []
+    foundOne = False
+    for var in file['Master-Parameters']['Seq #1 Variables']:
+        if not file['Master-Parameters']['Seq #1 Variables'][var].attrs['Constant']:
+    # to look at older files...
+    #for var in file['Master-Parameters']['Variables']:
+    #    if not file['Master-Parameters']['Variables'][var].attrs['Constant']:
+            foundOne = True
+            keyNames.append(var)
+            keyValues.append(arr(file['Master-Parameters']['Seq #1 Variables'][var]))
+    if foundOne:
+        if len(keyNames) > 1:
+            return keyNames, arr(transpose(arr(keyValues)))
+        else:
+            return keyNames[0], arr(keyValues[0])
+    else:
+        return 'No-Variation', arr([1])
+
+
+def getPicsFromHDF5(file):
+    """
+    Need to re-shape the pics.
+    :param file:
+    :return:
+    """
+    pics = arr(file['Andor']['Pictures'])
+    pics = pics.reshape((pics.shape[0], pics.shape[2], pics.shape[1]))
+    return pics
 
 
 def splitData(data, picsPerSplit, picsPerRep, runningOverlap=0):
@@ -289,78 +360,6 @@ def combineData(data, key):
 
 # ##############
 # ### Data-Loading Functions
-
-
-def openHDF5(fileId):
-    """
-
-    :param fileId:
-    :return:
-    """
-    if type(fileId) == int:
-        path = dataAddress + "data_" + str(fileId) + ".h5"
-    else:
-        # assume a file address itself
-        path = fileId
-    file = h5.File(path, 'r')
-    return file
-
-
-def getKeyFromHDF5(file):
-    """
-
-    :param file:
-    :return:
-    """
-    keyNames = []
-    keyValues = []
-    foundOne = False
-    for var in file['Master-Parameters']['Seq #1 Variables']:
-        if not file['Master-Parameters']['Seq #1 Variables'][var].attrs['Constant']:
-    # to look at older files...
-    #for var in file['Master-Parameters']['Variables']:
-    #    if not file['Master-Parameters']['Variables'][var].attrs['Constant']:
-            foundOne = True
-            keyNames.append(var)
-            keyValues.append(arr(file['Master-Parameters']['Seq #1 Variables'][var]))
-    if foundOne:
-        if len(keyNames) > 1:
-            return keyNames, arr(transpose(arr(keyValues)))
-        else:
-            return keyNames[0], arr(keyValues[0])
-    else:
-        return 'No-Variation', arr([1])
-
-
-def getPicsFromHDF5(file):
-    """
-    Need to re-shape the pics.
-    :param file:
-    :return:
-    """
-    pics = arr(file['Andor']['Pictures'])
-    pics = pics.reshape((pics.shape[0], pics.shape[2], pics.shape[1]))
-    return pics
-
-
-def loadHDF5(fileId, quiet=False):
-    """
-    Loads the key info from the hdf5 file and returns it.
-    returns pics, keyName, key, reps
-
-    :param fileId:
-    :param quiet:
-    :return:
-    """
-    if not quiet:
-        print('Loading HDF5 File...', end='')
-    file = openHDF5(fileId)
-    keyName, key = getKeyFromHDF5(file)
-    reps = file['Master-Parameters']['Repetitions'][0]
-    pics = getPicsFromHDF5(file)
-    if not quiet:
-        print('Loaded File Successfully.')
-    return pics, keyName, key, reps
 
 
 def loadDataRay(num):
@@ -777,7 +776,8 @@ def getOptimalAomBiases(minX, minY, spacing, widthX, widthY):
     return xFreqs, xAmps, yFreqs, yAmps
 
 
-def maximizeAomPerformance(horCenterFreq, vertCenterFreq, spacing, numTweezersHor, numTweezersVert, iterations=10):
+def maximizeAomPerformance(horCenterFreq, vertCenterFreq, spacing, numTweezersHor, numTweezersVert, iterations=10, paperGuess=True, metric='max',
+                          vertAmps=None, horAmps=None):
     """
     computes the amplitudes and phases to maximize the AOM performance.
     :param horCenterFreq:
@@ -790,63 +790,76 @@ def maximizeAomPerformance(horCenterFreq, vertCenterFreq, spacing, numTweezersHo
     """
     horFreqs  = [horCenterFreq - spacing * (numTweezersHor  - 1) / 2.0 + i * spacing for i in range(numTweezersHor )]
     vertFreqs = [horCenterFreq - spacing * (numTweezersVert - 1) / 2.0 + i * spacing for i in range(numTweezersVert)]
-    vertAmps = horAmps = np.ones(numTweezersHor)
-
-    def calcWave(xPts, phases, freqs, amps):
+    if vertAmps is None:
+        vertAmps = np.ones(numTweezersVert)
+    if horAmps is None:
+        horAmps = np.ones(numTweezersHor)
+    def calcWaveCos(xPts, phases, freqs, amps):
         volts = np.zeros(len(xPts))
+        phases += [0]
         for phase, freq, amp in zip(phases, freqs, amps):
             volts += amp * np.cos(2*np.pi*freq * 1e6 * xPts + phase)
+        return volts
+    def calcWave(xPts, phases, freqs, amps):
+        volts = np.zeros(len(xPts))
+        phases += [0]
+        for phase, freq, amp in zip(phases, freqs, amps):
+            volts += amp * np.sin(2*np.pi*freq * 1e6 * xPts + phase)
         return volts
     
     def getXMetric(phases):
         x = np.linspace(0, 3e-6, 20000)
         if metric=='max':
-            return max(abs(calcWave(x, phases, xFreqs, xAmps)))
+            return max(abs(calcWave(x, phases, horFreqs, horAmps)))
         elif metric == 'std':
-            return np.std(calcWave(x, phases, xFreqs, xAmps))
+            return np.std(calcWave(x, phases, horFreqs, horAmps))
 
     def getYMetric(phases):
         x = np.linspace(0, 3e-6, 20000)
         if metric=='max':
-            return max(abs(calcWave(x, phases, yFreqs, yAmps)))
+            return max(abs(calcWave(x, phases, vertFreqs, vertAmps)))
         elif metric == 'std':
-            return np.std(calcWave(x, phases, yFreqs, yAmps))
-    
+            return np.std(calcWave(x, phases, vertFreqs, vertAmps))
 
-    xBounds = [(0, 2 * consts.pi) for _ in range(widthX)]
+    xBounds = [(0, 2 * consts.pi) for _ in range(numTweezersHor-1)]
     #
     if paperGuess:
-        xGuess = arr([np.pi * i**2/widthX for i in range(widthX)])
+        xGuess = arr([np.pi * i**2/numTweezersHor for i in range(numTweezersHor-1)])
     else:
-        xGuess = arr([0 for _ in range(widthX)])
+        xGuess = arr([0 for _ in range(numTweezersHor-1)])
     minimizer_kwargs = dict(method="L-BFGS-B", bounds=xBounds)
     xPhases = basinhopping(getXMetric, xGuess, minimizer_kwargs=minimizer_kwargs, niter=iterations, stepsize=0.2)
+    xPhases = list(xPhases.x) + [0]
     print('horFreqs', horFreqs)
     print('horAmps', horAmps)
-    print('X-Phases', xPhases.x)
+    print('Hor-Phases:', [round_sig_str(x,10) for x in xPhases])
 
     if paperGuess:
-        yGuess = arr([np.pi * i**2/widthY for i in range(widthY)])
+        yGuess = arr([np.pi * i**2/numTweezersVert for i in range(numTweezersVert-1)])
     else:
-        yGuess = arr([0 for _ in range(widthY)])
-    yBounds = [(0, 2 * consts.pi) for _ in range(widthY)]
+        yGuess = arr([0 for _ in range(numTweezersVert-1)])
+    yBounds = [(0, 2 * consts.pi) for _ in range(numTweezersVert-1)]
     minimizer_kwargs = dict(method="L-BFGS-B", bounds=yBounds)
     yPhases = basinhopping(getYMetric, yGuess, minimizer_kwargs=minimizer_kwargs, niter=iterations, stepsize=0.2)
+    yPhases = list(yPhases.x) + [0]
+    for i, xp in enumerate(yPhases):
+        yPhases[i] = round_sig(xp, 10)
+
     print('vertFreqs', vertFreqs)
     print('vertAmps', vertAmps)
-    print('Y-Phases', yPhases.x)
+    print('Vert-Phases:', [round_sig_str(y,10) for y in yPhases])
 
     xpts = np.linspace(0, 1e-6, 10000)
-    ypts_x = calcWave(xpts, xPhases.x, horFreqs, horAmps)
-    yptsOrig = calcWave(xpts, arr([0 for _ in range(widthX)]), horFreqs, horAmps)
+    ypts_x = calcWave(xpts, xPhases, horFreqs, horAmps)
+    yptsOrig = calcWaveCos(xpts, arr([0 for _ in range(numTweezersHor)]), horFreqs, horAmps)
     title('X-Axis')
     plot(xpts, ypts_x, ':', label='X-Optimization')
     plot(xpts, yptsOrig, ':', label='X-Worst-Case')
     legend()
 
     figure()
-    yptsOrig = calcWave(xpts, arr([0 for _ in range(widthY)]), yFreqs, yAmps)
-    ypts_y = calcWave(xpts, yPhases.x, vertFreqs, vertAmps)
+    yptsOrig = calcWave(xpts, arr([0 for _ in range(numTweezersVert)]), vertFreqs, vertAmps)
+    ypts_y = calcWaveCos(xpts, yPhases, vertFreqs, vertAmps)
     title('Y-Axis')
     plot(xpts, ypts_y, ':', label='Y-Optimization')
     plot(xpts, yptsOrig, ':', label='Y-Worst-Case')
@@ -1636,6 +1649,28 @@ def getAvgPic(picSeries):
         avgPic = avgPic / (len(picSeries) * len(picSeries[0]))
         return avgPic
 
+def getAvgPics(pics, picsPerRep=2):
+    if len(pics.shape) == 3:
+        avgPics = []
+        for picNum in range(picsPerRep):
+            avgPic = np.zeros(pics[0].shape)
+            for pic_inc in range(int(pics.shape[0]/picsPerRep)):
+                avgPic += pics[int(pic_inc * picsPerRep) + picNum]
+            avgPics.append(avgPic / (len(pics)/picsPerRep))
+        return avgPics
+    elif len(pics.shape) == 4:
+        avgPics = []
+        for picNum in range(picsPerRep):
+            avgPic = np.zeros(pics[0][0].shape)
+            for var in pics:
+                for pic_inc in range(int(var.shape[0]/picsPerRep)):
+                    avgPic += var[int(pic_inc * picsPerRep) + picNum]
+            avgPics.append(avgPic / (len(pics)/picsPerRep))
+        return avgPics
+    else:
+        raise ValueError(pics.shape)
+    
+    
 
 def processSingleImage(rawData, bg, window, xMin, xMax, yMin, yMax, accumulations, zeroCorners, smartWindow,
                        manuallyAccumulate=True):
