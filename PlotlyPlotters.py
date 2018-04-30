@@ -72,7 +72,7 @@ def Survival(fileNumber, atomLocs, **TransferArgs):
     """See corresponding transfer function for valid TransferArgs."""
     return Transfer(fileNumber, atomLocs, atomLocs, **TransferArgs)
 
-import matplotlib.pyplot as plt
+
 def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModule=None, showCounts=False, showGenerationData=False,
              histBins=150, **standardTransferArgs):
     """
@@ -111,42 +111,9 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModule=None, showCo
     avgFigs[0].append(go.Heatmap(z=avgPics[0], colorscale='Viridis',yaxis={'autorange':'reversed'}))
     avgFigs[1].append(go.Heatmap(z=avgPics[1], colorscale='Viridis',yaxis={'autorange':'reversed'}))
     centers = []
-    # Fit displaying...
+
     if fitModule is not None:
-        fitDataFrame = DataFrame()
-        for argnum, arg in enumerate(fitModule.args()):
-            vals = []
-            for fitData in fits:
-                vals.append(fitData['vals'][argnum])
-            errs = []
-            for fitData in fits:
-                if fitData['errs'] is not None:
-                    errs.append(fitData['errs'][argnum])
-                else:
-                    errs.append(0)
-            meanVal = np.mean(vals)
-            stdVal = np.std(vals)
-            vals.append(meanVal)
-            vals.append(stdVal)
-            vals.append(avgFit['vals'][argnum])
-
-            meanErr = np.mean(errs)
-            stdErr = np.std(errs)
-            errs.append(meanErr)
-            errs.append(stdErr)
-            if avgFit['errs'] is not None:
-                errs.append(avgFit['errs'][argnum])
-            else:
-                errs.append(0)
-
-            fitDataFrame[arg] = vals
-            fitDataFrame[arg + '-Err'] = errs
-        indexStr = ['fit ' + str(i) for i in range(len(fits))]
-        indexStr.append('Avg Val')
-        indexStr.append('Std Val')
-        indexStr.append('Fit of Avg')
-        fitDataFrame.index = indexStr
-        display(fitDataFrame)
+        display(getFitsDataFram(fits))
 
     for data, err, loc, color, legend, fitData, gen, genErr in zip(survivalData, survivalErrs, locsList, pltColors,
                                                       legends, fits, genAvgs, genErrs):

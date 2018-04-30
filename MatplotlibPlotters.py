@@ -1,6 +1,6 @@
 __version__ = "1.1"
 
-from MainAnalysis import standardLoadingAnalysis, analyzeNiawgWave
+from MainAnalysis import standardLoadingAnalysis, analyzeNiawgWave, standardTransferAnalysis
 from numpy import array as arr
 from random import randint
 from Miscellaneous import getColors, round_sig
@@ -13,7 +13,7 @@ from AnalysisHelpers import (loadHDF5, loadDataRay, loadCompoundBasler, processS
                              getEnsembleStatistics, handleFitting, getLoadingData, loadDetailedKey, processImageData,
                              fitPictures, fitGaussianBeamWaist, assemblePlotData, showPics, showBigPics,
                              showPicComparisons, ballisticMotExpansion, simpleMotExpansion, calcMotTemperature,
-                             integrateData, computeMotNumber)
+                             integrateData, computeMotNumber, getFitsDataFrame)
 import MarksConstants as consts
 import FittingFunctions as fitFunc
 
@@ -573,332 +573,153 @@ def Survival(fileNumber, atomLocs, **TransferArgs):
     return Transfer(fileNumber, atomLocs, atomLocs, **TransferArgs)
 
 
-def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, accumulations=1, key=None,
-             picsPerRep=2, plotTogether=True, plotLoadingRate=False, manualThreshold=None,
-             fitType=None, window=None, xMin=None, xMax=None, yMin=None, yMax=None, dataRange=None,
-             histSecondPeakGuess=None, keyOffset=0, sumAtoms=False):
+def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, plotTogether=True, plotLoadingRate=False, legendOption=None,
+             fitModule=None, showFitDetails=False, **standardTransferArgs):
     """
     Standard data analysis package for looking at survival rates throughout an experiment.
 
     :return key, survivalData, survivalErrors
     """
-    if type(atomLocs1[0]) == int:
-        # assume atom grid format.
-        topLeftRow = atomLocs1[0]
-        topLeftColumn = atomLocs1[1]
-        spacing = atomLocs1[2]
-        width = atomLocs1[3]  # meaning the atoms array width number x height number, say 5 by 5
-        height = atomLocs1[4]
-        atomLocs1 = []
-        for widthInc in range(width):
-            for heightInc in range(height):
-                atomLocs1.append([topLeftRow + spacing * heightInc, topLeftColumn + spacing * widthInc])
-
-    # make it the right size
-    if len(arr(atomLocs1).shape) == 1 and len(atomLocs1) is not 5:
-        atomLocs1 = [atomLocs1]
-    if atomLocs2 is None:
-        atomLocs2 = atomLocs1
-    # report
-
-    #### Load Fits File & Get Dimensions
-    # Get the array from the fits file. That's all I care about.
-    rawData, keyName, key, repetitions = loadHDF5(fileNumber)
-    key -= keyOffset
-    if len(key) < 100:
-        print("Key Values, in Time Order: ", key)
-    # window the images images.
-    if window is not None:
-        xMin, xMax, yMin, yMax = window
+    res = standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, fitModule=fitModule, 
+                                   **standardTransferArgs)
+    (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate, pic1Data, keyName, key,
+     repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPics, otherDimValues,
+     locsList, genAvgs, genErrs) = res
+    if not show:
+        return key, survivalData, survivalErrs, loadingRate
+    if legendOption is None and len(atomLocs1) < 100:
+        legendOption = True
     else:
-        xMin, yMin, xMax, yMax = [0, 0] + list(reversed(list(arr(rawData[0]).shape)))
-    rawData = np.copy(arr(rawData[:, yMin:yMax, xMin:xMax]))
-
-    # gather some info about the run
-    numberOfPictures = int(rawData.shape[0])
-    numberOfRuns = int(numberOfPictures / picsPerRep)
-    numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
-    print('Total # of Pictures:', numberOfPictures)
-    print('Number of Variations:', numberOfVariations)
-    if not len(key) == numberOfVariations:
-        raise RuntimeError("The Length of the key doesn't match the data found.")
-
-    ### Initial Data Analysis
-    # Group data into variations.
-    newShape = (numberOfVariations, repetitions * picsPerRep, rawData.shape[1], rawData.shape[2])
-    groupedDataRaw = rawData.reshape(newShape)
-    groupedDataRaw, key, _ = orderData(groupedDataRaw, key)
-    if dataRange is not None:
-        groupedData, newKey = [[] for _ in range(2)]
-        for count, variation in enumerate(groupedDataRaw):
-            if count in dataRange:
-                groupedData.append(variation)
-                newKey.append(key[count])
-        groupedData = arr(groupedData)
-        key = arr(newKey)
-        numberOfPictures = groupedData.shape[0] * groupedData.shape[1]
-        numberOfRuns = int(numberOfPictures / picsPerRep)
-        numberOfVariations = len(groupedData)
+        legendOption = False
+    # get the colors for the plot.
+    colors, colors2 = getColors(len(atomLocs1) + 1)
+    figure()
+    # Setup grid
+    grid1 = mpl.gridspec.GridSpec(12, 16)
+    grid1.update(left=0.05, right=0.95, wspace=1.2, hspace=1000)
+    gridLeft = mpl.gridspec.GridSpec(12, 16)
+    gridLeft.update(left=0.001, right=0.95, hspace=1000)
+    gridRight = mpl.gridspec.GridSpec(12, 16)
+    gridRight.update(left=0.2, right=0.946, wspace=0, hspace=1000)
+    # Main Plot
+    if atomLocs1 == atomLocs2:
+        typeName = "Survival"
     else:
-        groupedData = groupedDataRaw
-    print('Data Shape:', groupedData.shape)
-    avgPic = getAvgPic(groupedData);
-
-    (pic1Data, pic2Data, atomCounts, bins, binnedData, thresholds, survivalData, survivalErrs,
-     captureArray, fitNom, fitStd, center, fitValues, fitErrs, fitCovs) = arr([[None] * len(atomLocs1)] * 15)
-    for i, (loc1, loc2) in enumerate(zip(atomLocs1, atomLocs2)):
-        # grab the first picture of each repetition
-        pic1Data[i] = normalizeData(groupedData, loc1, 0, picsPerRep);
-        pic2Data[i] = normalizeData(groupedData, loc2, 1, picsPerRep);
-        atomCounts[i] = []
-        for pic1, pic2 in zip(pic1Data[i], pic2Data[i]):
-            atomCounts[i].append(pic1)
-            atomCounts[i].append(pic2)
-        atomCounts[i] = arr(atomCounts[i])
-        ### Calculate Atom Threshold. Default binning for this is 10-count-wide bins
-        bins[i], binnedData[i] = getBinData(10, pic1Data[i]);
-        guess1, guess2 = guessGaussianPeaks(bins[i], binnedData[i]);
-        if histSecondPeakGuess is None:
-            guess = arr([max(binnedData[i]), guess1, 30, max(binnedData[i]) * 0.75, 200, 10]);
+        typeName = "Transfer"
+    mainPlot = subplot(grid1[:, :12])
+    centers = []
+    for i, (atomLoc, fit) in enumerate(zip(atomLocs1, fits)):
+        if typeName == "Survival":
+            leg = r"[%d,%d] " % (atomLocs1[i][0], atomLocs1[i][1])
         else:
-            guess = arr([max(binnedData[i]), guess1, 30, max(binnedData[i]) * 0.75, histSecondPeakGuess, 10]);
-        gaussianFitVals = fitDoubleGaussian(bins[i], binnedData[i], guess);
-        thresholds[i], thresholdFid = calculateAtomThreshold(gaussianFitVals);
-        if manualThreshold is not None:
-            thresholds[i] = manualThreshold
-        # Calculate survival events
-        if picsPerRep > 1:
-            # Get Data in final form for exporting
-            survivalList = getSurvivalEvents(atomCounts[i], thresholds[i], numberOfRuns)
-            survivalData[i], survivalErrs[i], captureArray[i] = getSurvivalData(survivalList, repetitions);
-        atomCount = 0;
-        for point in pic1Data[i]:
-            if point > thresholds[i]:
-                atomCount += 1
-        xFit = np.linspace(min(key), max(key), 1000)
-        fitNom[i] = fitStd[i] = center[i] = fitValues[i] = fitErrs[i] = fitCovs[i] = None
-        if sumAtoms == False:
-            fitNom[i], fitStd[i], center[i], fitValues[i], fitErrs[i], fitCovs[i] = handleFitting(fitType, key,
-                                                                                                  survivalData[i])
-
-    if sumAtoms:
-        # survivalDataSum = np.sum(survivalData)/len(atomLocs1)
-        survivalDataSum = sum(survivalData * captureArray) / sum(captureArray)  # weighted sum with loading
-        survivalErrsSum = np.sqrt(np.sum(survivalErrs ** 2)) / len(atomLocs1)
-        fitNomSum = fitStdSum = centerSum = fitValuesSum = fitErrsSum = fitCovsSum = None
-        fitNomSum, fitStdSum, centerSum, fitValuesSum, fitErrsSum, fitCovsSum = handleFitting(fitType, key,
-                                                                                              survivalDataSum)
-
-    if show:
-        # #########################################
-        #      Plotting
-        # #########################################
-
-        # get the colors for the plot.
-        cmapRGB = mpl.cm.get_cmap('gist_rainbow', 100)
-        colors, colors2 = [[None] * len(atomLocs1)] * 2
-        for i, atomLoc in enumerate(atomLocs1):
-            colors[i] = cmapRGB(randint(0, 100))[:-1]
-            # the negative of the first color
-            colors2[i] = tuple(arr((1, 1, 1)) - arr(colors[i]))
-        figure()
-        # Setup grid
-        grid1 = mpl.gridspec.GridSpec(12, 16)
-        grid1.update(left=0.05, right=0.95, wspace=1.2, hspace=1000)
-        gridLeft = mpl.gridspec.GridSpec(12, 16)
-        gridLeft.update(left=0.001, right=0.95, hspace=1000)
-        gridRight = mpl.gridspec.GridSpec(12, 16)
-        gridRight.update(left=0.2, right=0.946, wspace=0, hspace=1000)
-        # Main Plot
-        if atomLocs1 == atomLocs2:
-            typeName = "Survival"
-        else:
-            typeName = "Transfer"
-        mainPlot = subplot(grid1[:, :12])
-        for i, atomLoc in enumerate(atomLocs1):
             leg = r"[%d,%d]$\rightarrow$[%d,%d] " % (atomLocs1[i][0], atomLocs1[i][1],
                                                      atomLocs2[i][0], atomLocs2[i][1])
-            if len(survivalData[i]) == 1:
-                leg += (typeName + " % = " + str(round_sig(survivalData[i][0])) + "$\pm$ "
-                        + str(round_sig(survivalErrs[i][0])))
-            mainPlot.errorbar(key, survivalData[i], yerr=survivalErrs[i], color=colors[i], ls='',
-                              marker='o', capsize=6, elinewidth=3,
-                              label=leg)
-            if fitType is None or fitNom[i] == None or sumAtoms == True:
-                pass
-            elif fitType == 'Exponential-Decay' or fitType == 'Exponential-Saturation':
-                mainPlot.plot(xFit, fitNom[i], ':', color=colors[i], label=r'Fit; decay constant $= '
-                                                                           + str(round_sig(fitValues[1])) + '\pm '
-                                                                           + str(round_sig(fitErrs[1])) + '$',
-                              linewidth=3)
-                mainPlot.fill_between(xFit, fitNom[i] - fitStd[i], fitNom[i] + fitStd[i],
-                                      alpha=0.1, label=r'$\pm\sigma$ band',
-                                      color=colors[i])
-            elif (fitType == 'RabiFlop'):
-                mainPlot.plot(xFit, fitNom[i], ':', color=colors[i], label=r'eff Rabi rate $= '
-                                                                           + str(round_sig(fitValues[i][1])) + '\pm '
-                                                                           + str(round_sig(fitErrs[i][1])) + '$\n'
-                                                                           + '$\pi-time='
-                                                                           + str(
-                    round_sig(1 / fitValues[i][1] / 2)) + '\pm '
-                                                                           + str(
-                    round_sig(fitErrs[i][1]) / fitValues[i][1] ** 2 / 2) + '$\n'
-                                                                           + 'amplitude $='
-                                                                           + str(round_sig(fitValues[i][0])) + '\pm '
-                                                                           + str(round_sig(fitErrs[i][0])) + '$',
-                              linewidth=3)
-                mainPlot.fill_between(xFit, fitNom[i] - fitStd[i], fitNom[i] + fitStd[i],
-                                      alpha=0.1, label=r'$\pm\sigma$ band',
-                                      color=colors[i])
-            elif (fitType == 'Gaussian-Dip') or (fitType == 'Gaussian-Bump'):
-                # assuming gaussian?
-                mainPlot.plot(xFit, fitNom[i], ':', label='Fit', linewidth=3, color=colors[i])
-                mainPlot.fill_between(xFit, fitNom[i] - fitStd[i], fitNom[i] + fitStd[i], alpha=0.1,
-                                      label='2-sigma band', color=colors[i])
-                mainPlot.axvspan(fitValues[i][1] - np.sqrt(fitCovs[i][1, 1]),
-                                 fitValues[i][1] + np.sqrt(fitCovs[i][1, 1]),
-                                 color=colors[i], alpha=0.1)
-                mainPlot.axvline(fitValues[i][1], color=colors[i], linestyle='-.',
-                                 alpha=0.5, label='fit center $= ' + str(round_sig(fitValues[i][2], 6))
-                                                  + '\pm ' + str(round_sig(fitErrs[i][2], 4)) + '$')
-            elif fitType is not None:
-                plot(xFit, fitNom[i], ':', label='Fit', linewidth=3)
-                fill_between(xFit, fitNom[i] - fitStd[i], fitNom[i] + fitStd[i], alpha=0.1,
-                             label=r'$\pm\sigma$ band', color=colors[i])
-                axvspan(fitValues[i][center[i]] - np.sqrt(fitCovs[i][center[i], center[i]]),
-                        fitValues[i][center[i]] + np.sqrt(fitCovs[i][center[i], center[i]]),
-                        color=colors[i], alpha=0.1)
-                axvline(fitValues[i][center[i]], color=colors[i], linestyle='-.', alpha=0.5,
-                        label='fit center $= ' + str(round_sig(fitValues[i][center[i]])) + '$')
-            else:
-                pass
-        mainPlot.set_ylim({-0.02, 1.01})
-        if not min(key) == max(key):
-            mainPlot.set_xlim(left=min(key) - (max(key) - min(key)) / len(key), right=max(key)
-                                                                                      + (max(key) - min(key)) / len(
-                key))
-        mainPlot.set_xticks(key)
+        if len(survivalData[i]) == 1:
+            leg += (typeName + " % = " + str(round_sig(survivalData[i][0])) + "$\pm$ "
+                    + str(round_sig(survivalErrs[i][0])))
+        mainPlot.errorbar(key, survivalData[i], yerr=survivalErrs[i], color=colors[i], ls='',
+                          marker='o', capsize=6, elinewidth=3, label=leg, alpha=0.3)
+        if fitModule is not None:
+            if fit['vals'] is None:
+                print(loc, 'Fit Failed!')
+                continue
+            centerIndex = fitModule.center()
+            if centerIndex is not None:
+                centers.append(fit['vals'][centerIndex])
+            mainPlot.plot(fit['x'], fit['nom'], color=colors[i], alpha = 0.5)
+            #mainPlot.append(go.Scatter(x=fit['x'], y=fit['nom'], line={'color': color},
+            #                           legendgroup=legend, showlegend=False, opacity=alphaVal))
+            #if fit['std'] is not None:
+                #mainPlot.plot(fit['x'], fit['nom'], color=)
+                #mainPlot.append(go.Scatter(x=fit['x'], y=fit['nom'] + fit['std'],
+                #                           opacity=alphaVal / 2, line={'color': color},
+                #                           legendgroup=legend, showlegend=False, hoverinfo='none'))
+                #mainPlot.append(fit['x'], y=fit['nom'] - fit['std'], label=legend)
 
-        titletxt = keyName + " Atom " + typeName + " Scan"
+    mainPlot.set_ylim({-0.02, 1.01})
+    if not min(key) == max(key):
+        mainPlot.set_xlim(left=min(key) - (max(key) - min(key)) / len(key), right=max(key)
+                          + (max(key) - min(key)) / len(key))
+    mainPlot.set_xticks(key)
 
-        if len(survivalData[0]) == 1:
-            titletxt = keyName + " Atom " + typeName + " Point. " + typeName + " % = \n"
-            for atomData in survivalData:
-                titletxt += ''  # str(round_sig(atomData,4) + ", "
+    titletxt = keyName + " Atom " + typeName + " Scan"
 
-        mainPlot.set_title(titletxt, fontsize=30)
-        mainPlot.set_ylabel("Survival Probability", fontsize=20)
-        mainPlot.set_xlabel(keyName, fontsize=20)
-        mainPlot.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), fancybox=True, ncol=4)
-        legend()
-        # Loading Plot
-        loadingPlot = subplot(grid1[0:3, 12:16])
-        for i, loc in enumerate(atomLocs1):
-            loadingPlot.plot(key, captureArray[i], ls='', marker='o', color=colors[i])
-            loadingPlot.axhline(np.mean(captureArray[i]), color=colors[i])
-        loadingPlot.set_ylim({0, 1})
-        if not min(key) == max(key):
-            loadingPlot.set_xlim(left=min(key) - (max(key) - min(key)) / len(key), right=max(key)
-                                                                                         + (max(key) - min(key)) / len(
-                key))
-        loadingPlot.set_xlabel("Key Values")
-        loadingPlot.set_ylabel("Capture %")
-        loadingPlot.set_xticks(key)
-        loadingPlot.set_title("Loading: Avg$ = " + str(round_sig(np.mean(captureArray[0]))) + '$')
-        for item in ([loadingPlot.title, loadingPlot.xaxis.label, loadingPlot.yaxis.label] +
-                         loadingPlot.get_xticklabels() + loadingPlot.get_yticklabels()):
-            item.set_fontsize(10)
-            # ### Count Series Plot
-        countPlot = subplot(gridRight[4:8, 12:15])
-        for i, loc in enumerate(atomLocs1):
-            countPlot.plot(pic1Data[i], color=colors[i], ls='', marker='.', markersize=1, alpha=1)
-            countPlot.plot(pic2Data[i], color=colors2[i], ls='', marker='.', markersize=1, alpha=0.8)
-            countPlot.axhline(thresholds[i], color='w')
-        countPlot.set_xlabel("Picture #")
-        countPlot.set_ylabel("Camera Signal")
-        countPlot.set_title("Thresh.=" + str(round_sig(thresholds[i])) + ", Fid.="
-                            + str(round_sig(thresholdFid)), fontsize=10)
-        ticksForVis = countPlot.xaxis.get_major_ticks()
-        ticksForVis[-1].label1.set_visible(False)
-        for item in ([countPlot.title, countPlot.xaxis.label, countPlot.yaxis.label] +
-                         countPlot.get_xticklabels() + countPlot.get_yticklabels()):
-            item.set_fontsize(10)
-        countPlot.set_xlim((0, len(pic1Data[0])))
-        tickVals = np.linspace(0, len(pic1Data[0]), len(key) + 1)
-        countPlot.set_xticks(tickVals)
-        # Count Histogram Plot
-        countHist = subplot(gridLeft[4:8, 15:16], sharey=countPlot)
-        for i, atomLoc in enumerate(atomLocs1):
-            countHist.hist(pic1Data[i], 50, color=colors[i], orientation='horizontal', alpha=0.5)
-            countHist.hist(pic2Data[i], 50, color=colors2[i], orientation='horizontal', alpha=0.3)
-            countHist.axhline(thresholds[i], color='w')
-        for item in ([countHist.title, countHist.xaxis.label, countHist.yaxis.label] +
-                         countHist.get_xticklabels() + countHist.get_yticklabels()):
-            item.set_fontsize(10)
-        ticks = countHist.get_xticklabels()
-        for tickInc in range(len(ticks)):
-            ticks[tickInc].set_rotation(-45)
-        setp(countHist.get_yticklabels(), visible=False)
-        # average image
-        avgPlt = subplot(gridRight[9:12, 12:15])
-        avgPlt.imshow(avgPic);
-        avgPlt.set_title("Average Image")
-        avgPlt.grid('off')
-        for loc in atomLocs1:
-            circ = Circle((loc[1], loc[0]), 0.2, color='r')
-            avgPlt.add_artist(circ)
-        for loc in atomLocs2:
-            circ = Circle((loc[1], loc[0]), 0.1, color='g')
-            avgPlt.add_artist(circ)
-        if sumAtoms:
-            figure()
-            colorsLoc = cmapRGB(randint(0, 100))[:-1]
-            errorbar(key, survivalDataSum, yerr=survivalErrsSum, color=colorsLoc, ls='',
-                     marker='o', capsize=6, elinewidth=3, label='sum Data ' + str(atomLoc))
-            if fitNomSum == None:
-                pass
-            elif fitType == "RabiFlop":
-                sumatomplot = plot(xFit, fitNomSum, ':', label='eff Rabi rate $= '
-                                                               + str(round_sig(fitValuesSum[1], 3)) + '\pm '
-                                                               + str(round_sig(fitErrsSum[1], 3)) + '$\n'
-                                                               + '$\pi-time='
-                                                               + str(round_sig(1 / fitValuesSum[1] / 2)) + '\pm '
-                                                               + str(
-                    round_sig(fitErrsSum[1]) / fitValuesSum[1] ** 2 / 2) + '$\n'
-                                                               + 'amplitude $='
-                                                               + str(round_sig(fitValuesSum[0])) + '\pm '
-                                                               + str(round_sig(fitErrsSum[0])) + '$', linewidth=3,
-                                   color=colorsLoc)
-                fill_between(xFit, fitNomSum - fitStdSum, fitNomSum + fitStdSum, color=colorsLoc,
-                             alpha=0.1, label=r'$\pm\sigma$ band')
-            elif (fitType == 'Gaussian-Dip') or (fitType == 'Gaussian-Bump'):
-                sumatomplot = plot(xFit, fitNomSum, ':', label='freq center $= '
-                                                               + str(round_sig(fitValuesSum[1], 7)) + '\pm '
-                                                               + str(round_sig(fitErrsSum[1], 7)) + '$\n'
-                                                               + 'width=$'
-                                                               + str(round_sig(fitValuesSum[2])) + '\pm '
-                                                               + str(round_sig(fitErrsSum[2])) + '$\n', linewidth=3,
-                                   color=colorsLoc)
-                fill_between(xFit, fitNomSum - fitStdSum, fitNomSum + fitStdSum, color=colorsLoc,
-                             alpha=0.1, label=r'$\pm\sigma$ band')
-            elif fitType is not None:
-                plot(xFit, fitNomSum, ':', linewidth=3, color=colorsLoc, label=r'decay constant = '
-                                                                               + str(
-                    round_sig(fitValuesSum[1], 7)) + '$\pm $' + str(round_sig(fitErrsSum[1], 7)))
-                # fill_between(xFit, fitNomSum - fitStdSum, fitNomSum + fitStdSum, alpha=0.1, label=r'$\pm\sigma$ band',
-                #             color='b')
-                # axvspan(fitValuesSum - np.sqrt(fitCovsSum[1,1]),
-                #    fitValuesSum + np.sqrt(fitCovsSum[1,1]),
-                #    color=colorsLoc, alpha=0.1)
-                # axvline(fitValuesSum, color=colorsLoc,linestyle='-.', alpha=0.5,
-                #    label='fit center $= '+ str(round_sig(fitValuesSum))+'$')
-                # pass
-            legend()
-            title(titletxt + str(survivalDataSum) + '$\pm$' + str(survivalErrsSum), fontsize=30)
-            ylabel("sum Survival Probability", fontsize=20)
-            xlabel(keyName, fontsize=20)
-            ylim(-0.02, 1.01)
-    return key, survivalData, survivalErrs, captureArray
+    if len(survivalData[0]) == 1:
+        titletxt = keyName + " Atom " + typeName + " Point. " + typeName + " % = \n"
+        for atomData in survivalData:
+            titletxt += ''  # str(round_sig(atomData,4) + ", "
+
+    mainPlot.set_title(titletxt, fontsize=30)
+    mainPlot.set_ylabel("Survival Probability", fontsize=20)
+    mainPlot.set_xlabel(keyName, fontsize=20)
+    mainPlot.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), fancybox=True, ncol=8, prop={'size': 12})
+    #legend()
+    # Loading Plot
+    loadingPlot = subplot(grid1[0:3, 12:16])
+    for i, loc in enumerate(atomLocs1):
+        loadingPlot.plot(key, loadingRate[i], ls='', marker='o', color=colors[i], alpha=0.3)
+        loadingPlot.axhline(np.mean(loadingRate[i]), color=colors[i], alpha=0.3)
+    loadingPlot.set_ylim({0, 1})
+    if not min(key) == max(key):
+        loadingPlot.set_xlim(left=min(key) - (max(key) - min(key)) / len(key), right=max(key) 
+                             + (max(key) - min(key)) / len(key))
+    loadingPlot.set_xlabel("Key Values")
+    loadingPlot.set_ylabel("Capture %")
+    loadingPlot.set_xticks(key)
+    loadingPlot.set_title("Loading: Avg$ = " + str(round_sig(np.mean(loadingRate[0]))) + '$')
+    for item in ([loadingPlot.title, loadingPlot.xaxis.label, loadingPlot.yaxis.label] +
+                     loadingPlot.get_xticklabels() + loadingPlot.get_yticklabels()):
+        item.set_fontsize(10)
+        # ### Count Series Plot
+    countPlot = subplot(gridRight[4:8, 12:15])
+    for i, loc in enumerate(atomLocs1):
+        countPlot.plot(pic1Data[i], color=colors[i], ls='', marker='.', markersize=1, alpha=0.3)
+        #countPlot.plot(pic2Data[i], color=colors2[i], ls='', marker='.', markersize=1, alpha=0.8)
+        countPlot.axhline(thresholds[i], color=colors[i], alpha=0.3)
+    countPlot.set_xlabel("Picture #")
+    countPlot.set_ylabel("Camera Signal")
+    countPlot.set_title("Thresh.=" + str(round_sig(thresholds[i])), fontsize=10) #", Fid.="
+                        #+ str(round_sig(thresholdFid)), )
+    ticksForVis = countPlot.xaxis.get_major_ticks()
+    ticksForVis[-1].label1.set_visible(False)
+    for item in ([countPlot.title, countPlot.xaxis.label, countPlot.yaxis.label] +
+                     countPlot.get_xticklabels() + countPlot.get_yticklabels()):
+        item.set_fontsize(10)
+    countPlot.set_xlim((0, len(pic1Data[0])))
+    tickVals = np.linspace(0, len(pic1Data[0]), len(key) + 1)
+    countPlot.set_xticks(tickVals)
+    # Count Histogram Plot
+    countHist = subplot(gridLeft[4:8, 15:16], sharey=countPlot)
+    for i, atomLoc in enumerate(atomLocs1):
+        countHist.hist(pic1Data[i], 50, color=colors[i], orientation='horizontal', alpha=0.3)
+        #countHist.hist(pic2Data[i], 50, color=colors2[i], orientation='horizontal', alpha=0.3)
+        countHist.axhline(thresholds[i], color=colors[i], alpha=1)
+    for item in ([countHist.title, countHist.xaxis.label, countHist.yaxis.label] +
+                     countHist.get_xticklabels() + countHist.get_yticklabels()):
+        item.set_fontsize(10)
+    ticks = countHist.get_xticklabels()
+    for tickInc in range(len(ticks)):
+        ticks[tickInc].set_rotation(-45)
+    setp(countHist.get_yticklabels(), visible=False)
+    # average image
+    avgPlt = subplot(gridRight[9:12, 12:15])
+    avgPlt.imshow(avgPics[0]);
+    avgPlt.set_title("Average Image")
+    avgPlt.grid('off')
+    for loc in atomLocs1:
+        circ = Circle((loc[1], loc[0]), 0.2, color='r')
+        avgPlt.add_artist(circ)
+    for loc in atomLocs2:
+        circ = Circle((loc[1], loc[0]), 0.1, color='g')
+        avgPlt.add_artist(circ)
+    mainPlot.errorbar(key, avgSurvivalData, yerr=avgSurvivalErr, color="#FFFFFFFF", ls='',
+             marker='o', capsize=6, elinewidth=3, label='Avg')
+    if fitModule is not None and showFitDetails:
+        mainPlot.plot(avgFit['x'], avgFit['nom'], color='#FFFFFFFF', ls=':')
+        fits_df = getFitsDataFrame(fits, fitModule, avgFit)
+        display(fits_df)
+
+    return key, survivalData, survivalErrs, loadingRate, fits, avgFit, genAvgs, genErrs
 
 
 def Loading(fileNum, atomLocations, plotLoadingRate=True, plotCounts=False, **StandardArgs):

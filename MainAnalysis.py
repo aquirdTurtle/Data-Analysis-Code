@@ -235,8 +235,9 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
         bins[i], binnedData[i] = getBinData(10, pic1Data[i])
         guess1, guess2 = guessGaussianPeaks(bins[i], binnedData[i])
         guess = arr([max(binnedData[i]), guess1, 30, max(binnedData[i])*0.75,
-                     200 if histSecondPeakGuess is not None else histSecondPeakGuess, 10])
-        gaussianFitVals = fitDoubleGaussian(bins[i], binnedData[i], guess)
+                     200 if histSecondPeakGuess is None else histSecondPeakGuess, 10])
+        if manualThreshold is None:
+            gaussianFitVals = fitDoubleGaussian(bins[i], binnedData[i], guess)
         thresholds[i], thresholdFid = (((manualThreshold, 0) if manualThreshold is not None
                                        else calculateAtomThreshold(gaussianFitVals)))
         pic1Atoms[i], pic2Atoms[i] = [[] for _ in range(2)]
@@ -434,7 +435,8 @@ def standardAssemblyAnalysis(fileNumber, atomLocs1, pic1Num, atomLocs2=None, key
         guess1, guess2 = guessGaussianPeaks(bins[i], binnedData[i])
         guess = arr([max(binnedData[i]), guess1, 30, max(binnedData[i]) * 0.75,
                      200 if histSecondPeakGuess is None else histSecondPeakGuess, 10])
-        gaussianFitVals = fitDoubleGaussian(bins[i], binnedData[i], guess)
+        if manualThreshold is None:
+            gaussianFitVals = fitDoubleGaussian(bins[i], binnedData[i], guess)
         thresholds[i], thresholdFid = ((manualThreshold, 0) if manualThreshold is not None
                                        else calculateAtomThreshold(gaussianFitVals))
         pic1Atoms[i], pic2Atoms[i] = [[] for _ in range(2)]
@@ -450,7 +452,8 @@ def standardAssemblyAnalysis(fileNumber, atomLocs1, pic1Num, atomLocs2=None, key
         guess1, guess2 = guessGaussianPeaks(bins[i], binnedData[i])
         guess = arr([max(binnedData[i]), guess1, 30, max(binnedData[i]) * 0.75,
                      200 if histSecondPeakGuess is None else histSecondPeakGuess, 10])
-        gaussianFitVals = fitDoubleGaussian(bins[i], binnedData[i], guess)
+        if manualThreshold is None:
+            gaussianFitVals = fitDoubleGaussian(bins[i], binnedData[i], guess)
         thresholds[i], thresholdFid = ((manualThreshold, 0) if manualThreshold is not None
                                        else calculateAtomThreshold(gaussianFitVals))
         allPic1Atoms[i], allPic2Atoms[i] = [[] for _ in range(2)]

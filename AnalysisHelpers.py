@@ -1388,6 +1388,43 @@ def groupMultidimensionalData(key, varyingDim, atomLocations, survivalData, surv
             arr(otherDimsList))
 
 
+def getFitsDataFrame(fits, fitModule, avgFit):
+    fitDataFrame = pd.DataFrame()
+    for argnum, arg in enumerate(fitModule.args()):
+        vals = []
+        for fitData in fits:
+            vals.append(fitData['vals'][argnum])
+        errs = []
+        for fitData in fits:
+            if fitData['errs'] is not None:
+                errs.append(fitData['errs'][argnum])
+            else:
+                errs.append(0)
+        meanVal = np.mean(vals)
+        stdVal = np.std(vals)
+        vals.append(meanVal)
+        vals.append(stdVal)
+        vals.append(avgFit['vals'][argnum])
+
+        meanErr = np.mean(errs)
+        stdErr = np.std(errs)
+        errs.append(meanErr)
+        errs.append(stdErr)
+        if avgFit['errs'] is not None:
+            errs.append(avgFit['errs'][argnum])
+        else:
+            errs.append(0)
+        fitDataFrame[arg] = vals
+        fitDataFrame[arg + '-Err'] = errs
+        indexStr = ['fit ' + str(i) for i in range(len(fits))]
+        indexStr.append('Avg Val')
+        indexStr.append('Std Val')
+        indexStr.append('Fit of Avg')
+        fitDataFrame.index = indexStr
+    return fitDataFrame
+
+
+
 def getLoadingData(picSeries, loc, whichPic, picsPerExperiment, manThreshold, binWidth):
     """
 
