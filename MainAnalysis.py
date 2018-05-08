@@ -13,14 +13,7 @@ from scipy.optimize import curve_fit as fit
 import FittingFunctions as fitFunc
 
 from AnalysisHelpers import *
-"""(loadHDF5, getAvgPic, getBinData, getEnsembleHits, getEnsembleStatistics,
-                             handleFitting, groupMultidimensionalData, getNetLoss,
-                             getAtomInPictureStatistics, normalizeData, fitDoubleGaussian,
-                             getSurvivalData, getSurvivalEvents, unpackAtomLocations, guessGaussianPeaks,
-                             calculateAtomThreshold, outputDataToMmaNotebook, getLoadingData, orderData,
-                             postSelectOnAssembly, fitWithClass, getNetLossStats, organizeTransferData,
-                             getGenerationEvents, getGenStatistics, parseRearrangeInfo)
-                             """
+
 import fitters.linear
 
 def analyzeCodeTimingData(num, talk=True, numTimes=3):
@@ -126,8 +119,8 @@ def analyzeScatterData(fileNumber, atomLocs1, connected=False, loadPic=1, transf
         guess = arr([max(binnedData[i]), guess1, 30, max(binnedData[i]) * 0.75,
                      200 if histSecondPeakGuess is not None else histSecondPeakGuess, 10])
         gaussianFitVals = fitDoubleGaussian(bins[i], binnedData[i], guess)
-        thresholds[i], thresholdFid = (((manualThreshold, 0) if manualThreshold is not None
-                                        else calculateAtomThreshold(gaussianFitVals)))
+        thresholds[i], thresholdFid = ((manualThreshold, 0) if manualThreshold is not None
+                                        else getMaxFidelityThreshold(gaussianFitVals))
         pic1Atoms[i], pic2Atoms[i] = [[] for _ in range(2)]
         for point1, point2 in zip(pic1Data[i], pic2Data[i]):
             pic1Atoms[i].append(point1 > thresholds[i])
@@ -227,7 +220,7 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
     avgPics = [allPics[loadPic], allPics[transferPic]]
     # initialize arrays
     (pic1Data, pic2Data, atomCounts, bins, binnedData, thresholds, survivalData, survivalErrs,
-     loadingRate, pic1Atoms, pic2Atoms, genAvgs, genErrs) = arr([[None] * len(atomLocs1)] * 13)
+     loadingRate, pic1Atoms, pic2Atoms, genAvgs, genErrs, gaussianFitVals) = arr([[None] * len(atomLocs1)] * 14)
     for i, (loc1, loc2) in enumerate(zip(atomLocs1, atomLocs2)):
         pic1Data[i] = normalizeData(groupedData, loc1, loadPic, picsPerRep, subtractBorders=subtractEdgeCounts)
         pic2Data[i] = normalizeData(groupedData, loc2, transferPic, picsPerRep, subtractBorders=subtractEdgeCounts)
@@ -235,11 +228,18 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
         bins[i], binnedData[i] = getBinData(10, pic1Data[i])
         guess1, guess2 = guessGaussianPeaks(bins[i], binnedData[i])
         guess = arr([max(binnedData[i]), guess1, 30, max(binnedData[i])*0.75,
-                     200 if histSecondPeakGuess is None else histSecondPeakGuess, 10])
+                     guess2,
+                     #0.75*max(pic1Data[i]) if histSecondPeakGuess is None else histSecondPeakGuess, 
+                     10])
         if manualThreshold is None:
-            gaussianFitVals = fitDoubleGaussian(bins[i], binnedData[i], guess)
-        thresholds[i], thresholdFid = (((manualThreshold, 0) if manualThreshold is not None
-                                       else calculateAtomThreshold(gaussianFitVals)))
+            gaussianFitVals[i] = fitDoubleGaussian(bins[i], binnedData[i], guess)
+            thresholds[i], thresholdFid = calculateAtomThreshold(gaussianFitVals[i])
+        elif manualThreshold=='auto':
+            thresholds[i], thresholdFid = ((max(pic1Data[i]) + min(pic1Data[i]))/2.0, 0) 
+        else:
+            thresholds[i], thresholdFid = (manualThreshold, 0) 
+        
+        
         pic1Atoms[i], pic2Atoms[i] = [[] for _ in range(2)]
         for point1, point2 in zip(pic1Data[i], pic2Data[i]):
             pic1Atoms[i].append(point1 > thresholds[i])
@@ -281,11 +281,11 @@ def standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, key=None, picsPer
         outputDataToMmaNotebook(fileNumber, survivalData, survivalErrs, loadingRate, key)
     return (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate, pic1Data, keyName, key,
             repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPics, otherDims, locationsList,
-            genAvgs, genErrs)
+            genAvgs, genErrs, gaussianFitVals)
 
 
 def standardLoadingAnalysis(fileNum, atomLocations, picsPerRep=1, analyzeTogether=False, loadingPicture=0,
-                            manualThreshold=None, loadingFitModule=None, keyInput=None):
+                            manualThreshold=None, fitModule=None, keyInput=None):
     """
     
     :param fileNum:
@@ -354,9 +354,11 @@ def standardLoadingAnalysis(fileNum, atomLocations, picsPerRep=1, analyzeTogethe
             loadingRateErr[i].append(np.std(pic1Atom[dataInc][i]) / np.sqrt(len(pic1Atom[dataInc][i])))
         allLoadingRate[dataInc] = np.mean(allAtomPicData)
         allLoadingErr[dataInc] = np.std(allAtomPicData) / np.sqrt(len(allAtomPicData))
-    for i, load in enumerate(loadingRateList):
-        loadFits[i] = handleFitting(loadingFitModule, key, load)
-    avgFits = handleFitting(loadingFitModule, key, allLoadingRate)
+    avgFits = None
+    if fitModule is not None:
+        for i, load in enumerate(loadingRateList):
+            loadFits[i], _ = fitWithClass(fitModule, key, load)
+        avgFits, _ = fitWithClass(fitModule, key, allLoadingRate)
     avgPic = getAvgPic(rawData)
     # get averages across all variations
     (pic1Data, pic1Atom, thresholds, thresholdFid, fitVals, bins, binData,
@@ -367,7 +369,7 @@ def standardLoadingAnalysis(fileNum, atomLocations, picsPerRep=1, analyzeTogethe
                                                                          picsPerRep, manualThreshold, 5)
     pic1Data = arr(pic1Data.tolist())
     return (pic1Data, thresholds, avgPic, key, loadingRateErr, loadingRateList, allLoadingRate, allLoadingErr, loadFits,
-            loadingFitModule, keyName, totalPic1AtomData, rawData, atomLocations, avgFits)
+            fitModule, keyName, totalPic1AtomData, rawData, atomLocations, avgFits)
 
 
 def standardAssemblyAnalysis(fileNumber, atomLocs1, pic1Num, atomLocs2=None, keyOffset=0, dataRange=None,

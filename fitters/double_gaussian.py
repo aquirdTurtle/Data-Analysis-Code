@@ -11,11 +11,22 @@ def f(x, A1, x01, sig1, A2, x02, sig2, offset):
     The normal function call for this function. Performs checks on valid arguments, then calls the "raw" function.
     :return:
     """
+    penalty = 10**10 * np.ones(len(x))
     if A1 < 0 or A2 < 0:
         # Penalize negative fits.
-        return 10**10
+        return penalty
     if offset < 0:
-        return 10**10
+        return penalty
+    if not (min(x) < x01 < max(x) and min(x) < x02 < max(x)):
+        return penalty
+    # assume that there's at least a little peak
+    if A1 < 3 or A2 < 3:
+        return penalty
+    # sometimes if low signal or lossy, the second peak can be very spread out. 
+    # The fitting of the second gaussian then sometimes assumes it's even broader than it is to make it an effective offset.
+    r = max(x) - min(x)
+    if sig1 > r/5 or sig2 > r/5:
+        return penalty
     return f_raw(x, A1, x01, sig1, A2, x02, sig2, offset)
 
 

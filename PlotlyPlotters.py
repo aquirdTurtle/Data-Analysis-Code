@@ -16,7 +16,7 @@ from MainAnalysis import standardAssemblyAnalysis, standardLoadingAnalysis, stan
 import FittingFunctions as fitFunc
 from pandas import DataFrame
 from fitters import linear
-
+from AnalysisHelpers import getFitsDataFrame
 
 def ScatterData(fileNumber, atomLocs1, plotfit=True, **scatterOptions):
     (key, psSurvivals, psErrors, fitData, fitFin, survivalData, survivalErrs,
@@ -82,27 +82,27 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModule=None, showCo
     res = standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, fitModule=fitModule,
                                    **standardTransferArgs)
     (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate, pic1Data, keyName, key,
-     repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPics, otherDimValues,
-     locsList, genAvgs, genErrs) = res
+     repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPics, otherDims, locationsList,
+     genAvgs, genErrs, gaussianFitVals) = res
     if not show:
         return key, survivalData, survivalErrs, loadingRate
 
     # get the colors for the plots.
-    pltColors, pltColors2 = getColors(len(locsList) + 1)
+    pltColors, pltColors2 = getColors(len(locationsList) + 1)
     scanType = "S." if atomLocs1 == atomLocs2 else "T."
     if scanType == "S.":
         legends = [r"%d,%d " % (loc1[0], loc1[1]) + (scanType + "% = " + str(errString(d[0], e[0])) if len(d) == 1
-                   else "") for loc1, d, e in zip(locsList, survivalData, survivalErrs)]
+                   else "") for loc1, d, e in zip(locationsList, survivalData, survivalErrs)]
 
     elif otherDimValues[0] is not None:
         legends = [r"%d,%d>%d,%d @%d " % (loc1[0], loc1[1], loc2[0], loc2[1], other) +
                    (scanType + "%=" + str(errString(d[0]), e[0]) if len(d) == 1 else "")
-                   for loc1, loc2, d, e, other in zip(locsList, locsList, survivalData, survivalErrs,
+                   for loc1, loc2, d, e, other in zip(locationsList, locationsList, survivalData, survivalErrs,
                                                       otherDimValues)]
     else:
         legends = [r"%d,%d>%d,%d " % (loc1[0], loc1[1], loc2[0], loc2[1]) +
                    (scanType + "%=" + errString(d[0], e[0]) if len(d) == 1 else "")
-                   for loc1, loc2, d, e in zip(locsList, locsList, survivalData, survivalErrs)]
+                   for loc1, loc2, d, e in zip(locationsList, locationsList, survivalData, survivalErrs)]
     survivalErrs = list(survivalErrs)
     # Make the plots
     alphaVal = 0.5
@@ -113,9 +113,9 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModule=None, showCo
     centers = []
 
     if fitModule is not None:
-        display(getFitsDataFram(fits))
+        display(getFitsDataFrame(fits, fitModule, avgFit))
 
-    for data, err, loc, color, legend, fitData, gen, genErr in zip(survivalData, survivalErrs, locsList, pltColors,
+    for data, err, loc, color, legend, fitData, gen, genErr in zip(survivalData, survivalErrs, locationsList, pltColors,
                                                       legends, fits, genAvgs, genErrs):
         mainPlot.append(go.Scatter(x=key, y=data, opacity=alphaVal, mode="markers", name=legend,
                                    error_y={"type": 'data', "array": err, 'color': color},

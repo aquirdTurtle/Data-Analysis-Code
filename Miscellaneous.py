@@ -109,9 +109,18 @@ def getColors(num, rgb=False):
     :param num: number of colors to get
     :return: the array of colors, hex or rgb (see above)
     """
-    cmapRGB = get_cmap('brg', num-1)
-    #cmapRGB = get_cmap('nipy_spectral', num)
-    c = [cmapRGB(i)[:-1] for i in range(num)][:]
+    #rowSize = 8
+    #maps = ['Greys', 'Blues', 'Greens', 'Reds', 'Oranges', 'copper', 'Purples', 'pink']
+    #cmapRGB = get_cmap('brg', num-1)
+    #c = []
+    #for m in maps:
+    #    cmapRGB = get_cmap(m, rowSize+1)
+    #    for i in range(rowSize):
+    #        c.append(cmapRGB(i+1)[:-1])
+    cmapRGB = get_cmap('nipy_spectral', num+1)
+    c = [cmapRGB(i)[:-1] for i in range(num+1)][:]
+    c = c[1:]
+    
     if rgb:
         return c
     # the negative of the first color

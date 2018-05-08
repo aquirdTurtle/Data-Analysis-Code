@@ -133,9 +133,9 @@ def doubleGaussian(x, A1, x01, sig1, A2, x02, sig2, offset):
     """
     if A1 < 0 or A2 < 0:
         # Penalize negative fits.
-        return 10**10
+        return 10**10 * np.ones(len(x))
     if offset < 0:
-        return 10**10
+        return 10**10 * np.ones(len(x))
     return offset + A1 * np.exp(-(x-x01)**2/(2*sig1**2)) + A2 * np.exp(-(x-x02)**2/(2*sig2**2))
 
 

@@ -24,6 +24,7 @@ import MarksConstants as consts
 import FittingFunctions as fitFunc
 from Miscellaneous import transpose, round_sig, round_sig_str
 from copy import deepcopy
+from fitters import double_gaussian, poissonian
 
 dataAddress = None
 
@@ -191,7 +192,33 @@ def modFitFunc(hBiasIn, vBiasIn, depthIn, *testBiases):
     return np.std(newDepths)
 
 
+def genAvgDiscrepancyImage(data, shape, locs):
+    """
+    generates an image and determines color mins and maxes to 
+    make the mean white on a normal diverging colormap.
+    """
+    me = np.mean(data)
+    pic = np.ones(shape) * me
+    for i, loc in enumerate(locs):
+        pic[loc[0], loc[1]] = data[i]
+    mi = min(pic.flatten())
+    ma = max(pic.flatten())
+    if me - mi > ma - me:
+        vmin = mi
+        vmax = 2*me - mi
+    else:
+        vmin = 2*me-ma
+        vmax = ma
+    return pic, vmin, vmax
+
+
+
 def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias):
+    print('Assuming that (', prev_V_Bisa[0],',',prev_V_Bisa[-1], ') is the bias of the (highest, lowest)-frequency row')
+    print('Assuming that (', prev_H_Bisa[0],',',prev_H_Bisa[-1], ') is the bias of the (lowest, highest)-frequency column')
+    print('Please note that if using the outputted centers from Survival(), then you need to reshape the data'
+          ' into a 2D numpy array correctly to match the ordering of the V and H biases. This is normally done'
+          ' via a call to np.reshape() and a transpose to match the comments above.')
     if type(prevDepth) is not type(arr([])) or type(prevDepth[0]) is not type(arr([])):
         raise TypeError('ERROR: previous depth array must be 2D numpy array')
     result, modDepth = extrapolateEveningBiases(prev_H_Bias, prev_V_Bias, prevDepth);
@@ -199,12 +226,13 @@ def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias):
     new_V_Bias = result['x'][len(prev_H_Bias):]
     print('Horizontal Changes')
     for prev, new in zip(prev_H_Bias, new_H_Bias):
-        print(round_sig(prev,4), '->', round_sig(new,4), str(round_sig((new - prev) / prev, 2)) + '%')
+        print(round_sig(prev,4), '->', round_sig(new,4), str(round_sig(100 * (new - prev) / prev, 2)) + '%')
     print('Vertical Changes')
     for prev, new in zip(prev_V_Bias, new_V_Bias):
-        print(round_sig(prev,4), '->', round_sig(new,4), str(round_sig((new - prev) / prev, 2)) + '%')
-    print('Previous Depth Variation:', np.std(prevDepth), ', mean:', np.mean(prevDepth))
-    print('Expected new Depth Variation:', np.std(modDepth))
+        print(round_sig(prev,4), '->', round_sig(new,4), str(round_sig(100 * (new - prev) / prev, 2)) + '%')
+    print('Previous Depth Relative Variation:', round_sig(np.std(prevDepth),4), '/', 
+          round_sig(np.mean(prevDepth),4), '=', round_sig(100 * np.std(prevDepth)/np.mean(prevDepth)), '%')
+    print('Expected new Depth Relative Variation:', round_sig(100*np.std(modDepth)/np.mean(prevDepth),4),'%')
     print('New Vertical Biases \n[',end='')
     for v in new_V_Bias:
         print(round_sig(v,4), ',', end=' ')
@@ -212,8 +240,7 @@ def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias):
     for h in new_H_Bias:
         print(round_sig(h,4), ',', end=' ')
     print(']\n')
-    print(result['success'])
-
+    
 
 def extrapolateEveningBiases(hBiasIn, vBiasIn, depthIn):
     """
@@ -653,9 +680,9 @@ def fitPictures(pictures, dataRange, guessSigma_x=1, guessSigma_y=1):
 def fitDoubleGaussian(binCenters, binnedData, fitGuess):
     from scipy.optimize import curve_fit
     try:
-        fitVals, fitCovNotUsed = curve_fit(lambda x, a1, a2, a3, a4, a5, a6:
-                                           fitFunc.doubleGaussian(x, a1, a2, a3, a4, a5, a6, 0),
-                                           binCenters, binnedData, fitGuess)
+        fitVals, fitCovNotUsed = curve_fit( lambda x, a1, a2, a3, a4, a5, a6:
+                                            double_gaussian.f(x, a1, a2, a3, a4, a5, a6, 0),
+                                            binCenters, binnedData, fitGuess )
     except:
         warn('Double-Gaussian Fit Failed!')
         fitVals = (0, 0, 0, 0, 0, 0)
@@ -1438,18 +1465,38 @@ def getLoadingData(picSeries, loc, whichPic, picsPerExperiment, manThreshold, bi
     """
     # grab the first picture of each repetition
     pic1Data = normalizeData(picSeries, loc, whichPic, picsPerExperiment)
-    if manThreshold is not None:
-        threshold = manThreshold
-        thresholdFid = 0
-        bins, binnedData, fitVals = [None]*3
+    #atomCounts[i] = arr([a for a in arr(list(zip(pic1Data[i], pic2Data[i]))).flatten()])
+    bins, binnedData = getBinData(binWidth, pic1Data)
+    guess1, guess2 = guessGaussianPeaks(bins, binnedData)
+    guess = arr([max(binnedData), guess1, 30, max(binnedData)*0.75,
+                 guess2,
+                 #0.75*max(pic1Data[i]) if histSecondPeakGuess is None else histSecondPeakGuess, 
+                 10])
+    if manThreshold is None:
+        gaussianFitVals = fitDoubleGaussian(bins, binnedData, guess)
+        threshold, thresholdFid = calculateAtomThreshold(gaussianFitVals)
+    elif manThreshold=='auto':
+        gaussianFitVals = None
+        threshold, thresholdFid = ((max(pic1Data) + min(pic1Data))/2.0, 0) 
     else:
-        bins, binnedData = getBinData(binWidth, pic1Data)
-        guess1, guess2 = guessGaussianPeaks(bins, binnedData)
-        # ## Calculate Atom Threshold
-        numberOfPictures = len(picSeries)
-        guess = arr([numberOfPictures/100, guess1, 40,  numberOfPictures/100, 200, 40])
-        fitVals = fitDoubleGaussian(bins, binnedData, guess)
-        threshold, thresholdFid = calculateAtomThreshold(fitVals)
+        gaussianFitVals = None
+        threshold, thresholdFid = (manThreshold, 0) 
+
+    #
+    #
+    #
+    #if manThreshold is not None:
+    #    threshold = manThreshold
+    #    thresholdFid = 0
+    #    bins, binnedData, fitVals = [None]*3
+    #else:
+    #    bins, binnedData = getBinData(binWidth, pic1Data)
+    #    guess1, guess2 = guessGaussianPeaks(bins, binnedData)
+    #    # ## Calculate Atom Threshold
+    #    numberOfPictures = len(picSeries)
+    #    guess = arr([numberOfPictures/100, guess1, 40,  numberOfPictures/100, 200, 40])
+    #    fitVals = fitDoubleGaussian(bins, binnedData, guess)
+    #    threshold, thresholdFid = calculateAtomThreshold(fitVals)
     atomCount = 0
     pic1Atom = []
     for point in pic1Data:
@@ -1458,7 +1505,7 @@ def getLoadingData(picSeries, loc, whichPic, picsPerExperiment, manThreshold, bi
             pic1Atom.append(1)
         else:
             pic1Atom.append(0)
-    return list(pic1Data), pic1Atom, threshold, thresholdFid, fitVals, bins, binnedData, atomCount
+    return list(pic1Data), pic1Atom, threshold, thresholdFid, gaussianFitVals, bins, binnedData, atomCount
 
 
 def calculateAtomThreshold(fitVals):
@@ -1466,12 +1513,29 @@ def calculateAtomThreshold(fitVals):
     TODO: Figure out how this is supposed to work.
     :param fitVals = [Amplitude1, center1, sigma1, amp2, center2, sigma2]
     """
-    # difference between centers divided by total sigma?
+    # difference between centers divided by sum of sigma?
     TCalc = (fitVals[4] - fitVals[1])/(np.abs(fitVals[5]) + np.abs(fitVals[2]))
     threshold = abs(fitVals[1] + TCalc * fitVals[2])
-    fidelity = 1/2 * (1 + special.erf(np.abs(TCalc)/np.sqrt(2)))
+    fidelity = getFidelity(threshold, fitVals)
     return threshold, fidelity
 
+
+def getFidelity(threshold, fitVals):
+    a1, x1, s1, a2, x2, s2 = fitVals
+    return 0.5 * (1 + 0.5 *
+                  (  special.erf(np.abs(threshold-x1)/(np.sqrt(2)*s1)) 
+                   + special.erf(np.abs(threshold-x2)/(np.sqrt(2)*s2))))
+
+def getMaxFidelityThreshold(fitVals):
+    # difference between centers divided by sum of sigma?
+    from scipy import optimize as opt
+    a1, x1, s1, a2, x2, s2 = fitVals
+    def minFunc(t):
+        return 1 - getFidelity(t, fitVals)
+    res = opt.minimize(minFunc, (x2+x1)/2, bounds=[(x1,x2)])
+    threshold = res.x[0]
+    fidelity = getFidelity(threshold, fitVals)
+    return threshold, fidelity
 
 def postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic, connected=False):
     ensembleHits = getEnsembleHits(pic1Atoms, postSelectionPic, requireConsecutive=connected)
@@ -1530,7 +1594,9 @@ def guessGaussianPeaks(binCenters, binnedData):
     :param binnedData: the binned data data points.
     :return: the two guesses.
     """
-    randomOffset = 300
+    #  I this offset use to get an appropriate width for the no-atoms peak. Arguably since I use this to manually shift the width, I should
+    # just use a gaussian instead of a poissonian.
+    randomOffset = 600
     binCenters += randomOffset
     # get index corresponding to global max
     guess1Index = np.argmax(binnedData)
@@ -1538,9 +1604,9 @@ def guessGaussianPeaks(binCenters, binnedData):
     guess1Location = binCenters[guess1Index]
     binnedDataNoPoissonian = []
     for binInc in range(0, len(binCenters)):
-        binnedDataNoPoissonian.append(binnedData[binInc]
-                                      - fitFunc.poissonian(binCenters[binInc], guess1Location, 2 * max(binnedData) /
-                                                           fitFunc.poissonian(guess1Location, guess1Location, 1)))
+        binnedDataNoPoissonian.append(binnedData[binInc] 
+                                      - poissonian.f(binCenters[binInc], guess1Location, 3 * max(binnedData) /
+                                                     poissonian.f(guess1Location, guess1Location, 1)))
     guess2Index = np.argmax(binnedDataNoPoissonian)
     guess2Location = binCenters[guess2Index]
     binCenters -= randomOffset
@@ -2095,6 +2161,11 @@ def unpackAtomLocations(locs):
         for heightInc in range(height):
             locArray.append([bottomLeftRow + spacing * heightInc, bottomLeftColumn + spacing * widthInc])
     return locArray
+
+
+def getGridDims(locs):
+    bottomLeftRow, bottomLeftColumn, spacing, width, height = locs
+    return width, height
 
 
 def sliceMultidimensionalData(dimSlice, origKey, rawData, varyingDim=None):

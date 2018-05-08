@@ -3,7 +3,7 @@ __version__ = "1.1"
 from MainAnalysis import standardLoadingAnalysis, analyzeNiawgWave, standardTransferAnalysis
 from numpy import array as arr
 from random import randint
-from Miscellaneous import getColors, round_sig
+from Miscellaneous import getColors, round_sig, round_sig_str
 from matplotlib.pyplot import *
 import matplotlib as mpl
 from scipy.optimize import curve_fit as fit
@@ -13,9 +13,24 @@ from AnalysisHelpers import (loadHDF5, loadDataRay, loadCompoundBasler, processS
                              getEnsembleStatistics, handleFitting, getLoadingData, loadDetailedKey, processImageData,
                              fitPictures, fitGaussianBeamWaist, assemblePlotData, showPics, showBigPics,
                              showPicComparisons, ballisticMotExpansion, simpleMotExpansion, calcMotTemperature,
-                             integrateData, computeMotNumber, getFitsDataFrame)
+                             integrateData, computeMotNumber, getFitsDataFrame, genAvgDiscrepancyImage, getGridDims)
 import MarksConstants as consts
 import FittingFunctions as fitFunc
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+
+def indvHists(dat, thresh, colors, extra=None):
+    f, axs = subplots(10,10)
+    for i, (d,t,c) in enumerate(zip(dat, thresh, colors[1:])):
+        ax = axs[len(axs[0]) - i%len(axs[0]) - 1][int(i/len(axs))]
+        ax.hist(d, 50, color=c)
+        ax.axvline(t, color=c, ls=':')
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
+        ax.grid(False)
+        if extra is not None:
+            ax.text(0.25, 10, 'L%:' + round_sig_str(np.mean(extra[i])), fontsize=8)
+    f.subplots_adjust(wspace=0, hspace=0)
 
 
 def plotNiawg(fileIndicator, points=300, plotTogether=True, plotVolts=False):
@@ -465,7 +480,7 @@ def atomHist(key, atomLocs, pic1Data, bins, binData, fitVals, thresholds, avgPic
     avgPlt = subplot(gridRight[7:12, 12:16])
     avgPlt.imshow(avgPic)
     avgPlt.set_title("Average Image")
-    avgPlt.grid('off')
+    avgPlt.grid(False)
     # draw circles designating the analyzed locations
     for loc in atomLocs:
         circ = Circle([loc[1], loc[0]], 0.2, color='r')
@@ -558,7 +573,7 @@ def singleImage(data, accumulations=1, loadType='andor', bg=arr([0]), title='Sin
             maxColor = max(rawData.flatten())
         imshow(rawData, extent=(min(xPts), max(xPts), max(yPts), min(yPts)), vmax=maxColor)
     colorbar()
-    grid('off')
+    grid(False)
     return rawData, dataMinusBg
 
 
@@ -573,27 +588,29 @@ def Survival(fileNumber, atomLocs, **TransferArgs):
     return Transfer(fileNumber, atomLocs, atomLocs, **TransferArgs)
 
 
-def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, plotTogether=True, plotLoadingRate=False, legendOption=None,
-             fitModule=None, showFitDetails=False, **standardTransferArgs):
+def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotTogether=True, plotLoadingRate=False, legendOption=None,
+             fitModule=None, showFitDetails=False, showFitCenterPlot=True, showImagePlots=True, plotIndvHists=False, 
+             **standardTransferArgs):
     """
     Standard data analysis package for looking at survival rates throughout an experiment.
 
     :return key, survivalData, survivalErrors
     """
-    res = standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, fitModule=fitModule, 
+    res = standardTransferAnalysis(fileNumber, atomLocs1_orig, atomLocs2_orig, fitModule=fitModule, 
                                    **standardTransferArgs)
     (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate, pic1Data, keyName, key,
      repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPics, otherDimValues,
-     locsList, genAvgs, genErrs) = res
+     locsList, genAvgs, genErrs, gaussianFitVals) = res
     if not show:
         return key, survivalData, survivalErrs, loadingRate
-    if legendOption is None and len(atomLocs1) < 100:
+    if legendOption is None and len(atomLocs1) < 50:
         legendOption = True
     else:
         legendOption = False
     # get the colors for the plot.
     colors, colors2 = getColors(len(atomLocs1) + 1)
-    figure()
+    markers = ['o','^','<','>','v']
+    f = figure()
     # Setup grid
     grid1 = mpl.gridspec.GridSpec(12, 16)
     grid1.update(left=0.05, right=0.95, wspace=1.2, hspace=1000)
@@ -603,22 +620,23 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, plotTogether=True, plo
     gridRight.update(left=0.2, right=0.946, wspace=0, hspace=1000)
     # Main Plot
     if atomLocs1 == atomLocs2:
-        typeName = "Survival"
+        typeName = "S"
     else:
-        typeName = "Transfer"
+        typeName = "T"
     mainPlot = subplot(grid1[:, :12])
     centers = []
+    longLegend = len(survivalData[0]) == 1
     for i, (atomLoc, fit) in enumerate(zip(atomLocs1, fits)):
-        if typeName == "Survival":
+        if typeName == "S":
             leg = r"[%d,%d] " % (atomLocs1[i][0], atomLocs1[i][1])
         else:
             leg = r"[%d,%d]$\rightarrow$[%d,%d] " % (atomLocs1[i][0], atomLocs1[i][1],
                                                      atomLocs2[i][0], atomLocs2[i][1])
-        if len(survivalData[i]) == 1:
+        if longLegend:
             leg += (typeName + " % = " + str(round_sig(survivalData[i][0])) + "$\pm$ "
                     + str(round_sig(survivalErrs[i][0])))
         mainPlot.errorbar(key, survivalData[i], yerr=survivalErrs[i], color=colors[i], ls='',
-                          marker='o', capsize=6, elinewidth=3, label=leg, alpha=0.3)
+                          capsize=6, elinewidth=3, label=leg, alpha=0.3, marker=markers[i%len(markers)])
         if fitModule is not None:
             if fit['vals'] is None:
                 print(loc, 'Fit Failed!')
@@ -627,14 +645,6 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, plotTogether=True, plo
             if centerIndex is not None:
                 centers.append(fit['vals'][centerIndex])
             mainPlot.plot(fit['x'], fit['nom'], color=colors[i], alpha = 0.5)
-            #mainPlot.append(go.Scatter(x=fit['x'], y=fit['nom'], line={'color': color},
-            #                           legendgroup=legend, showlegend=False, opacity=alphaVal))
-            #if fit['std'] is not None:
-                #mainPlot.plot(fit['x'], fit['nom'], color=)
-                #mainPlot.append(go.Scatter(x=fit['x'], y=fit['nom'] + fit['std'],
-                #                           opacity=alphaVal / 2, line={'color': color},
-                #                           legendgroup=legend, showlegend=False, hoverinfo='none'))
-                #mainPlot.append(fit['x'], y=fit['nom'] - fit['std'], label=legend)
 
     mainPlot.set_ylim({-0.02, 1.01})
     if not min(key) == max(key):
@@ -642,17 +652,17 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, plotTogether=True, plo
                           + (max(key) - min(key)) / len(key))
     mainPlot.set_xticks(key)
 
-    titletxt = keyName + " Atom " + typeName + " Scan"
+    titletxt = keyName + " " + typeName + " Scan"
 
     if len(survivalData[0]) == 1:
-        titletxt = keyName + " Atom " + typeName + " Point. " + typeName + " % = \n"
-        for atomData in survivalData:
-            titletxt += ''  # str(round_sig(atomData,4) + ", "
+        titletxt = keyName + " " + typeName + " Point.\n Avg " + typeName + "% = " + round_sig_str(np.mean(avgSurvivalData))
+        
 
     mainPlot.set_title(titletxt, fontsize=30)
-    mainPlot.set_ylabel("Survival Probability", fontsize=20)
+    mainPlot.set_ylabel("S %", fontsize=20)
     mainPlot.set_xlabel(keyName, fontsize=20)
-    mainPlot.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), fancybox=True, ncol=8, prop={'size': 12})
+    cols = 4 if longLegend else 10
+    mainPlot.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), fancybox=True, ncol=cols, prop={'size': 12})
     #legend()
     # Loading Plot
     loadingPlot = subplot(grid1[0:3, 12:16])
@@ -664,22 +674,24 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, plotTogether=True, plo
         loadingPlot.set_xlim(left=min(key) - (max(key) - min(key)) / len(key), right=max(key) 
                              + (max(key) - min(key)) / len(key))
     loadingPlot.set_xlabel("Key Values")
-    loadingPlot.set_ylabel("Capture %")
+    loadingPlot.set_ylabel("Loading %")
     loadingPlot.set_xticks(key)
-    loadingPlot.set_title("Loading: Avg$ = " + str(round_sig(np.mean(loadingRate[0]))) + '$')
+    loadingPlot.set_title("Loading: Avg$ = " + str(round_sig(np.mean(arr(loadingRate.tolist())))) + '$')
     for item in ([loadingPlot.title, loadingPlot.xaxis.label, loadingPlot.yaxis.label] +
                      loadingPlot.get_xticklabels() + loadingPlot.get_yticklabels()):
         item.set_fontsize(10)
         # ### Count Series Plot
-    countPlot = subplot(gridRight[4:8, 12:15])
+    countPlot = subplot(gridRight[4:8, 12:15])    
     for i, loc in enumerate(atomLocs1):
         countPlot.plot(pic1Data[i], color=colors[i], ls='', marker='.', markersize=1, alpha=0.3)
-        #countPlot.plot(pic2Data[i], color=colors2[i], ls='', marker='.', markersize=1, alpha=0.8)
+        # countPlot.plot(pic2Data[i], color=colors2[i], ls='', marker='.', markersize=1, alpha=0.8)
         countPlot.axhline(thresholds[i], color=colors[i], alpha=0.3)
+
+
     countPlot.set_xlabel("Picture #")
     countPlot.set_ylabel("Camera Signal")
     countPlot.set_title("Thresh.=" + str(round_sig(thresholds[i])), fontsize=10) #", Fid.="
-                        #+ str(round_sig(thresholdFid)), )
+                        # + str(round_sig(thresholdFid)), )
     ticksForVis = countPlot.xaxis.get_major_ticks()
     ticksForVis[-1].label1.set_visible(False)
     for item in ([countPlot.title, countPlot.xaxis.label, countPlot.yaxis.label] +
@@ -693,7 +705,191 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, plotTogether=True, plo
     for i, atomLoc in enumerate(atomLocs1):
         countHist.hist(pic1Data[i], 50, color=colors[i], orientation='horizontal', alpha=0.3)
         #countHist.hist(pic2Data[i], 50, color=colors2[i], orientation='horizontal', alpha=0.3)
-        countHist.axhline(thresholds[i], color=colors[i], alpha=1)
+        countHist.axhline(thresholds[i], color=colors[i], alpha=0.3)
+    for item in ([countHist.title, countHist.xaxis.label, countHist.yaxis.label] +
+                     countHist.get_xticklabels() + countHist.get_yticklabels()):
+        item.set_fontsize(10)
+    ticks = countHist.get_xticklabels()
+    for tickInc in range(len(ticks)):
+        ticks[tickInc].set_rotation(-45)
+    setp(countHist.get_yticklabels(), visible=False)
+    # average image
+    avgPlt1 = subplot(gridRight[9:12, 12:13])
+    avgPlt2 = subplot(gridRight[9:12, 14:15])
+    for plt, dat, locs in zip([avgPlt1, avgPlt2], avgPics, [atomLocs1, atomLocs2]):
+        plt.imshow(dat, origin='lower');
+        plt.set_xticks([])
+        plt.set_yticks([])
+        plt.grid(False)
+        for loc in locs:
+            circ = Circle((loc[1], loc[0]), 0.2, color='r')
+            plt.add_artist(circ)
+    mainPlot.errorbar(key, avgSurvivalData, yerr=avgSurvivalErr, color="#FFFFFFFF", ls='',
+             marker='o', capsize=6, elinewidth=3, label='Avg')
+    if fitModule is not None and showFitDetails:
+        mainPlot.plot(avgFit['x'], avgFit['nom'], color='#FFFFFFFF', ls=':')
+        fits_df = getFitsDataFrame(fits, fitModule, avgFit)
+        display(fits_df)
+    if fitModule is not None and showFitCenterPlot:
+        figure()
+        fitCenterPic, vmin, vmax = genAvgDiscrepancyImage(centers, avgPics[0].shape, atomLocs1)
+        imshow(fitCenterPic, cmap=cm.get_cmap('RdBu'), vmin=vmin, vmax=vmax, origin='lower')
+        title('Fit-Centers (white is average)')
+        colorbar()
+    if showImagePlots:
+        ims = []
+        f, axs = subplots(1,4)
+
+        ims.append(axs[0].imshow(avgPics[0], origin='lower'))
+        axs[0].set_title('Avg 1st Pic')
+
+        ims.append(axs[1].imshow(avgPics[1],origin='lower'))
+        axs[1].set_title('Avg 2nd Pic')
+        
+        avgSurvivals = []
+        for s in survivalData:
+            avgSurvivals.append(np.mean(s))
+        avgSurvivalPic, vmin, vmax = genAvgDiscrepancyImage(avgSurvivals, avgPics[0].shape, atomLocs1)
+        ims.append(axs[2].imshow(avgSurvivalPic, cmap=cm.get_cmap('RdBu'), vmin=vmin, vmax=vmax, origin='lower'))
+        axs[2].set_title('Avg Surv')
+        
+        avgLoads = []
+        for l in loadingRate:
+            avgLoads.append(np.mean(l))
+        avgLoadPic, vmin, vmax = genAvgDiscrepancyImage(avgLoads, avgPics[0].shape, atomLocs1)
+        ims.append(axs[3].imshow(avgLoadPic, cmap=cm.get_cmap('RdBu'), vmin=vmin, vmax=vmax, origin='lower'))
+        axs[3].set_title('Avg Load')
+        
+        for ax, im in zip(axs, ims):
+            ax.set_yticklabels([])
+            ax.set_xticklabels([])
+            ax.grid(False)
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes('right', size='5%', pad=0.05)
+            f.colorbar(im, cax, orientation='vertical')
+    if plotIndvHists:
+        indvHists(pic1Data, thresholds, colors, extra=avgSurvivals)
+    return key, survivalData, survivalErrs, loadingRate, fits, avgFit, genAvgs, genErrs, pic1Data, gaussianFitVals, centers, thresholds
+
+
+def Loading(fileNum, atomLocations, plotLoadingRate=True, plotCounts=False, legendOption = None, showImagePlots=True, 
+            plotIndvHists=True, showFitDetails=False, showFitCenterPlot=True, **StandardArgs):
+    """
+    Standard data analysis package for looking at loading rates throughout an experiment.
+
+    return key, loadingRateList, loadingRateErr
+
+    This routine is designed for analyzing experiments with only one picture per cycle. Typically
+    These are loading exeriments, for example. There's no survival calculation.
+    """
+    (pic1Data, thresholds, avgPic, key, loadRateErr, loadRate, avgLoadRate, avgLoadErr, fits,
+     fitModule, keyName, totalPic1AtomData, rawData, atomLocations, 
+     avgFits) = standardLoadingAnalysis(fileNum, atomLocations, **StandardArgs)
+    colors, _ = getColors(len(atomLocations) + 1)
+    if not show:
+        print('please edit this line')
+        #return key, survivalData, survivalErrs, loadingRate
+    if legendOption is None and len(atomLocations) < 50:
+        legendOption = True
+    else:
+        legendOption = False
+    # get the colors for the plot.
+    markers = ['o','^','<','>','v']
+    f = figure()
+    # Setup grid
+    grid1 = mpl.gridspec.GridSpec(12, 16)
+    grid1.update(left=0.05, right=0.95, wspace=1.2, hspace=1000)
+    gridLeft = mpl.gridspec.GridSpec(12, 16)
+    gridLeft.update(left=0.001, right=0.95, hspace=1000)
+    gridRight = mpl.gridspec.GridSpec(12, 16)
+    gridRight.update(left=0.2, right=0.946, wspace=0, hspace=1000)
+    # Main Plot
+    typeName = "L"
+    mainPlot = subplot(grid1[:, :12])
+    centers = []
+    longLegend = len(loadRate[0]) == 1
+    for i, (atomLoc, fit) in enumerate(zip(atomLocations, fits)):
+        leg = r"[%d,%d] " % (atomLoc[0], atomLoc[1])
+        if longLegend:
+            leg += (typeName + " % = " + str(round_sig(loadRate[i][0])) + "$\pm$ "
+                    + str(round_sig(loadRateErr[i][0])))
+        mainPlot.errorbar(key, loadRate[i], yerr=loadRateErr[i], color=colors[i], ls='',
+                          capsize=6, elinewidth=3, label=leg, alpha=0.3, marker=markers[i%len(markers)])
+        if fitModule is not None:
+            if fit['vals'] is None:
+                print(loc, 'Fit Failed!')
+                continue
+            centerIndex = fitModule.center()
+            if centerIndex is not None:
+                centers.append(fit['vals'][centerIndex])
+            mainPlot.plot(fit['x'], fit['nom'], color=colors[i], alpha = 0.5)
+    if fitModule is not None:
+        if avgFits['vals'] is None:
+            print('Avg Fit Failed!')
+        else:
+            centerIndex = fitModule.center()
+            mainPlot.plot(avgFits['x'], avgFits['nom'], color='w', alpha = 1)
+
+    mainPlot.set_ylim({-0.02, 1.01})
+    if not min(key) == max(key):
+        mainPlot.set_xlim(left=min(key) - (max(key) - min(key)) / len(key), right=max(key)
+                          + (max(key) - min(key)) / len(key))
+    mainPlot.set_xticks(key)
+
+    titletxt = keyName + " Atom " + typeName + " Scan"
+
+    if len(loadRate[0]) == 1:
+        titletxt = keyName + " Atom " + typeName + " Point.\n Avg " + typeName + "% = " + round_sig_str(np.mean(avgLoadRate))
+
+
+    mainPlot.set_title(titletxt, fontsize=30)
+    mainPlot.set_ylabel("S %", fontsize=20)
+    mainPlot.set_xlabel(keyName, fontsize=20)
+    if legendOption == True:
+        cols = 4 if longLegend else 10
+        mainPlot.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), fancybox=True, ncol=cols, prop={'size': 12})
+    # Loading Plot
+    loadingPlot = subplot(grid1[0:3, 12:16])
+    for i, loc in enumerate(atomLocations):
+        loadingPlot.plot(key, loadRate[i], ls='', marker='o', color=colors[i], alpha=0.3)
+        loadingPlot.axhline(np.mean(loadRate[i]), color=colors[i], alpha=0.3)
+    loadingPlot.set_ylim({0, 1})
+    if not min(key) == max(key):
+        loadingPlot.set_xlim(left=min(key) - (max(key) - min(key)) / len(key), right=max(key) 
+                             + (max(key) - min(key)) / len(key))
+    loadingPlot.set_xlabel("Key Values")
+    loadingPlot.set_ylabel("Loading %")
+    loadingPlot.set_xticks(key)
+    loadingPlot.set_title("Loading: Avg$ = " + str(round_sig(np.mean(arr(loadRate)))) + '$')
+    for item in ([loadingPlot.title, loadingPlot.xaxis.label, loadingPlot.yaxis.label] +
+                     loadingPlot.get_xticklabels() + loadingPlot.get_yticklabels()):
+        item.set_fontsize(10)
+        # ### Count Series Plot
+    countPlot = subplot(gridRight[4:8, 12:15])    
+    for i, loc in enumerate(atomLocations):
+        countPlot.plot(pic1Data[i], color=colors[i], ls='', marker='.', markersize=1, alpha=0.3)
+        # countPlot.plot(pic2Data[i], color=colors2[i], ls='', marker='.', markersize=1, alpha=0.8)
+        countPlot.axhline(thresholds[i], color=colors[i], alpha=0.3)
+
+
+    countPlot.set_xlabel("Picture #")
+    countPlot.set_ylabel("Camera Signal")
+    countPlot.set_title("Thresh.=" + str(round_sig(thresholds[i])), fontsize=10) #", Fid.="
+                        # + str(round_sig(thresholdFid)), )
+    ticksForVis = countPlot.xaxis.get_major_ticks()
+    ticksForVis[-1].label1.set_visible(False)
+    for item in ([countPlot.title, countPlot.xaxis.label, countPlot.yaxis.label] +
+                     countPlot.get_xticklabels() + countPlot.get_yticklabels()):
+        item.set_fontsize(10)
+    countPlot.set_xlim((0, len(pic1Data[0])))
+    tickVals = np.linspace(0, len(pic1Data[0]), len(key) + 1)
+    countPlot.set_xticks(tickVals)
+    # Count Histogram Plot
+    countHist = subplot(gridLeft[4:8, 15:16], sharey=countPlot)
+    for i, atomLoc in enumerate(atomLocations):
+        countHist.hist(pic1Data[i], 50, color=colors[i], orientation='horizontal', alpha=0.3)
+        #countHist.hist(pic2Data[i], 50, color=colors2[i], orientation='horizontal', alpha=0.3)
+        countHist.axhline(thresholds[i], color=colors[i], alpha=0.3)
     for item in ([countHist.title, countHist.xaxis.label, countHist.yaxis.label] +
                      countHist.get_xticklabels() + countHist.get_yticklabels()):
         item.set_fontsize(10)
@@ -703,74 +899,52 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, plotTogether=True, plo
     setp(countHist.get_yticklabels(), visible=False)
     # average image
     avgPlt = subplot(gridRight[9:12, 12:15])
-    avgPlt.imshow(avgPics[0]);
-    avgPlt.set_title("Average Image")
-    avgPlt.grid('off')
-    for loc in atomLocs1:
+    avgPlt.imshow(avgPic, origin='lower');
+    avgPlt.set_xticks([])
+    avgPlt.set_yticks([])
+    avgPlt.grid(False)
+    for loc in atomLocations:
         circ = Circle((loc[1], loc[0]), 0.2, color='r')
         avgPlt.add_artist(circ)
-    for loc in atomLocs2:
-        circ = Circle((loc[1], loc[0]), 0.1, color='g')
-        avgPlt.add_artist(circ)
-    mainPlot.errorbar(key, avgSurvivalData, yerr=avgSurvivalErr, color="#FFFFFFFF", ls='',
+    mainPlot.errorbar(key, avgLoadRate, yerr=avgLoadErr, color="#FFFFFFFF", ls='',
              marker='o', capsize=6, elinewidth=3, label='Avg')
     if fitModule is not None and showFitDetails:
         mainPlot.plot(avgFit['x'], avgFit['nom'], color='#FFFFFFFF', ls=':')
         fits_df = getFitsDataFrame(fits, fitModule, avgFit)
         display(fits_df)
-
-    return key, survivalData, survivalErrs, loadingRate, fits, avgFit, genAvgs, genErrs
-
-
-def Loading(fileNum, atomLocations, plotLoadingRate=True, plotCounts=False, **StandardArgs):
-    """
-    Standard data analysis package for looking at loading rates throughout an experiment.
-
-    return key, loadingRateList, loadingRateErr
-
-    This routine is designed for analyzing experiments with only one picture per cycle. Typically
-    These are loading exeriments, for example. There's no survival calculation.
-    """
-    (pic1Data, thresholds, avgPic, key, loadingRateErr, loadingRateList, allLoadingRate, allLoadingErr, loadFits,
-     loadingFitType, keyName, totalPic1AtomData, rawData, showTotalHist, atomLocations,
-     avgFits) = standardLoadingAnalysis(fileNum, atomLocations, **StandardArgs)
-    pltColors, _ = getColors(len(atomLocations) + 1)
-    if showTotalHist:
-        pass
-        # atomHist(key, atomLocations, pic1Data, bins, binData, fitVals, thresholds, avgPic, atomCount, None)
-    if plotLoadingRate:
-        # get colors
+    elif fitModule is not None:
+        for val, name in zip(avgFits['vals'], fitModule.args()):
+            print(name, val)
+    if fitModule is not None and showFitCenterPlot:
         figure()
-        title('Loading Rate')
-        for i, atomLoc in enumerate(atomLocations):
-            errorbar(key, loadingRateList[i], yerr=loadingRateErr[i], marker='o', linestyle='', label=atomLoc,
-                     color=pltColors[i])
-        xlabel("key value")
-        ylabel("loading rate")
-        fitInfo, loadingFitType = handleFitting(loadingFitType, key, loadingRateList)
-        if loadingFitType is not None:
-            plot(fitInfo['x'], fitInfo['nom'], ':', label='Fit', linewidth=3)
-            center = fitInfo['center']
-            fill_between(fitInfo['x'], fitInfo['nom'] - fitInfo['std'], fitInfo['nom'] + fitInfo['std'], alpha=0.1,
-                         label=r'$\pm\sigma$ band', color='b')
-            axvspan(fitInfo['vals'][center ] - fitInfo['err'][center],
-                    fitInfo['vals'][center ] + fitInfo['err'][center],
-                    color='b', alpha=0.1)
-            axvline(fitInfo['vals'][center ], color='b', linestyle='-.', alpha=0.5,
-                    label='fit center $= ' + str(round_sig(fitInfo['vals'][center ])) + '$')
-        keyRange = max(key) - min(key)
-        xlim(min(key) - keyRange / (2 * len(key)), max(key)
-             + keyRange / (2 * len(key)))
-        ylim(0, 1)
-        legend()
-    if plotCounts:
-        figure()
-        title('Plot Counts')
-        for i, atomLoc in enumerate(atomLocations):
-            scatter(list(range(pic1Data[i].flatten().size)), pic1Data[i].flatten(), marker='.',
-                    label=atomLoc, color=pltColors[i], s=1)
-        legend()
-    return key, loadingRateList, loadingRateErr
+        fitCenterPic, vmin, vmax = genAvgDiscrepancyImage(centers, avgPic.shape, atomLocations)
+        imshow(fitCenterPic, cmap=cm.get_cmap('RdBu'), vmin=vmin, vmax=vmax, origin='lower')
+        title('Fit-Centers (white is average)')
+        colorbar()
+    if showImagePlots:
+        ims = []
+        f, axs = subplots(1,2)
+
+        ims.append(axs[0].imshow(avgPic, origin='lower'))
+        axs[0].set_title('Avg 1st Pic')
+
+        avgLoads = []
+        for l in loadRate:
+            avgLoads.append(np.mean(l))
+        avgLoadPic, vmin, vmax = genAvgDiscrepancyImage(avgLoads, avgPic.shape, atomLocations)
+        ims.append(axs[1].imshow(avgLoadPic, cmap=cm.get_cmap('RdBu'), vmin=vmin, vmax=vmax, origin='lower'))
+        axs[1].set_title('Avg Load')
+
+        for ax, im in zip(axs, ims):
+            ax.set_yticklabels([])
+            ax.set_xticklabels([])
+            ax.grid(False)
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes('right', size='5%', pad=0.05)
+            f.colorbar(im, cax, orientation='vertical')
+    if plotIndvHists:
+        indvHists(pic1Data, thresholds, colors)
+    return key, loadRate, loadRateErr, pic1Data
 
 
 def Assembly(fileNumber, atomLocs1, pic1Num, atomLocs2=None, pic2Num=None, keyOffset=0, window=None,
@@ -996,9 +1170,9 @@ def Assembly(fileNumber, atomLocs1, pic1Num, atomLocs2=None, pic2Num=None, keyOf
     setp(countHist.get_yticklabels(), visible=False)
     # average image
     avgPlt = subplot(gridRight[9:12, 12:15])
-    avgPlt.imshow(avgPic);
+    avgPlt.imshow(avgPic, origin='lower');
     avgPlt.set_title("Average Image")
-    avgPlt.grid('off')
+    avgPlt.grid(False)
     for loc in atomLocs1:
         circ = Circle((loc[1], loc[0]), 0.2, color='r')
         avgPlt.add_artist(circ)
@@ -1137,7 +1311,7 @@ def plotPoints(key, majorPlot, minorPlot=None, circleLoc=(-1, -1), picture=arr([
         image = subplot(grid1[7:12, 12:16])
         im = image.pcolormesh(picture)
         image.grid(0)
-        image.axis('off')
+        image.axis(False)
         image.set_title(picTitle)
         colorbar(im, ax=image)
         if circleLoc != (-1, -1):
