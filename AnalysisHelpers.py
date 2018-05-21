@@ -24,80 +24,12 @@ import MarksConstants as consts
 import FittingFunctions as fitFunc
 from Miscellaneous import transpose, round_sig, round_sig_str
 from copy import deepcopy
-from fitters import double_gaussian, poissonian
+from fitters import double_gaussian
+from fitters import cython_poissonian as poissonian
 
-dataAddress = None
+from ExpFile import ExpFile, dataAddress
+from TimeTracker import TimeTracker
 
-
-def loadHDF5(fileId, quiet=False):
-    """
-    Loads the key info from the hdf5 file and returns it.
-    returns pics, keyName, key, reps
-
-    :param fileId:
-    :param quiet:
-    :return:
-    """
-    if not quiet:
-        print('Loading HDF5 File...', end='')
-    file = openHDF5(fileId)
-    keyName, key = getKeyFromHDF5(file)
-    reps = file['Master-Parameters']['Repetitions'][0]
-    pics = getPicsFromHDF5(file)
-    if not quiet:
-        print('Loaded File Successfully.')
-    return pics, keyName, key, reps
-
-def openHDF5(fileId):
-    """
-
-    :param fileId:
-    :return:
-    """
-    if type(fileId) == int:
-        path = dataAddress + "data_" + str(fileId) + ".h5"
-    else:
-        # assume a file address itself
-        path = fileId
-    file = h5.File(path, 'r')
-    return file
-
-
-def getKeyFromHDF5(file):
-    """
-
-    :param file:
-    :return:
-    """
-    keyNames = []
-    keyValues = []
-    foundOne = False
-    for var in file['Master-Parameters']['Seq #1 Variables']:
-        if not file['Master-Parameters']['Seq #1 Variables'][var].attrs['Constant']:
-    # to look at older files...
-    #for var in file['Master-Parameters']['Variables']:
-    #    if not file['Master-Parameters']['Variables'][var].attrs['Constant']:
-            foundOne = True
-            keyNames.append(var)
-            keyValues.append(arr(file['Master-Parameters']['Seq #1 Variables'][var]))
-    if foundOne:
-        if len(keyNames) > 1:
-            return keyNames, arr(transpose(arr(keyValues)))
-        else:
-            return keyNames[0], arr(keyValues[0])
-    else:
-        return 'No-Variation', arr([1])
-
-
-def getPicsFromHDF5(file):
-    """
-    Need to re-shape the pics.
-    :param file:
-    :return:
-    """
-    pics = arr(file['Andor']['Pictures'])
-    pics = pics.reshape((pics.shape[0], pics.shape[2], pics.shape[1]))
-    return pics
 
 
 def splitData(data, picsPerSplit, picsPerRep, runningOverlap=0):
@@ -105,12 +37,13 @@ def splitData(data, picsPerSplit, picsPerRep, runningOverlap=0):
     return data, int(picsPerSplit/picsPerRep), np.arange(0,int(data.shape[1]))
 
 
-def parseRearrangeInfo(addr):
+def parseRearrangeInfo(addr, limitedMoves=-1):
     moveList = []
     readyForAtomList = False
     with open(addr) as centerLog:
         for i, line in enumerate(centerLog):
-            if i < 8:
+            # this number depends on the size of the target matrix. it is height + 2.
+            if i < 12:
                 continue
             txt = line.split(' ')
             if txt[0] == 'Rep':
@@ -129,14 +62,20 @@ def parseRearrangeInfo(addr):
                 moveList[-1]['Moves'] = []
                 continue
             if not readyForAtomList:
+                if len(moveList[-1]['Moves']) >= limitedMoves and limitedMoves != -1:
+                    continue
                 moveList[-1]['Moves'].append({'Flashed': bool(int(txt[1])), 'Direction': txt[2]})
                 moveList[-1]['Moves'][-1]['Atoms'] = []
                 readyForAtomList = True
                 continue
             if len(txt) != 1:
+                if len(moveList[-1]['Moves']) >= limitedMoves+1 and limitedMoves != -1:
+                    continue
                 moveList[-1]['Moves'][-1]['Atoms'].append((txt[0], txt[1]))
             else:
+                # this blank line happens between moves.
                 readyForAtomList = False
+    print(len(moveList))
     return moveList
 
 
@@ -147,7 +86,11 @@ def organizeTransferData(fileNumber, atomLocs1, atomLocs2, key=None, window=None
     atomLocs2 = unpackAtomLocations(atomLocs2)
     # ### Load Fits File & Get Dimensions
     # Get the array from the fits file. That's all I care about.
-    rawData, keyName, hdf5Key, repetitions = loadHDF5(fileNumber)
+    with ExpFile(fileNumber) as f:
+        rawData, keyName, hdf5Key, repetitions = f.pics, f.key_name, f.key, f.reps 
+        if not quiet:
+            f.get_basic_info()
+    #rawData, keyName, hdf5Key, repetitions = loadHDF5(fileNumber)
     if repRange is not None:
         repetitions = repRange[1] - repRange[0]
         rawData = rawData[repRange[0]*picsPerRep:repRange[1]*picsPerRep]
@@ -176,9 +119,6 @@ def organizeTransferData(fileNumber, atomLocs1, atomLocs2, key=None, window=None
     # gather some info about the run
     numberOfPictures = int(groupedData.shape[0] * groupedData.shape[1])
     numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
-    if not quiet:
-        print('Total # of Pictures:', numberOfPictures, '\n', 'Number of Variations:', numberOfVariations)
-        print('Data Shape:', groupedData.shape)
     if not len(key) == numberOfVariations:
         raise RuntimeError("The Length of the key (" + str(len(key)) + ") doesn't match the data found ("
                            + str(numberOfVariations) + ").")
@@ -285,21 +225,6 @@ def extrapolateModDepth(hBiasIn, vBiasIn, depthIn, testBiases):
     return modDepth
 
 
-def setPath(day, month, year):
-    """
-    This function sets the location of where all of the data files are stored. It is occasionally called more
-    than once in a notebook if the user needs to work past midnight.
-
-    :param day: A number string, e.g. '11'.
-    :param month: The name of a month, e.g. 'November' (must match file path capitalization).
-    :param year: A number string, e.g. '2017'.
-    :return:
-    """
-    dataRepository = "J:\\Data repository\\New Data Repository"
-    global dataAddress
-    dataAddress = dataRepository + "\\" + year + "\\" + month + "\\" + month + " " + day + "\\Raw Data\\"
-
-
 def getLabels(plotType):
     """
 
@@ -389,13 +314,16 @@ def combineData(data, key):
 # ### Data-Loading Functions
 
 
-def loadDataRay(num):
+def loadDataRay(fileID):
     """
 
     :param num:
     :return:
     """
-    fileName = dataAddress + "dataRay_" + str(num) + ".wct"
+    if type(num) == int:
+        fileName = dataAddress + "dataRay_" + str(fileID) + ".wct"
+    else:
+        fileName = fileID
     file = pd_read_csv(fileName, header=None, skiprows=[0, 1, 2, 3, 4])
     data = file.as_matrix()
     for i, row in enumerate(data):
@@ -1452,26 +1380,23 @@ def getFitsDataFrame(fits, fitModule, avgFit):
 
 
 
-def getLoadingData(picSeries, loc, whichPic, picsPerExperiment, manThreshold, binWidth):
+def getLoadingData(picSeries, loc, whichPic, picsPerRep, manThreshold, binWidth):
     """
 
     :param picSeries:
     :param loc:
     :param whichPic:
-    :param picsPerExperiment:
+    :param picsPerRep:
     :param manThreshold:
     :param binWidth:
     :return:
     """
     # grab the first picture of each repetition
-    pic1Data = normalizeData(picSeries, loc, whichPic, picsPerExperiment)
-    #atomCounts[i] = arr([a for a in arr(list(zip(pic1Data[i], pic2Data[i]))).flatten()])
+    borders = getAvgBorderCount(picSeries, whichPic, picsPerRep)
+    pic1Data = normalizeData(picSeries, loc, whichPic, picsPerRep, borders)
     bins, binnedData = getBinData(binWidth, pic1Data)
     guess1, guess2 = guessGaussianPeaks(bins, binnedData)
-    guess = arr([max(binnedData), guess1, 30, max(binnedData)*0.75,
-                 guess2,
-                 #0.75*max(pic1Data[i]) if histSecondPeakGuess is None else histSecondPeakGuess, 
-                 10])
+    guess = arr([max(binnedData), guess1, 30, max(binnedData)*0.75, guess2, 10])
     if manThreshold is None:
         gaussianFitVals = fitDoubleGaussian(bins, binnedData, guess)
         threshold, thresholdFid = calculateAtomThreshold(gaussianFitVals)
@@ -1482,21 +1407,6 @@ def getLoadingData(picSeries, loc, whichPic, picsPerExperiment, manThreshold, bi
         gaussianFitVals = None
         threshold, thresholdFid = (manThreshold, 0) 
 
-    #
-    #
-    #
-    #if manThreshold is not None:
-    #    threshold = manThreshold
-    #    thresholdFid = 0
-    #    bins, binnedData, fitVals = [None]*3
-    #else:
-    #    bins, binnedData = getBinData(binWidth, pic1Data)
-    #    guess1, guess2 = guessGaussianPeaks(bins, binnedData)
-    #    # ## Calculate Atom Threshold
-    #    numberOfPictures = len(picSeries)
-    #    guess = arr([numberOfPictures/100, guess1, 40,  numberOfPictures/100, 200, 40])
-    #    fitVals = fitDoubleGaussian(bins, binnedData, guess)
-    #    threshold, thresholdFid = calculateAtomThreshold(fitVals)
     atomCount = 0
     pic1Atom = []
     for point in pic1Data:
@@ -1551,7 +1461,49 @@ def postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic, connected=False
     return psPic1Atoms, psPic2Atoms
 
 
-def normalizeData(data, atomLocation, picture, picturesPerExperiment, subtractBorders=True):
+def getAvgBorderCount(data, p, ppe):
+    """
+    data: the array of pictures
+    p: which picture to start on
+    ppe: pictures Per Experiment
+    """
+    if len(data.shape) == 4:
+        rawData = data.reshape((data.shape[0] * data.shape[1], data.shape[2], data.shape[3]))
+    else:
+        rawData = data
+    normFactor = (2*len(rawData[0][0][:])+2*len(rawData[0][:][0]))
+    avgBorderCount = (np.sum(rawData[p::ppe,0,:], axis=1) + np.sum(rawData[p::ppe,-1,:], axis=1) 
+                      + np.sum(rawData[p::ppe,:,0], axis=1) + np.sum(rawData[p::ppe,:,-1], axis=1)).astype(float)
+    corners = rawData[p::ppe,0,0] + rawData[p::ppe,0,-1] + rawData[p::ppe,-1,0] + rawData[p::ppe,-1,-1]
+    avgBorderCount -= corners
+    avgBorderCount /= normFactor - 4
+    return avgBorderCount
+
+
+def normalizeData(data, atomLocation, picture, picturesPerExperiment, borders):
+    """
+    :param picturesPerExperiment:
+    :param picture:
+    :param subtractBorders:
+    :param data: the array of pictures
+    :param atomLocation: The location to analyze
+    :return: The data at atomLocation with the background subtracted away (commented out at the moment).
+    """
+    allData = arr([])
+    dimensions = data.shape
+    if len(dimensions) == 4:
+        rawData = data.reshape((data.shape[0] * data.shape[1], data.shape[2], data.shape[3]))
+    else:
+        rawData = data
+    dimensions = rawData.shape
+    count=0
+    for imageInc in range(0, dimensions[0]):
+        if (imageInc + picturesPerExperiment - picture) % picturesPerExperiment == 0:
+            allData = np.append(allData, rawData[imageInc][atomLocation[0]][atomLocation[1]] - borders[count])
+            count += 1
+    return allData
+
+def normalizeData_2(data, atomLocation, picture, picturesPerExperiment, subtractBorders=True):
     """
     :param picturesPerExperiment:
     :param picture:
@@ -1614,19 +1566,12 @@ def guessGaussianPeaks(binCenters, binnedData):
 
 
 def getBinData(binWidth, data):
-    """
-
-    :param binWidth:
-    :param data:
-    :return:
-    """
     binBorderLocation = min(data)
     binsBorders = arr([])
-    # get bin borders
+    tt = TimeTracker()
     while binBorderLocation < max(data):
         binsBorders = np.append(binsBorders, binBorderLocation)
         binBorderLocation = binBorderLocation + binWidth
-    # trash gets set but is unused.
     binnedData, trash = np.histogram(data, binsBorders)
     binCenters = binsBorders[0:binsBorders.size-1]
     return binCenters, binnedData
@@ -1690,6 +1635,22 @@ def getSurvivalEvents(pic1Atoms, pic2Atoms):
     loaded at all.
     """
     # this will include entries for when there is no atom in the first picture.
+    pic1Atoms = arr(arr(pic1Atoms).tolist())
+    pic2Atoms = arr(arr(pic2Atoms).tolist())
+    # -1 = no atom in the first place.
+    survivalData = np.zeros(pic1Atoms.shape) - 1
+    # convert to 1 if atom and atom survived
+    survivalData += 2*pic1Atoms * pic2Atoms
+    # convert to 0 if atom and atom didn't survive
+    survivalData += pic1Atoms * (~pic2Atoms)
+    return survivalData.flatten()
+
+def getSurvivalEvents_slow(pic1Atoms, pic2Atoms):
+    """
+    It returns a raw array that includes every survival data point, including points where the the atom doesn't get
+    loaded at all.
+    """
+    # this will include entries for when there is no atom in the first picture.
     survivalData = np.array([])
     survivalData.astype(int)
     # flattens variations & locations?
@@ -1709,8 +1670,30 @@ def getSurvivalEvents(pic1Atoms, pic2Atoms):
             survivalData = np.append(survivalData, [-1])
     return survivalData
 
-
 def getSurvivalData(survivalData, repetitionsPerVariation):
+    # Take the previous data, which includes entries when there was no atom in the first picture, and convert it to
+    # an array of just loaded and survived or loaded and died.
+    survivalAverages = np.array([])
+    loadingProbability = np.array([])
+    survivalErrors = np.array([])
+    if survivalData.size < repetitionsPerVariation:
+        repetitionsPerVariation = survivalData.size
+    for variationInc in range(0, int(survivalData.size / repetitionsPerVariation)):
+        survivalList = arr([x for x in survivalData[variationInc * repetitionsPerVariation:(variationInc+1) * repetitionsPerVariation] if x != -1])
+        if survivalList.size == 0:
+            # catch the case where there's no relevant data, typically if laser becomes unlocked.
+            survivalErrors = np.append(survivalErrors, [0])
+            loadingProbability = np.append(loadingProbability, [0])
+            survivalAverages = np.append(survivalAverages, [0])
+        else:
+            # normal case
+            survivalErrors = np.append(survivalErrors, np.std(survivalList)/np.sqrt(survivalList.size))
+            loadingProbability = np.append(loadingProbability, survivalList.size / repetitionsPerVariation)
+            survivalAverages = np.append(survivalAverages, np.average(survivalList))
+    
+    return survivalAverages, survivalErrors, loadingProbability
+
+def getSurvivalData_fast(survivalData, repetitionsPerVariation):
     # Take the previous data, which includes entries when there was no atom in the first picture, and convert it to
     # an array of just loaded and survived or loaded and died.
     survivalAverages = np.array([])
@@ -2280,7 +2263,19 @@ def getAtomInPictureStatistics(atomsInPicData, reps):
     return stats
 
 
-def getEnsembleHits(atomsList, hitCondition=None, requireConsecutive=False):
+def getEnhancement(loadAtoms, assemblyAtoms, normalized=False):
+    """
+    determines how many atoms were added to the assembly, another measure of how well the rearranging is working.
+    """
+    enhancement = []
+    for inc, (loaded, assembled) in enumerate(zip(transpose(loadAtoms), transpose(assemblyAtoms))):
+        enhancement.append(sum(assembled) - sum(loaded))
+        if normalized:
+            enhancement[-1] /= len(assembled)
+    return enhancement
+
+
+def getEnsembleHits(atomsList, hitCondition=None, requireConsecutive=False, partialCredit=False):
     """
     This function determines whether an ensemble of atoms was hit in a given picture. Give it whichever
     picture data you need.
@@ -2309,13 +2304,17 @@ def getEnsembleHits(atomsList, hitCondition=None, requireConsecutive=False):
             else:
                 ensembleHits.append(matches == hitCondition)
     else:
-        for inc, atoms in enumerate(transpose(atomsList)):
-            ensembleHits.append(True)
-            for atom, needAtom in zip(atoms, hitCondition):
-                if not atom and needAtom:
-                    ensembleHits[inc] = False
-                if atom and not needAtom:
-                    ensembleHits[inc] = False
+        if not partialCredit:
+            for inc, atoms in enumerate(transpose(atomsList)):
+                ensembleHits.append(True)
+                for atom, needAtom in zip(atoms, hitCondition):
+                    if not atom and needAtom:
+                        ensembleHits[inc] = False
+                    if atom and not needAtom:
+                        ensembleHits[inc] = False
+        else:
+            for inc, atoms in enumerate(transpose(atomsList)):
+                ensembleHits.append(sum(atoms))# / len(atoms))
     return ensembleHits
 
 

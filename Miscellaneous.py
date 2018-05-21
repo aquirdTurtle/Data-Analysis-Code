@@ -101,6 +101,10 @@ def getStats(data, printStats=False):
     return d
 
 
+def getMarkers():
+    return ['o','v','<','>','^','*','x','+','D']
+
+
 def getColors(num, rgb=False):
     """
     Get an array of colors, typically to use for plotting.

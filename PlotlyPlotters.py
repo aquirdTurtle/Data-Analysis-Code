@@ -11,7 +11,7 @@ from Miscellaneous import transpose, getColors, errString
 import plotly.graph_objs as go
 from plotly.offline import iplot
 from plotly.tools import make_subplots
-from MainAnalysis import standardAssemblyAnalysis, standardLoadingAnalysis, standardTransferAnalysis, \
+from MainAnalysis import standardAssemblyAnalysis, standardPopulationAnalysis, standardTransferAnalysis, \
     AnalyzeRearrangeMoves, analyzeScatterData
 import FittingFunctions as fitFunc
 from pandas import DataFrame
@@ -435,7 +435,6 @@ def Assembly(fileNumber, atomLocs1, pic1Num, **standardAssemblyArgs):
     This function checks the efficiency of generating a picture;
     I.e. finding atoms at multiple locations at the same time.
     """
-    print('hi!')
     (atomLocs1, atomLocs2, key, thresholds, pic1Data, pic2Data, fit, ensembleStats, avgPic, atomCounts, keyName,
      indvStatistics, lossAvg,
      lossErr) = standardAssemblyAnalysis(fileNumber, atomLocs1, pic1Num, **standardAssemblyArgs)

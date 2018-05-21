@@ -46,4 +46,4 @@ def guess(key, values):
     :param values:
     :return: guess for gaussian parameters
     """
-    return [max(values) - min(values), key[np.argmax(values)], np.sqrt(max(key)-min(key)), min(values)]
+    return [max(values) - min(values), key[np.argmax(values)], (max(key)-min(key))/2, min(values)]
