@@ -496,20 +496,21 @@ def standardAssemblyAnalysis(fileNumber, atomLocs1, assemblyPic, atomLocs2=None,
 
 
 
-def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, threshold, loadPic=0, rerngedPic=1, picsPerRep=2,
+def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, loadPic=0, rerngedPic=1, picsPerRep=2,
                           splitByNumberOfMoves=False, allLocsList=None, splitByTargetLocation=False,
                           fitData=False, sufficientLoadingPostSelect=True, includesNoFlashPostSelect=False,
                           includesParallelMovePostSelect=False, isOnlyParallelMovesPostSelect=False,
                           noParallelMovesPostSelect=False, parallelMovePostSelectSize=None,
-                          postSelectOnNumberOfMoves=False, limitedMoves=-1, SeeIfMovesMakeSense=True):
+                          postSelectOnNumberOfMoves=False, limitedMoves=-1, SeeIfMovesMakeSense=True, **popArgs):
     """
     Analyzes the rearrangement move log file and displays statistics for different types of moves.
     Updated to handle new info in the file that tells where the final location of the rearrangement was.
     """
-    def append_all(moveList, picList, move, pics, i):
+    def append_all(moveList, picNums, picList, move, pics, i):
         moveList.append(move)
         picList.append(pics[2 * i])
         picList.append(pics[2 * i + 1])
+        picNums.append(2*i)
 
     locations = unpackAtomLocations(locations)
     if allLocsList is not None:
@@ -518,33 +519,29 @@ def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, threshold, lo
     moveList = parseRearrangeInfo(rerngInfoAddress, limitedMoves=limitedMoves)
     with ExpFile(fileNumber) as f:
         rawPics, repetitions = f.pics, f.reps 
-        f.get_basic_info()
-        
+        #f.get_basic_info()
+    print(len(rawPics),'...')
+    picNums = list(np.arange(1,len(rawPics),1))
     if sufficientLoadingPostSelect:
-        tmpPicList, tmpMoveList = [[], []]
+        tmpPicNums, tmpPicList, tmpMoveList = [[], [], []]
         for i, move in enumerate(moveList):
             if not np.sum(move['Source']) < len(locations):
-                append_all(tmpMoveList, tmpPicList, move, rawPics, i)
-                #tmpMoveList.append(move)
-                #tmpPicList.append(rawPics[2 * i])
-                #tmpPicList.append(rawPics[2 * i + 1])
-        moveList = tmpMoveList
-        rawPics = arr(tmpPicList)
+                append_all(tmpMoveList, tmpPicNums, tmpPicList, move, rawPics, i)
+        picNums, moveList, rawPics = arr(tmpPicNums), tmpMoveList, arr(tmpPicList)
         
     if includesNoFlashPostSelect:
-        tmpPicList, tmpMoveList = [[], []]
+        tmpPicNums, tmpPicList, tmpMoveList = [[], [], []]
         for i, move in enumerate(moveList):
             includesNoFlash = False
             for indvMove in move['Moves']:
                 if not indvMove['Flashed']:
                     includesNoFlash = True
             if includesNoFlash:
-                append_all(tmpMoveList, tmpPicList, move, rawPics, i)
-        moveList = tmpMoveList
-        rawPics = arr(tmpPicList)
+                append_all(tmpMoveList, tmpPicNums, tmpPicList, move, rawPics, i)
+        picNums, moveList, rawPics = arr(tmpPicNums), tmpMoveList, arr(tmpPicList)
         
     if includesParallelMovePostSelect:
-        tmpPicList, tmpMoveList = [[], []]
+        tmpPicNums, tmpPicList, tmpMoveList = [[], [], []]
         for i, move in enumerate(moveList):
             includesParallelMove = False
             for indvMove in move['Moves']:
@@ -552,14 +549,13 @@ def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, threshold, lo
                     if len(indvMove['Atoms']) > 1:
                         includesParallelMove = True
                 elif len(indvMove['Atoms']) == parallelMovePostSelectSize:
-                        includesParallelMove = True
+                    includesParallelMove = True
             if includesParallelMove:
-                append_all(tmpMoveList, tmpPicList, move, rawPics, i)
-        moveList = tmpMoveList
-        rawPics = arr(tmpPicList)
+                append_all(tmpMoveList, tmpPicNums, tmpPicList, move, rawPics, i)
+        picNums, moveList, rawPics = arr(tmpPicNums), tmpMoveList, arr(tmpPicList)
         
     if isOnlyParallelMovesPostSelect:
-        tmpPicList, tmpMoveList = [[], []]
+        tmpPicNums, tmpPicList, tmpMoveList = [[], [], []]
         for i, move in enumerate(moveList):
             isParallel = True
             for indvMove in move['Moves']:
@@ -567,76 +563,45 @@ def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, threshold, lo
                     if len(indvMove['Atoms']) == 1:
                         isParallel = False
                 elif len(indvMove['Atoms']) != parallelMovePostSelectSize:
-                        isParallel = False
+                    isParallel = False
             if isParallel:
-                append_all(tmpMoveList, tmpPicList, move, rawPics, i)
-        moveList = tmpMoveList
-        rawPics = arr(tmpPicList)
+                append_all(tmpMoveList, tmpPicNums, tmpPicList, move, rawPics, i)
+        picNums, moveList, rawPics = arr(tmpPicNums), tmpMoveList, arr(tmpPicList)
         
     if noParallelMovesPostSelect:
-        tmpPicList, tmpMoveList = [[], []]
+        tmpPicNums, tmpPicList, tmpMoveList = [[], [], []]
         for i, move in enumerate(moveList):
             containsParallel = False
             for indvMove in move['Moves']:
                 if len(indvMove['Atoms']) > 1:
                     containsParallel = True
             if not containsParallel:
-                append_all(tmpMoveList, tmpPicList, move, rawPics, i)
-        moveList = tmpMoveList
-        rawPics = arr(tmpPicList)
+                append_all(tmpMoveList, tmpPicNums, tmpPicList, move, rawPics, i)
+        picNums, moveList, rawPics = arr(tmpPicNums), tmpMoveList, arr(tmpPicList)
         
     if postSelectOnNumberOfMoves:
-        tmpPicList, tmpMoveList = [[], []]
+        tmpPicNums, tmpPicList, tmpMoveList = [[], [], []]
         for i, move in enumerate(moveList):
             if len(move['Moves']) == postSelectOnNumberOfMoves:
-                append_all(tmpMoveList, tmpPicList, move, rawPics, i)
-        moveList = tmpMoveList
-        rawPics = arr(tmpPicList)
+                append_all(tmpMoveList, tmpPicNums, tmpPicList, move, rawPics, i)
+        picNums, moveList, rawPics = arr(tmpPicNums), tmpMoveList, arr(tmpPicList)
     dataByLocation = {}
-    
-    
-    
     for i, move in enumerate(moveList):
         name = (move['Target-Location'] if splitByTargetLocation else 'No-Target-Split')
         if name not in dataByLocation:
-            dataByLocation[name] = {'Move-List': [move], 'Picture-List': [rawPics[2 * i], rawPics[2 * i + 1]]}
+            dataByLocation[name] = {'Move-List': [move], 'Picture-List': [rawPics[2 * i], rawPics[2 * i + 1]],
+                                   'Picture-Nums': [2 * i, 2 * i + 1]}
         else:
-            dataByLocation[name]['Move-List'].append(move)
-            dataByLocation[name]['Picture-List'].append(rawPics[2 * i])
-            dataByLocation[name]['Picture-List'].append(rawPics[2 * i + 1])
-    
+            append_all( dataByLocation[name]['Move-List'], dataByLocation[name]['Picture-Nums'], 
+                       dataByLocation[name]['Picture-List'], move, rawPics, i)
     # Get and print average statsistics over the whole set.
-    standardPopulationAnalysis()
     borders_load = getAvgBorderCount(rawPics, loadPic, picsPerRep)
     borders_trans = getAvgBorderCount(rawPics, rerngedPic, picsPerRep)
-    (allLoadData, allRerngedData, allLoadAtoms, allRerngedAtoms,
-     allLocsLoadData, allLocsRerngedData, allLocsLoadAtoms, allLocsRerngedAtoms) = [[] for _ in range(8)]
-    for loc in locations:
-        allLoadData.append(normalizeData(rawPics, loc, 0, 2, borders_load))
-        allRerngedData.append(normalizeData(rawPics, loc, 1, 2, borders_trans))
-    for point1, point2 in zip(allLoadData, allRerngedData):
-        allLoadAtoms.append(point1 > threshold)
-        allRerngedAtoms.append(point2 > threshold)
-        
-    if allLocsList is not None:
-        for loc in allLocsList:
-            allLocsLoadData.append(normalizeData(rawPics, loc, 0, 2, borders_load))
-            allLocsRerngedData.append(normalizeData(rawPics, loc, 1, 2, borders_trans))
-        for point1, point2 in zip(allLocsLoadData, allLocsRerngedData):
-            allLocsLoadAtoms.append(point1 > threshold)
-            allLocsRerngedAtoms.append(point2 > threshold)
-    else:
-        (allLocsLoadData, allLocsRerngedData, allLocsLoadAtoms,
-         allLocsRerngedAtoms) = allLoadData, allRerngedData, allLoadAtoms, allRerngedAtoms
-    allLoadAtoms, allRerngedAtoms = arr(allLoadAtoms), arr(allRerngedAtoms)
-    allEvents = getEnsembleHits(allRerngedAtoms)
-    allLossList = getNetLoss(allLocsLoadAtoms, allLocsRerngedAtoms)
-    allLossAvg, allLossErr = getNetLossStats(allLossList, len(allLossList))
-    print('Average Loss:', errString(allLossAvg[0], allLossErr[0]), '\nTotal Average Assembly:',
-          errString(np.mean(allEvents), np.std(allEvents) / np.sqrt(len(allEvents))))
     allData, fits = {}, {}
+    # this is usually just a 1x loop.
     for targetLoc, data in dataByLocation.items():
         moveData = {}
+        # final assembly of move-data
         if splitByNumberOfMoves:
             numberMovesList = []
             # nomoves handled separately because can refer to either loaded a 1x6 or loaded <6.
@@ -651,10 +616,10 @@ def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, threshold, lo
                 else:
                     noMoves += 1
                 if moveName not in moveData:
-                    moveData[moveName] = [data['Picture-List'][2 * i], data['Picture-List'][2 * i + 1]]
+                    moveData[moveName] = [2*i]
                 else:
-                    moveData[moveName].append(data['Picture-List'][2 * i])
-                    moveData[moveName].append(data['Picture-List'][2 * i + 1])
+                    moveData[moveName].append(2*i)
+                    
             print('Average Number of Moves, excluding zeros:', np.mean(numberMovesList))
             print('Number of repetitions with no moves:', noMoves)
         else:
@@ -669,46 +634,28 @@ def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, threshold, lo
                         directions = ['U','D','L','R']
                         moveName += directions[int(m['Direction'])] + ', '
                 if moveName not in moveData:
-                    moveData[moveName] = [data['Picture-List'][2 * i], data['Picture-List'][2 * i + 1]]
+                    moveData[moveName] = [2*i]
                 else:
-                    moveData[moveName].append(data['Picture-List'][2 * i])
-                    moveData[moveName].append(data['Picture-List'][2 * i + 1])
-        """
-        netLossList = getNetLoss(pic1Atoms, pic2Atoms)
-        lossAvg, lossErr = getNetLossStats(netLossList, repetitions)
-        """
+                    moveData[moveName].append(2*i)
+        
+        res = standardPopulationAnalysis( fileNumber, locations, rerngedPic, picsPerRep, **popArgs)
+        allRerngedAtoms = res[11]
+        res = standardPopulationAnalysis( fileNumber, locations, loadPic, picsPerRep, **popArgs)
+        allLoadedAtoms = res[11]        
+        (loadData, loadAtoms, rerngedData, rerngedAtoms, loadAllLocsData, loadAllLocsAtoms, rerngedAllLocsData,
+         rerngedAllLocsAtoms) = [[] for _ in range(8)]
         d = DataFrame()
-        lossAvgList, allLossErr = [[], []]
-        for keyName, pics in moveData.items():
-            pics = arr(pics)
-            (loadData, loadAtoms, rerngedData, rerngedAtoms, loadAllLocsData, loadAllLocsAtoms, rerngedAllLocsData,
-             rerngedAllLocsAtoms) = [[] for _ in range(8)]
-            for loc in locations:
-                loadData.append(normalizeData(pics, loc, 0, 2, borders_load).tolist())
-                rerngedData.append(normalizeData(pics, loc, 1, 2, borders_trans).tolist())
-                loadAtoms.append([])
-                rerngedAtoms.append([])
-                for (point1, point2) in zip(loadData[-1], rerngedData[-1]):
-                    loadAtoms[-1].append(point1 > threshold)
-                    rerngedAtoms[-1].append(point2 > threshold)
-            if allLocsList is not None:
-                for loc in allLocsList:
-                    loadAllLocsData.append(normalizeData(pics, loc, 0, 2, borders_load).tolist())
-                    rerngedAllLocsData.append(normalizeData(pics, loc, 1, 2, borders_trans).tolist())
-                    loadAllLocsAtoms.append([])
-                    rerngedAllLocsAtoms.append([])
-                    for (point1, point2) in zip(loadAllLocsData[-1], rerngedAllLocsData[-1]):
-                        loadAllLocsAtoms[-1].append(point1 > threshold)
-                        rerngedAllLocsAtoms[-1].append(point2 > threshold)
-                lossList = getNetLoss(loadAllLocsAtoms, rerngedAllLocsAtoms)
-                a, e = getNetLossStats(lossList, len(lossList))
-                allLossAvg.append(a[0])
-                allLossErr.append(e[0])
-            rerngedAtoms = arr(rerngedAtoms)
-            loadAtoms = arr(loadAtoms)
-            atomEvents = getEnsembleHits(rerngedAtoms)
-            d[keyName] = [int(len(pics) / 2), np.mean(atomEvents), np.std(atomEvents) / np.sqrt(len(atomEvents))]
-        allLossAvg = arr(allLossAvg)
+        # looping through diff target locations...
+        for keyName, categoryPicNums in moveData.items():
+            tmp = arr([[allRerngedAtoms[0][int(i/2)] for i in categoryPicNums]])
+            rerngedAtoms = arr([[allRerngedAtoms[0][int(i/2)] for i in categoryPicNums if not bool(allLoadedAtoms[0][int(i/2)])]])
+            atomEvents = getEnsembleHits(rerngedAtoms)            
+            # set the occurances, mean, error
+            if len(atomEvents) == 0:
+                d[keyName] = [int(len(rerngedAtoms[0])), 0, 0]
+            else:
+                d[keyName] = [int(len(rerngedAtoms[0])), np.mean(atomEvents), np.std(atomEvents) / np.sqrt(len(atomEvents))]
+                
         d = d.transpose()
         d.columns = ['occurances', 'success', 'error']
         d = d.sort_values('occurances', ascending=False)
@@ -723,3 +670,4 @@ def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, threshold, lo
         else:
             fits[targetLoc] = None
     return allData, fits, rawPics, moveList
+
