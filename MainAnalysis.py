@@ -295,7 +295,7 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
 
 
 def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, analyzeTogether=False, 
-                                manualThreshold=None, fitModule=None, keyInput=None, fitIndv=False):
+                                manualThreshold=None, fitModule=None, keyInput=None, fitIndv=False, subtractEdges=True):
     """
     
     :param fileNum:
@@ -350,8 +350,8 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
         for i, atomLoc in enumerate(atomLocations):
             (pic1Data[dataInc][i], pic1Atom[dataInc][i], thresholds[dataInc][i], thresholdFid[dataInc][i],
              fitVals[dataInc][i], bins[dataInc][i], binData[dataInc][i],
-             atomCount[dataInc][i]) = getLoadingData(data, atomLoc, whichPic, picsPerRep, manualThreshold,
-                                                     10)
+             atomCount[dataInc][i]) = getLoadingData(data, atomLoc, whichPic, picsPerRep, manualThreshold, 10,
+                                                    subtractEdges=subtractEdges)
             totalPic1AtomData.append(pic1Atom[dataInc][i])
             allAtomPicData.append(np.mean(pic1Atom[dataInc][i]))
             loadingRateList[i].append(np.mean(pic1Atom[dataInc][i]))
@@ -369,12 +369,23 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
     (pic1Data, pic1Atom, thresholds, thresholdFid, fitVals, bins, binData,
      atomCount) = arr([[None] * len(atomLocations)] * 8)
     for i, atomLoc in enumerate(atomLocations):
+        # binwidth can be smaller here because there's more data when calculating averages.
         (pic1Data[i], pic1Atom[i], thresholds[i], thresholdFid[i],
-         fitVals[i], bins[i], binData[i], atomCount[i]) = getLoadingData(rawData, atomLoc, whichPic,
-                                                                         picsPerRep, manualThreshold, 5)
+         fitVals[i], bins[i], binData[i], atomCount[i]) = getLoadingData( rawData, atomLoc, whichPic,
+                                                                          picsPerRep, manualThreshold, 5,
+                                                                          subtractEdges=subtractEdges)
+    print(pic1Atom.shape)
+    atomImages = [np.zeros(rawData[0].shape) for _ in range(int(numOfPictures/picsPerRep))]
+    atomImagesInc = 0
+    for picInc in range(int(numOfPictures)):
+        if picInc % picsPerRep != whichPic:
+            continue
+        for locInc, loc in enumerate(atomLocations):
+            atomImages[atomImagesInc][loc[0]][loc[1]] = pic1Atom[locInc][atomImagesInc]
+        atomImagesInc += 1
     pic1Data = arr(pic1Data.tolist())
     return (pic1Data, thresholds, avgPic, key, loadingRateErr, loadingRateList, allLoadingRate, allLoadingErr, loadFits,
-            fitModule, keyName, totalPic1AtomData, rawData, atomLocations, avgFits)
+            fitModule, keyName, totalPic1AtomData, rawData, atomLocations, avgFits, atomImages)
 
 
 def standardAssemblyAnalysis(fileNumber, atomLocs1, assemblyPic, atomLocs2=None, keyOffset=0, dataRange=None,
@@ -484,27 +495,22 @@ def standardAssemblyAnalysis(fileNumber, atomLocs1, assemblyPic, atomLocs2=None,
             keyName, indvStatistics, lossAvg, lossErr, fitModule, enhancementStats)
 
 
+
 def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, threshold, loadPic=0, rerngedPic=1, picsPerRep=2,
                           splitByNumberOfMoves=False, allLocsList=None, splitByTargetLocation=False,
                           fitData=False, sufficientLoadingPostSelect=True, includesNoFlashPostSelect=False,
                           includesParallelMovePostSelect=False, isOnlyParallelMovesPostSelect=False,
                           noParallelMovesPostSelect=False, parallelMovePostSelectSize=None,
-                          postSelectOnNumberOfMoves=False, limitedMoves=-1):
+                          postSelectOnNumberOfMoves=False, limitedMoves=-1, SeeIfMovesMakeSense=True):
     """
     Analyzes the rearrangement move log file and displays statistics for different types of moves.
     Updated to handle new info in the file that tells where the final location of the rearrangement was.
-
-    :param rerngInfoAddress:
-    :param fileNumber:
-    :param locations:
-    :param picNumber:
-    :param threshold:
-    :param splitByNumberOfMoves:
-    :param splitByTargetLocation:
-    :param fitData:
-    :param allLocsList:
-    :return:
     """
+    def append_all(moveList, picList, move, pics, i):
+        moveList.append(move)
+        picList.append(pics[2 * i])
+        picList.append(pics[2 * i + 1])
+
     locations = unpackAtomLocations(locations)
     if allLocsList is not None:
         allLocsList = unpackAtomLocations(allLocsList)
@@ -513,13 +519,15 @@ def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, threshold, lo
     with ExpFile(fileNumber) as f:
         rawPics, repetitions = f.pics, f.reps 
         f.get_basic_info()
+        
     if sufficientLoadingPostSelect:
         tmpPicList, tmpMoveList = [[], []]
         for i, move in enumerate(moveList):
             if not np.sum(move['Source']) < len(locations):
-                tmpMoveList.append(move)
-                tmpPicList.append(rawPics[2 * i])
-                tmpPicList.append(rawPics[2 * i + 1])
+                append_all(tmpMoveList, tmpPicList, move, rawPics, i)
+                #tmpMoveList.append(move)
+                #tmpPicList.append(rawPics[2 * i])
+                #tmpPicList.append(rawPics[2 * i + 1])
         moveList = tmpMoveList
         rawPics = arr(tmpPicList)
         
@@ -531,9 +539,7 @@ def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, threshold, lo
                 if not indvMove['Flashed']:
                     includesNoFlash = True
             if includesNoFlash:
-                tmpMoveList.append(move)
-                tmpPicList.append(rawPics[2 * i])
-                tmpPicList.append(rawPics[2 * i + 1])
+                append_all(tmpMoveList, tmpPicList, move, rawPics, i)
         moveList = tmpMoveList
         rawPics = arr(tmpPicList)
         
@@ -548,9 +554,7 @@ def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, threshold, lo
                 elif len(indvMove['Atoms']) == parallelMovePostSelectSize:
                         includesParallelMove = True
             if includesParallelMove:
-                tmpMoveList.append(move)
-                tmpPicList.append(rawPics[2 * i])
-                tmpPicList.append(rawPics[2 * i + 1])
+                append_all(tmpMoveList, tmpPicList, move, rawPics, i)
         moveList = tmpMoveList
         rawPics = arr(tmpPicList)
         
@@ -565,9 +569,7 @@ def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, threshold, lo
                 elif len(indvMove['Atoms']) != parallelMovePostSelectSize:
                         isParallel = False
             if isParallel:
-                tmpMoveList.append(move)
-                tmpPicList.append(rawPics[2 * i])
-                tmpPicList.append(rawPics[2 * i + 1])
+                append_all(tmpMoveList, tmpPicList, move, rawPics, i)
         moveList = tmpMoveList
         rawPics = arr(tmpPicList)
         
@@ -579,9 +581,7 @@ def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, threshold, lo
                 if len(indvMove['Atoms']) > 1:
                     containsParallel = True
             if not containsParallel:
-                tmpMoveList.append(move)
-                tmpPicList.append(rawPics[2 * i])
-                tmpPicList.append(rawPics[2 * i + 1])
+                append_all(tmpMoveList, tmpPicList, move, rawPics, i)
         moveList = tmpMoveList
         rawPics = arr(tmpPicList)
         
@@ -589,23 +589,24 @@ def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, threshold, lo
         tmpPicList, tmpMoveList = [[], []]
         for i, move in enumerate(moveList):
             if len(move['Moves']) == postSelectOnNumberOfMoves:
-                tmpMoveList.append(move)
-                tmpPicList.append(rawPics[2 * i])
-                tmpPicList.append(rawPics[2 * i + 1])
+                append_all(tmpMoveList, tmpPicList, move, rawPics, i)
         moveList = tmpMoveList
         rawPics = arr(tmpPicList)
     dataByLocation = {}
     
+    
+    
     for i, move in enumerate(moveList):
-        name = move['Target-Location'] if splitByTargetLocation else 'No-Target-Split'
+        name = (move['Target-Location'] if splitByTargetLocation else 'No-Target-Split')
         if name not in dataByLocation:
             dataByLocation[name] = {'Move-List': [move], 'Picture-List': [rawPics[2 * i], rawPics[2 * i + 1]]}
         else:
             dataByLocation[name]['Move-List'].append(move)
             dataByLocation[name]['Picture-List'].append(rawPics[2 * i])
             dataByLocation[name]['Picture-List'].append(rawPics[2 * i + 1])
-    # Get and print average statsistics over the whole set.
     
+    # Get and print average statsistics over the whole set.
+    standardPopulationAnalysis()
     borders_load = getAvgBorderCount(rawPics, loadPic, picsPerRep)
     borders_trans = getAvgBorderCount(rawPics, rerngedPic, picsPerRep)
     (allLoadData, allRerngedData, allLoadAtoms, allRerngedAtoms,

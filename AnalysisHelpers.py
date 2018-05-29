@@ -75,7 +75,6 @@ def parseRearrangeInfo(addr, limitedMoves=-1):
             else:
                 # this blank line happens between moves.
                 readyForAtomList = False
-    print(len(moveList))
     return moveList
 
 
@@ -1380,7 +1379,7 @@ def getFitsDataFrame(fits, fitModule, avgFit):
 
 
 
-def getLoadingData(picSeries, loc, whichPic, picsPerRep, manThreshold, binWidth):
+def getLoadingData(picSeries, loc, whichPic, picsPerRep, manThreshold, binWidth, subtractEdges=True):
     """
 
     :param picSeries:
@@ -1392,7 +1391,7 @@ def getLoadingData(picSeries, loc, whichPic, picsPerRep, manThreshold, binWidth)
     :return:
     """
     # grab the first picture of each repetition
-    borders = getAvgBorderCount(picSeries, whichPic, picsPerRep)
+    borders = getAvgBorderCount(picSeries, whichPic, picsPerRep) if subtractEdges else np.zeros(len(picSeries))
     pic1Data = normalizeData(picSeries, loc, whichPic, picsPerRep, borders)
     bins, binnedData = getBinData(binWidth, pic1Data)
     guess1, guess2 = guessGaussianPeaks(bins, binnedData)

@@ -802,7 +802,7 @@ def Loading(fileNum, atomLocations, **PopulationArgs):
 
 
 def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=True, plotCounts=False, legendOption=None, showImagePlots=True, 
-               plotIndvHists=False, showFitDetails=False, showFitCenterPlot=True, **StandardArgs):
+               plotIndvHists=False, showFitDetails=False, showFitCenterPlot=True, show=True, **StandardArgs):
     """
     Standard data analysis package for looking at population %s throughout an experiment.
 
@@ -813,11 +813,10 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     """
     (pic1Data, thresholds, avgPic, key, loadRateErr, loadRate, avgLoadRate, avgLoadErr, fits,
      fitModule, keyName, totalPic1AtomData, rawData, atomLocations, 
-     avgFits) = standardPopulationAnalysis(fileNum, atomLocations, whichPic, picsPerRep, **StandardArgs)
+     avgFits, atomImages) = standardPopulationAnalysis(fileNum, atomLocations, whichPic, picsPerRep, **StandardArgs)
     colors, _ = getColors(len(atomLocations) + 1)
     if not show:
-        print('please edit this line')
-        #return key, survivalData, survivalErrs, loadingRate
+        return key, loadRate, loadRateErr, pic1Data, atomImages, thresholds
     if legendOption is None and len(atomLocations) < 50:
         legendOption = True
     else:
@@ -915,7 +914,6 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     countHist = subplot(gridLeft[4:8, 15:16], sharey=countPlot)
     for i, atomLoc in enumerate(atomLocations):
         countHist.hist(pic1Data[i], 50, color=colors[i], orientation='horizontal', alpha=0.3, histtype='stepfilled')
-        #countHist.hist(pic2Data[i], 50, color=colors2[i], orientation='horizontal', alpha=0.3, histtype='stepfilled')
         countHist.axhline(thresholds[i], color=colors[i], alpha=0.3)
     for item in ([countHist.title, countHist.xaxis.label, countHist.yaxis.label] +
                      countHist.get_xticklabels() + countHist.get_yticklabels()):
@@ -968,8 +966,14 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
             cax = divider.append_axes('right', size='5%', pad=0.05)
             f.colorbar(im, cax, orientation='vertical')
     if plotIndvHists:
-        indvHists(pic1Data, thresholds, colors)
-    return key, loadRate, loadRateErr, pic1Data
+        indvHists(pic1Data, thresholds, colors, extra=thresholds)
+    # output thresholds
+    thresholds = np.flip(np.reshape(thresholds, (10,10)),1)
+    with open('J:/Code-Files/T-File.txt','w') as f:
+        for row in thresholds:
+            for thresh in row:
+                f.write(str(thresh) + ' ') 
+    return key, loadRate, loadRateErr, pic1Data, atomImages, thresholds
 
 
 def Assembly(fileNumber, atomLocs1, pic1Num, partialCredit=False, **standardAssemblyArgs):
@@ -998,7 +1002,6 @@ def Assembly(fileNumber, atomLocs1, pic1Num, partialCredit=False, **standardAsse
     # Main Plot
     mainPlot = subplot(grid1[:, :12])
     for stats, label, c in zip((ensembleStats, enhancementStats), ('Assembly', 'Enhancement'), colors):
-        print(stats)
         mainPlot.errorbar(key, stats['avg'], yerr=stats['err'], color=c, ls='',
                           marker='o', capsize=6, elinewidth=3, label=label)
     
@@ -1230,7 +1233,8 @@ def Rearrange(rerngInfoAddress, fileNumber, locations,splitByNumberOfMoves=False
     :param rearrangeArgs:
     :return:
     """
-    allData, fits, pics, moves = AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, splitByNumberOfMoves=splitByNumberOfMoves, **rearrangeArgs)
+    res = AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, splitByNumberOfMoves=splitByNumberOfMoves, **rearrangeArgs)
+    allData, fits, pics, moves = res
     f, ax = subplots(1)
     for loc in allData:
         ax.errorbar( allData[loc].transpose().columns, allData[loc]['success'], yerr=allData[loc]['error'], 
