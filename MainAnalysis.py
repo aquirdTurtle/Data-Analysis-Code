@@ -501,7 +501,8 @@ def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, loadPic=0, re
                           fitData=False, sufficientLoadingPostSelect=True, includesNoFlashPostSelect=False,
                           includesParallelMovePostSelect=False, isOnlyParallelMovesPostSelect=False,
                           noParallelMovesPostSelect=False, parallelMovePostSelectSize=None,
-                          postSelectOnNumberOfMoves=False, limitedMoves=-1, SeeIfMovesMakeSense=True, **popArgs):
+                          postSelectOnNumberOfMoves=False, limitedMoves=-1, SeeIfMovesMakeSense=True, 
+                          postSelectOnLoading=False, **popArgs):
     """
     Analyzes the rearrangement move log file and displays statistics for different types of moves.
     Updated to handle new info in the file that tells where the final location of the rearrangement was.
@@ -646,9 +647,13 @@ def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, loadPic=0, re
          rerngedAllLocsAtoms) = [[] for _ in range(8)]
         d = DataFrame()
         # looping through diff target locations...
+        print(arr(allRerngedAtoms).shape,'hi')
         for keyName, categoryPicNums in moveData.items():
-            tmp = arr([[allRerngedAtoms[0][int(i/2)] for i in categoryPicNums]])
-            rerngedAtoms = arr([[allRerngedAtoms[0][int(i/2)] for i in categoryPicNums if not bool(allLoadedAtoms[0][int(i/2)])]])
+            if postSelectOnLoading:
+                rerngedAtoms = arr([[locAtoms[int(i/2)] for i in categoryPicNums if not bool(allLoadedAtoms[j,int(i/2)])] 
+                                    for j, locAtoms in enumerate(allRerngedAtoms)])
+            else:
+                rerngedAtoms = arr([[locAtoms[int(i/2)] for i in categoryPicNums] for j, locAtoms in enumerate(allRerngedAtoms)])
             atomEvents = getEnsembleHits(rerngedAtoms)            
             # set the occurances, mean, error
             if len(atomEvents) == 0:

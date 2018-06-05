@@ -785,7 +785,8 @@ def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingR
         tt.display()
     avgPlt1.set_position([0.58,0,0.3,0.3])
     avgPlt2.set_position([0.73,0,0.3,0.3])
-    return key, survivalData, survivalErrs, loadingRate, fits, avgFit, genAvgs, genErrs, pic1Data, gaussianFitVals, centers, thresholds
+    return (key, survivalData, survivalErrs, loadingRate, fits, avgFit, genAvgs, genErrs, pic1Data, 
+            gaussianFitVals, centers, thresholds, avgSurvivalPic)
 
 
 def rotateTicks(plot):
@@ -968,11 +969,11 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     if plotIndvHists:
         indvHists(pic1Data, thresholds, colors, extra=thresholds)
     # output thresholds
-    thresholds = np.flip(np.reshape(thresholds, (10,10)),1)
+    """    thresholds = np.flip(np.reshape(thresholds, (10,10)),1)
     with open('J:/Code-Files/T-File.txt','w') as f:
         for row in thresholds:
             for thresh in row:
-                f.write(str(thresh) + ' ') 
+                f.write(str(thresh) + ' ') """
     return key, loadRate, loadRateErr, pic1Data, atomImages, thresholds
 
 
