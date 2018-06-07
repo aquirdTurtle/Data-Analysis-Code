@@ -14,9 +14,8 @@ import uncertainties.unumpy as unp
 from warnings import warn
 
 from matplotlib.pyplot import *
-from matplotlib.patches import Ellipse
 
-from scipy.optimize import minimize, basinhopping, curve_fit as fit
+from scipy.optimize import minimize, basinhopping, curve_fit
 import scipy.special as special
 import scipy.interpolate as interp
 
@@ -263,10 +262,10 @@ def fitWithClass(fitClass, key, vals, errs=None):
             print('Not enough data points to constrain a fit!')
             raise RuntimeError()
         if errs is not None:
-            fitValues, fitCovs = fit(fitClass.f, key, vals, p0=[fitClass.guess(key, vals)], sigma=errs,
+            fitValues, fitCovs = curve_fit(fitClass.f, key, vals, p0=[fitClass.guess(key, vals)], sigma=errs,
                                      absolute_sigma=True)
         else:
-            fitValues, fitCovs = fit(fitClass.f, key, vals, p0=[fitClass.guess(key, vals)])
+            fitValues, fitCovs = curve_fit(fitClass.f, key, vals, p0=[fitClass.guess(key, vals)])
         fitErrs = np.sqrt(np.diag(fitCovs))
         corr_vals = unc.correlated_values(fitValues, fitCovs)
         fitUncObject = fitClass.f_unc(xFit, *corr_vals)
@@ -336,9 +335,9 @@ def loadCompoundBasler(num, cameraName='ace'):
     if cameraName == 'ace':
         path = dataAddress + "AceData_" + str(num) + ".txt"
     elif cameraName == 'scout':
-        path = dataAddress + "ScoutData_" + str(num) + ".txt"
+        path = dataAddress + "ScoutData" + str(num) + ".txt"
     else:
-        raise ValueError('cameraName bad value for Basler camera.')
+        raise ValueError('cameraName has a bad value for a Basler camera.')
     with open(path) as file:
         original = file.read()
         pics = original.split(";")
@@ -555,7 +554,7 @@ def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1):
     x, y = np.meshgrid(x, y)
     initial_guess = [np.max(pic) - np.min(pic), pos[1], pos[0], guessSigma_x, guessSigma_y, 0, np.min(pic)]
     try:
-        popt, pcov = fit(fitFunc.gaussian_2D, (x, y), pic, p0=initial_guess, maxfev=2000)
+        popt, pcov = curve_fit(fitFunc.gaussian_2D, (x, y), pic, p0=initial_guess, maxfev=2000)
     except RuntimeError:
         popt = np.zeros(len(initial_guess))
         pcov = np.zeros((len(initial_guess), len(initial_guess)))
@@ -583,7 +582,9 @@ def fitPictures(pictures, dataRange, guessSigma_x=1, guessSigma_y=1):
     fitErrors = []
     count = 0
     warningHasBeenThrown = False
-    for picture in pictures:
+    print('fitting picture Number...')
+    for picInc, picture in enumerate(pictures):
+        print(picInc, ',', end='')
         if count not in dataRange:
             count += 1
             fitParameters.append(np.zeros(7))
@@ -968,159 +969,6 @@ def assemblePlotData(rawData, dataMinusBg, dataMinusAverage, positions, waists, 
     return countData, fitData
 
 
-def showPicComparisons(data, key, fitParameters=np.array([])):
-    """
-    formerly the "individualPics" option.
-    expects structure:
-    data[key value number][raw, -background, -average][2d pic]
-
-    :param data:
-    :param key:
-    :param fitParameters:
-    :return:
-    """
-    if data.ndim != 4:
-        raise ValueError("Incorrect dimensions for data input to show pics if you want individual pics.")
-    titles = ['Raw Picture', 'Background Subtracted', 'Average Subtracted']
-    for inc in range(len(data)):
-        figure()
-        fig, plts = subplots(1, len(data[inc]), figsize=(15, 6))
-        count = 0
-        for pic in data[inc]:
-            x = np.linspace(1, pic.shape[1], pic.shape[1])
-            y = np.linspace(1, pic.shape[0], pic.shape[0])
-            x, y = np.meshgrid(x, y)
-            im = plts[count].pcolormesh(pic, extent=(x.min(), x.max(), y.min(), y.max()))
-            fig.colorbar(im, ax=plts[count], fraction=0.046, pad=0.04)
-            plts[count].set_title(titles[count])
-            plts[count].axis('off')
-            if fitParameters.size != 0:
-                if (fitParameters[count] != np.zeros(len(fitParameters[count]))).all():
-                    data_fitted = fitFunc.gaussian_2D((x, y), *fitParameters[count])
-                    try:
-                        # used to be "picture" which was unresolved, assuming should have been pic, as I've changed
-                        # below.
-                        plts[count].contour(x, y, data_fitted.reshape(pic.shape[0], pic.shape[1]), 2, colors='w',
-                                            alpha=0.35, linestyles="dashed")
-                    except ValueError:
-                        pass
-            count += 1
-        fig.suptitle(str(key[inc]))
-
-
-def showBigPics(data, key, fitParameters=np.array([]), individualColorBars=False, colorMax=-1):
-    """
-    formerly the "bigPictures" option.
-
-    :param data:
-    :param key:
-    :param fitParameters:
-    :param individualColorBars:
-    :param colorMax:
-    :return:
-    """
-    if data.ndim != 3:
-        raise ValueError("Incorrect dimensions for data input showBigPics.")
-    count = 0
-    maximum = sorted(data.flatten())[colorMax]
-    minimum = min(data.flatten())
-    # get picture fits & plots
-    for picture in data:
-        fig = figure()
-        grid(0)
-        if individualColorBars:
-            maximum = max(picture.flatten())
-            minimum = min(picture.flatten())
-        x = np.linspace(1, picture.shape[1], picture.shape[1])
-        y = np.linspace(1, picture.shape[0], picture.shape[0])
-        x, y = np.meshgrid(x, y)
-        im = pcolormesh(picture, vmin=minimum, vmax=maximum)
-        axis('off')
-        title(str(round_sig(key[count], 4)), fontsize=8)
-        if fitParameters.size != 0:
-            if (fitParameters[count] != np.zeros(len(fitParameters[count]))).all():
-                data_fitted = fitFunc.gaussian_2D((x, y), *fitParameters[count])
-                try:
-                    contour(x, y, data_fitted.reshape(picture.shape[0], picture.shape[1]), 2, colors='w', alpha=0.35,
-                            linestyles="dashed")
-                except ValueError:
-                    pass
-        count += 1
-        # final touches
-        cax = fig.add_axes([0.95, 0.1, 0.03, 0.8])
-        fig.colorbar(im, cax=cax)
-
-
-def showPics(data, key, fitParameters=np.array([]), individualColorBars=False, colorMax=-1):
-    """
-    formerly the default option.
-
-    :param data:
-    :param key:
-    :param fitParameters:
-    :param individualColorBars:
-    :param colorMax:
-    :return:
-    """
-    # if data.ndim != 3:
-    #    raise ValueError("Incorrect dimensions for data input to show pics if you don't want individual pics.")
-    num = len(data)
-    gridsize1, gridsize2 = (0, 0)
-    for i in range(100):
-        if i*i >= num:
-            gridsize1 = i
-            if i*(i-1) >= num:
-                gridsize2 = i-1
-            else:
-                gridsize2 = i
-            break
-    fig, plts = subplots(gridsize2, gridsize1, figsize=(15, 10))
-    count = 0
-    rowCount = 0
-    picCount = 0
-    maximum = sorted(data.flatten())[colorMax]
-    minimum = min(data.flatten())
-    # get picture fits & plots
-    for row in plts:
-        for _ in row:
-            plts[rowCount, picCount].grid(0)
-            if count >= len(data):
-                count += 1
-                picCount += 1
-                continue
-            picture = data[count]
-            if individualColorBars:
-                maximum = max(picture.flatten())
-                minimum = min(picture.flatten())
-            x = np.linspace(1, picture.shape[1], picture.shape[1])
-            y = np.linspace(1, picture.shape[0], picture.shape[0])
-            x, y = np.meshgrid(x, y)
-            im = plts[rowCount, picCount].imshow(picture, origin='bottom', extent=(x.min(), x.max(), y.min(), y.max()),
-                                                 vmin=minimum, vmax=maximum)
-            plts[rowCount, picCount].axis('off')
-            plts[rowCount, picCount].set_title(str(round_sig(key[count], 4)), fontsize=8)
-            if fitParameters.size != 0:
-                if (fitParameters[count] != np.zeros(len(fitParameters[count]))).all():
-                    # data_fitted = gaussian_2D((x, y), *fitParameters[count])
-                    try:
-                        ellipse = Ellipse(xy=(fitParameters[count][1], fitParameters[count][2]),
-                                          width=2*fitParameters[count][3], height=2*fitParameters[count][4],
-                                          angle=fitParameters[count][5], edgecolor='r', fc='None', lw=2, alpha=0.2)
-                        plts[rowCount, picCount].add_patch(ellipse)
-                        # plts[rowCount, picCount].contour(x, y,
-                        #                                 data_fitted.reshape(picture.shape[0], picture.shape[1]),
-                        #                                 2, colors='w', alpha=0.35, linestyles="dashed")
-                    except ValueError:
-                        pass
-            count += 1
-            picCount += 1
-        picCount = 0
-        rowCount += 1
-    # final touches
-    cax = fig.add_axes([0.95, 0.1, 0.03, 0.8])
-    fig.colorbar(im, cax=cax)
-
-
 def beamIntensity(power, waist, radiusOfInterest=0):
     """
     computes the average beam intensity, in mW/cm^2, of a beam over some radius of interest.
@@ -1233,10 +1081,10 @@ def computeMotNumber(sidemotPower, diagonalPower, motRadius, exposure, imagingLo
 
 # TODO: for some reason this fitting is currently very finicky with respect to sigma_I. Don't understand why. fix this.
 def calcMotTemperature(times, sigmas):
-    print(sigmas[0])
+    # print(sigmas[0])
     guess = [sigmas[0], 0.1]
     # guess = [0.001, 0.1]
-    # in cm
+    # in cm...?
     # sidemotWaist = .33 / (2*np.sqrt(2))
     sidemotWaist = 8 / (2*np.sqrt(2))
     # sidemotWaist^2/2 = 2 sigma_sidemot^2
@@ -1244,12 +1092,12 @@ def calcMotTemperature(times, sigmas):
     sigma_I = sidemotWaist / 2
     # convert to m
     sigma_I /= 100
-    # modify roughly for angle of beam
+    # modify roughly for angle of sidemot
     # sigma_I /= np.cos(2*pi/3)
     sigma_I /= np.cos(consts.pi/4)
     sigma_I = 100
-    fitVals, fitCovariances = fit(lambda x, a, b: ballisticMotExpansion(x, a, b, sigma_I), times, sigmas, p0=guess)
-    simpleVals, simpleCovariances = fit(simpleMotExpansion, times, sigmas, p0=guess)
+    fitVals, fitCovariances = curve_fit(lambda x, a, b: ballisticMotExpansion(x, a, b, sigma_I), times, sigmas, p0=guess)
+    simpleVals, simpleCovariances = curve_fit(simpleMotExpansion, times, sigmas, p0=guess)
     temperature = consts.Rb87_M / consts.k_B * fitVals[1]**2
     tempFromSimple = consts.Rb87_M / consts.k_B * simpleVals[1]**2
     return temperature, tempFromSimple, fitVals, fitCovariances, simpleVals, simpleCovariances
@@ -1850,7 +1698,6 @@ def processImageData(key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulat
     passed through some other function in order to reach this function, and all parameters are required.
     """
     # handle windowing defaults
-    print('beg', rawData.shape)
     if smartWindow:
         maxLocs = []
         for dat in rawData:
@@ -1884,18 +1731,19 @@ def processImageData(key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulat
             xMax = 0
         if yMax < 0:
             yMax = 0
-
+    print(rawData.shape)
     if manuallyAccumulate:
         # ignore shape[1], which is the number of pics in each variation. These are what are getting averaged.
         avgPics = np.zeros((int(rawData.shape[0] / accumulations), rawData.shape[1], rawData.shape[2]))
-        print('avgpics shape:', avgPics.shape)
         varCount = 0
         for var in avgPics:
             for picNum in range(accumulations):
                 var += rawData[varCount * accumulations + picNum]
             varCount += 1
         rawData = avgPics
-
+    if rawData.shape[0] != len(key):
+        raise ValueError("ERROR: number of pictures (after manual accumulations) " + str(rawData.shape[0]) + 
+                         " data doesn't match length of key " + str(len(key)) + "!")
     # combine and order data.
     rawData, key = combineData(rawData, key)
     rawData, key, _ = orderData(rawData, key)
@@ -1935,7 +1783,6 @@ def processImageData(key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulat
     for pic in normData:
         avgPic += pic
     avgPic /= len(normData)
-    print('avgpic shape:', avgPic.shape)
     dataMinusAvg = np.copy(normData)
     for pic in dataMinusAvg:
         pic -= avgPic
@@ -1975,7 +1822,7 @@ def handleFitting(fitType, key, data):
                 raise RuntimeError()
             widthGuess = np.std(key) / 2
             centerGuess = key[list(data).index(max(data))]
-            fitValues, fitCovs = fit(fitFunc.quadraticBump, key, data, p0=[max(data), -1/widthGuess, centerGuess])
+            fitValues, fitCovs = curve_fit(fitFunc.quadraticBump, key, data, p0=[max(data), -1/widthGuess, centerGuess])
             fitErrs = np.sqrt(np.diag(fitCovs))
             a, b, c = unc.correlated_values(fitValues, fitCovs)
             fitObject = fitFunc.quadraticBump(xFit, a, b, c)
@@ -1993,7 +1840,7 @@ def handleFitting(fitType, key, data):
             widthGuess = np.std(key) / 2
             # Get all the atoms
             centerGuess = key[list(data).index(max(data))]
-            fitValues, fitCovs = fit(fitFunc.gaussian, key, data, p0=[-0.95, centerGuess, widthGuess, 0.95])
+            fitValues, fitCovs = curve_fit(fitFunc.gaussian, key, data, p0=[-0.95, centerGuess, widthGuess, 0.95])
             fitErrs = np.sqrt(np.diag(fitCovs))
             a, b, c, d = unc.correlated_values(fitValues, fitCovs)
             fitObject = fitFunc.uncGaussian(xFit, a, b, c, d)
@@ -2011,7 +1858,7 @@ def handleFitting(fitType, key, data):
 
             widthGuess = np.std(key) / 2
             centerGuess = key[list(data).index(min(data))]
-            fitValues, fitCovs = fit(fitFunc.gaussian, key, data, p0=[-0.95, centerGuess, widthGuess, 0.95])
+            fitValues, fitCovs = curve_fit(fitFunc.gaussian, key, data, p0=[-0.95, centerGuess, widthGuess, 0.95])
             fitErrs = np.sqrt(np.diag(fitCovs))
             a, b, c, d = unc.correlated_values(fitValues, fitCovs)
             fitObject = fitFunc.uncGaussian(xFit, a, b, c, d)
@@ -2028,7 +1875,7 @@ def handleFitting(fitType, key, data):
 
             decayConstantGuess = np.std(key)
             ampGuess = data[0]
-            fitValues, fitCovs = fit(fitFunc.exponentialDecay, key, data, p0=[ampGuess, decayConstantGuess])
+            fitValues, fitCovs = curve_fit(fitFunc.exponentialDecay, key, data, p0=[ampGuess, decayConstantGuess])
             fitErrs = np.sqrt(np.diag(fitCovs))
             a, b = unc.correlated_values(fitValues, fitCovs)
             fitObject = fitFunc.uncExponentialDecay(xFit, a,b)
@@ -2046,7 +1893,7 @@ def handleFitting(fitType, key, data):
 
             decayConstantGuess = (np.max(key)+np.min(key))/4
             ampGuess = data[-1]
-            fitValues, fitCovs = fit(fitFunc.exponentialSaturation, key, data,
+            fitValues, fitCovs = curve_fit(fitFunc.exponentialSaturation, key, data,
                                      p0=[-ampGuess, decayConstantGuess, ampGuess])
             fitErrs = np.sqrt(np.diag(fitCovs))
             a, b, c = unc.correlated_values(fitValues, fitCovs)
@@ -2065,7 +1912,7 @@ def handleFitting(fitType, key, data):
             phiGuess = 0
             OmegaGuess = np.pi / np.max(key)
             # Omega is the Rabi rate
-            fitValues, fitCovs = fit(fitFunc.RabiFlop, key, data, p0=[ampGuess, OmegaGuess, phiGuess])
+            fitValues, fitCovs = curve_fit(fitFunc.RabiFlop, key, data, p0=[ampGuess, OmegaGuess, phiGuess])
             fitErrs = np.sqrt(np.diag(fitCovs))
             a, b, c = unc.correlated_values(fitValues, fitCovs)
             fitObject = fitFunc.uncRabiFlop(xFit, a, b, c)

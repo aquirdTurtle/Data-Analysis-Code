@@ -59,6 +59,7 @@ class ExpFile:
             # assume a file address itself
             path = fileID
         file = h5.File(path, 'r')
+        self.f = file
         return file
     
     def get_key(self):

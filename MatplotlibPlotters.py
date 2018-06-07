@@ -13,13 +13,15 @@ from AnalysisHelpers import (loadDataRay, loadCompoundBasler, processSingleImage
                              normalizeData, getBinData, getSurvivalData, getSurvivalEvents, fitDoubleGaussian,
                              guessGaussianPeaks, calculateAtomThreshold, getAvgPic, getEnsembleHits,
                              getEnsembleStatistics, handleFitting, getLoadingData, loadDetailedKey, processImageData,
-                             fitPictures, fitGaussianBeamWaist, assemblePlotData, showPics, showBigPics,
-                             showPicComparisons, ballisticMotExpansion, simpleMotExpansion, calcMotTemperature,
-                             integrateData, computeMotNumber, getFitsDataFrame, genAvgDiscrepancyImage, getGridDims)
+                             fitPictures, fitGaussianBeamWaist, assemblePlotData, ballisticMotExpansion, simpleMotExpansion, 
+                             calcMotTemperature,integrateData, computeMotNumber, getFitsDataFrame, genAvgDiscrepancyImage, 
+                             getGridDims)
 import MarksConstants as consts
 import FittingFunctions as fitFunc
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.patches import Ellipse
 from TimeTracker import TimeTracker
+from fitters import gaussian_2d
 
 
 def indvHists(dat, thresh, colors, extra=None):
@@ -180,7 +182,6 @@ def standardImages(data,
         raise ValueError("Can't show bigPics if not showPics!")
     if allThePics and not showPictures:
         raise ValueError("Can't show allThePics if not showPics!")
-
     # the key
     if key.size == 0:
         origKey, keyName = loadDetailedKey(data)
@@ -193,8 +194,6 @@ def standardImages(data,
     else:
         # both keys the same.
         key = origKey
-
-    print("Key Values, in Time Order: ", key)
     if len(key) == 0:
         raise RuntimeError('key was empty!')
 
@@ -209,16 +208,10 @@ def standardImages(data,
     if type(data) == int or (type(data) == np.array and type(data[0]) == int):
         if loadType == 'andor':
             rawData, _, _, _ = loadHDF5(data)
-        elif loadType == 'scout':
-            rawData = loadCompoundBasler(data, 'scout')
-        elif loadType == 'ace':
-            rawData = loadCompoundBasler(data, 'ace')
+        elif loadType == 'scout' or  loadType == 'ace':
+            rawData = loadCompoundBasler(data, loadType)
         elif loadType == 'dataray':
             raise ValueError('Loadtype of "dataray" has become deprecated and needs to be reimplemented.')
-            # rawData = [[] for _ in range(data)]
-            # assume user inputted an array of ints.
-            # for _ in data:
-            #    rawData[keyInc][repInc] = loadDataRay(data)
         else:
             raise ValueError('Bad value for LoadType.')
     else:
@@ -226,11 +219,10 @@ def standardImages(data,
         print('Assuming input is a picture or array of pictures.')
         rawData = data
     print('Data Loaded.')
-    print('init shape: ' + str(rawData.shape))
-    (key, rawData, dataMinusBg, dataMinusAvg,
-     avgPic) = processImageData(key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulations, dataRange, zeroCorners,
+    res = processImageData(key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulations, dataRange, zeroCorners,
                                 smartWindow, manuallyAccumulate=manualAccumulation)
-    print('after process: ' + str(rawData.shape))
+    key, rawData, dataMinusBg, dataMinusAvg, avgPic = res
+    
     if fitPics:
         # should improve this to handle multiple sets.
         if '-bg' in plottedData:
@@ -250,7 +242,7 @@ def standardImages(data,
 
     # convert to normal optics convention. the equation uses gaussian as exp(x^2/2sigma^2), I want the waist,
     # which is defined as exp(2x^2/waist^2):
-    waists = 2 * arr([pictureFitParams[:, 3], pictureFitParams[:, 4]])
+    waists = 2 * abs(arr([pictureFitParams[:, 3], pictureFitParams[:, 4]]))
     positions = arr([pictureFitParams[:, 1], pictureFitParams[:, 2]])
     if cameraType == 'dataray':
         pixelSize = consts.dataRayPixelSize
@@ -262,15 +254,12 @@ def standardImages(data,
         pixelSize = consts.baslerScoutPixelSize
     else:
         raise ValueError("Error: Bad Value for 'cameraType'.")
-
     waists *= pixelSize
     positions *= pixelSize
-
     # average of the two dimensions
     avgWaists = []
     for pair in np.transpose(arr(waists)):
         avgWaists.append((pair[0] + pair[1]) / 2)
-
     if fitBeamWaist:
         try:
             waistFitParamsX, waistFitErrsX = fitGaussianBeamWaist(waists[0], key, 850e-9)
@@ -289,21 +278,17 @@ def standardImages(data,
         # assemble the data structures for plotting.
         countData, fitData = assemblePlotData(rawData, dataMinusBg, dataMinusAvg, positions, waists,
                                               plottedData, scanType, xLabel, plotTitle, location)
-
     if majorData == 'counts':
         majorPlotData, minorPlotData = countData, fitData
     elif majorData == 'fits':
         minorPlotData, majorPlotData = countData, fitData
     else:
         raise ValueError("incorect 'majorData' argument")
-
     if showPlot:
         plotPoints(key, majorPlotData, minorPlot=minorPlotData, picture=avgPic, picTitle="Average Picture")
-
     if showPlot and showPictures:
         if allThePics:
             data = []
-
             for inc in range(len(rawData)):
                 data.append([rawData[inc], dataMinusBg[inc], dataMinusAvg[inc]])
             showPicComparisons(arr(data), key, fitParameters=pictureFitParams)
@@ -332,33 +317,19 @@ def standardImages(data,
     return key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams
 
 
-def plotMotTemperature(data, xLabel="", plotTitle="", window=(0, 0, 0, 0), xMin=0, xMax=0, yMin=0, yMax=0,
-                       accumulations=1, key=arr([]), dataRange=(0, 0), fitWidthGuess=100):
+def plotMotTemperature(data, **standardImagesArgs):
     """
     Calculate the mot temperature, and plot the data that led to this.
 
     :param data:
-    :param xLabel:
-    :param plotTitle:
-    :param window:
-    :param xMin:
-    :param xMax:
-    :param yMin:
-    :param yMax:
-    :param accumulations:
-    :param key:
-    :param dataRange:
-    :param fitWidthGuess:
+    :param standardImagesArgs: see the standardImages function to see the acceptable arguments here.
     :return:
     """
-    (key, rawData, dataMinusBg, dataMinusAvg, avgPic,
-     pictureFitParams) = standardImages(data, showPictures=False, showPlot=False, scanType="Time(ms)", xLabel=xLabel,
-                                        plotTitle=plotTitle, majorData='fits', loadType='scout',
-                                        window=window, xMin=xMin, xMax=xMax, yMin=yMin, yMax=yMax,
-                                        accumulations=accumulations, key=key, dataRange=dataRange, fitPics=True,
-                                        manualAccumulation=True, fitWidthGuess=fitWidthGuess)
+    res = standardImages(data, showPictures=False, showPlot=False, scanType="Time(ms)", majorData='fits', 
+                         loadType='scout', fitPics=True, manualAccumulation=True, **standardImagesArgs)
+    (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams) = res
     # convert to meters
-    waists = 2 * consts.baslerScoutPixelSize * pictureFitParams[:, 3]
+    waists = 2 * consts.baslerScoutPixelSize * abs(pictureFitParams[:, 3])
     # convert to s
     times = key / 1000
     temp, simpleTemp, fitVals, fitCov, simpleFitVals, simpleFitCov = calcMotTemperature(times, waists / 2)
@@ -372,7 +343,7 @@ def plotMotTemperature(data, xLabel="", plotTitle="", window=(0, 0, 0, 0), xMin=
     legend()
     showPics(rawData, key, fitParameters=pictureFitParams)
     print("PGC Temperture (full ballistic):", temp * 1e6, 'uK')
-    # the simple balistic fit doesn't appear to work
+    # the simple balistic fit doesn't appear to work...
     print("MOT Temperature (simple (don't trust?)):", simpleTemp * 1e6, 'uK')
 
 
@@ -1254,3 +1225,167 @@ def Rearrange(rerngInfoAddress, fileNumber, locations,splitByNumberOfMoves=False
     rotateTicks(ax)
     return allData, pics, moves
             
+    
+    
+
+
+def showPicComparisons(data, key, fitParameters=np.array([])):
+    """
+    formerly the "individualPics" option.
+    expects structure:
+    data[key value number][raw, -background, -average][2d pic]
+
+    :param data:
+    :param key:
+    :param fitParameters:
+    :return:
+    """
+    if data.ndim != 4:
+        raise ValueError("Incorrect dimensions for data input to show pics if you want individual pics.")
+    titles = ['Raw Picture', 'Background Subtracted', 'Average Subtracted']
+    for inc in range(len(data)):
+        figure()
+        fig, plts = subplots(1, len(data[inc]), figsize=(15, 6))
+        count = 0
+        for pic in data[inc]:
+            x = np.linspace(1, pic.shape[1], pic.shape[1])
+            y = np.linspace(1, pic.shape[0], pic.shape[0])
+            x, y = np.meshgrid(x, y)
+            im = plts[count].pcolormesh(pic, extent=(x.min(), x.max(), y.min(), y.max()))
+            fig.colorbar(im, ax=plts[count], fraction=0.046, pad=0.04)
+            plts[count].set_title(titles[count])
+            plts[count].axis('off')
+            if fitParameters.size != 0:
+                if (fitParameters[count] != np.zeros(len(fitParameters[count]))).all():
+                    data_fitted = fitFunc.gaussian_2D((x, y), *fitParameters[count])
+                    try:
+                        # used to be "picture" which was unresolved, assuming should have been pic, as I've changed
+                        # below.
+                        plts[count].contour(x, y, data_fitted.reshape(pic.shape[0], pic.shape[1]), 2, colors='w',
+                                            alpha=0.35, linestyles="dashed")
+                    except ValueError:
+                        pass
+            count += 1
+        fig.suptitle(str(key[inc]))
+
+
+def showBigPics(data, key, fitParameters=np.array([]), individualColorBars=False, colorMax=-1):
+    """
+    formerly the "bigPictures" option.
+
+    :param data:
+    :param key:
+    :param fitParameters:
+    :param individualColorBars:
+    :param colorMax:
+    :return:
+    """
+    if data.ndim != 3:
+        raise ValueError("Incorrect dimensions for data input showBigPics.")
+    count = 0
+    maximum = sorted(data.flatten())[colorMax]
+    minimum = min(data.flatten())
+    # get picture fits & plots
+    for picture in data:
+        fig = figure()
+        grid(0)
+        if individualColorBars:
+            maximum = max(picture.flatten())
+            minimum = min(picture.flatten())
+        x = np.linspace(1, picture.shape[1], picture.shape[1])
+        y = np.linspace(1, picture.shape[0], picture.shape[0])
+        x, y = np.meshgrid(x, y)
+        im = pcolormesh(picture, vmin=minimum, vmax=maximum)
+        axis('off')
+        title(str(round_sig(key[count], 4)), fontsize=8)
+        if fitParameters.size != 0:
+            if (fitParameters[count] != np.zeros(len(fitParameters[count]))).all():
+                data_fitted = fitFunc.gaussian_2D((x, y), *fitParameters[count])
+                try:
+                    contour(x, y, data_fitted.reshape(picture.shape[0], picture.shape[1]), 2, colors='w', alpha=0.35,
+                            linestyles="dashed")
+                except ValueError:
+                    pass
+        count += 1
+        # final touches
+        cax = fig.add_axes([0.95, 0.1, 0.03, 0.8])
+        fig.colorbar(im, cax=cax)
+
+
+def showPics(data, key, fitParameters=np.array([]), individualColorBars=False, colorMax=-1):
+    """
+    formerly the default option.
+
+    :param data:
+    :param key:
+    :param fitParameters:
+    :param individualColorBars:
+    :param colorMax:
+    :return:
+    """
+    # if data.ndim != 3:
+    #    raise ValueError("Incorrect dimensions for data input to show pics if you don't want individual pics.")
+    num = len(data)
+    gridsize1, gridsize2 = (0, 0)
+    for i in range(100):
+        if i*i >= num:
+            gridsize1 = i
+            if i*(i-1) >= num:
+                gridsize2 = i-1
+            else:
+                gridsize2 = i
+            break
+    fig, plts = subplots(gridsize2, gridsize1, figsize=(15, 10))
+    fig2, plts2 = subplots(gridsize2, gridsize1, figsize=(15, 10))
+    count = 0
+    rowCount = 0
+    picCount = 0
+    maximum = sorted(data.flatten())[colorMax]
+    minimum = min(data.flatten())
+    # get picture fits & plots
+    for row in plts:
+        for _ in row:
+            plts[rowCount, picCount].grid(0)
+            if count >= len(data):
+                count += 1
+                picCount += 1
+                continue
+            picture = data[count]
+            if individualColorBars:
+                maximum = max(picture.flatten())
+                minimum = min(picture.flatten())
+            x = np.linspace(1, picture.shape[1], picture.shape[1])
+            y = np.linspace(1, picture.shape[0], picture.shape[0])
+            x, y = np.meshgrid(x, y)
+            im = plts[rowCount, picCount].imshow( picture, origin='bottom', extent=(x.min(), x.max(), y.min(), y.max()),
+                                                  vmin=minimum, vmax=maximum )
+            plts[rowCount, picCount].axis('off')
+            plts[rowCount, picCount].set_title(str(round_sig(key[count], 4)), fontsize=8)
+            if fitParameters.size != 0:
+                if (fitParameters[count] != np.zeros(len(fitParameters[count]))).all():
+                    # data_fitted = gaussian_2D((x, y), *fitParameters[count])
+                    try:
+                        ellipse = Ellipse(xy=(fitParameters[count][1], fitParameters[count][2]),
+                                          width=2*fitParameters[count][3], height=2*fitParameters[count][4],
+                                          angle=fitParameters[count][5], edgecolor='r', fc='None', lw=2, alpha=0.2)
+                        plts[rowCount, picCount].add_patch(ellipse)
+                    except ValueError:
+                        pass
+                plts2[rowCount,picCount].grid(0)
+                x, y = np.arange(0,len(picture[0])), np.arange(0,len(picture))
+                X, Y = np.meshgrid(x,y)
+                vals = gaussian_2d.f((X,Y), *fitParameters[count])
+                vals = np.reshape(vals, picture.shape)
+                im2 = plts2[rowCount,picCount].imshow(picture-vals, vmin=-10, vmax=10, origin='bottom',
+                                                     extent=(x.min(), x.max(), y.min(), y.max()))
+                plts2[rowCount,picCount].axis('off')
+                plts2[rowCount,picCount].set_title(str(round_sig(key[count], 4)), fontsize=8)
+            count += 1
+            picCount += 1
+        picCount = 0
+        rowCount += 1
+    # final touches
+    cax = fig.add_axes([0.95, 0.1, 0.03, 0.8])
+    fig.colorbar(im, cax=cax)
+    cax = fig2.add_axes([0.95, 0.1, 0.03, 0.8])
+    fig2.colorbar(im2, cax=cax)
