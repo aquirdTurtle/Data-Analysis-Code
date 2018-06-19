@@ -15,13 +15,12 @@ from AnalysisHelpers import (loadDataRay, loadCompoundBasler, processSingleImage
                              getEnsembleStatistics, handleFitting, getLoadingData, loadDetailedKey, processImageData,
                              fitPictures, fitGaussianBeamWaist, assemblePlotData, ballisticMotExpansion, simpleMotExpansion, 
                              calcMotTemperature,integrateData, computeMotNumber, getFitsDataFrame, genAvgDiscrepancyImage, 
-                             getGridDims)
+                             getGridDims, newCalcMotTemperature)
 import MarksConstants as consts
-import FittingFunctions as fitFunc
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.patches import Ellipse
 from TimeTracker import TimeTracker
-from fitters import gaussian_2d
+from fitters import gaussian_2d, LargeBeamMotExpansion
 
 
 def indvHists(dat, thresh, colors, extra=None):
@@ -317,7 +316,7 @@ def standardImages(data,
     return key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams
 
 
-def plotMotTemperature(data, **standardImagesArgs):
+def plotMotTemperature(data, magnification=3, **standardImagesArgs):
     """
     Calculate the mot temperature, and plot the data that led to this.
 
@@ -329,7 +328,7 @@ def plotMotTemperature(data, **standardImagesArgs):
                          loadType='scout', fitPics=True, manualAccumulation=True, **standardImagesArgs)
     (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams) = res
     # convert to meters
-    waists = 2 * consts.baslerScoutPixelSize * abs(pictureFitParams[:, 3])
+    waists = 2 * consts.baslerScoutPixelSize * abs(pictureFitParams[:, 3]) * magnification
     # convert to s
     times = key / 1000
     temp, simpleTemp, fitVals, fitCov, simpleFitVals, simpleFitCov = calcMotTemperature(times, waists / 2)
@@ -346,7 +345,38 @@ def plotMotTemperature(data, **standardImagesArgs):
     # the simple balistic fit doesn't appear to work...
     print("MOT Temperature (simple (don't trust?)):", simpleTemp * 1e6, 'uK')
 
+    
+def plotNewMotTemperature(data, magnification=3, **standardImagesArgs):
+    """
+    Calculate the mot temperature, and plot the data that led to this.
 
+    :param data:
+    :param standardImagesArgs: see the standardImages function to see the acceptable arguments here.
+    :return:
+    """
+    res = standardImages(data, showPictures=False, showPlot=False, scanType="Time(ms)", majorData='fits', 
+                         loadType='scout', fitPics=True, manualAccumulation=True, **standardImagesArgs)
+    (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams) = res
+    # convert to meters
+    waists = 2 * consts.baslerScoutPixelSize * abs(pictureFitParams[:, 3]) * magnification
+    # convert to s
+    times = key / 1000
+    temp, fitVals, fitCov = newCalcMotTemperature(times, waists / 2)
+    f, ax = subplots()
+    ax.plot(times, waists, 'o', label='Raw Data Waist')
+    ax.plot(times, 2 * LargeBeamMotExpansion.f(times, *fitVals), label='balistic MOT expansion Fit Waist')
+    ax2 = ax.twinx()
+    ax2.plot(times, pictureFitParams[:, 0])
+    ax.set_title('Measured atom cloud size over time')
+    ax.set_xlabel('Time (s)')
+    ax.set_ylabel('Gaussian fit waist (m)')
+    legend()
+    showPics(rawData, key, fitParameters=pictureFitParams)
+    print('')
+    print("PGC Temperture (Large Laser Beam Approximation):", temp * 1e6, 'uK')
+    print('Fit-Parameters:', fitVals)
+    
+    
 def plotMotNumberAnalysis(dataSetNumber, motKey, exposureTime, window=(0, 0, 0, 0), cameraType='scout',
                           showStandardImages=False, sidemotPower=2.05, diagonalPower=8, motRadius=8 * 8e-6,
                           imagingLoss=0.8, detuning=10e6):

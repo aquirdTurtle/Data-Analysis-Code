@@ -30,6 +30,8 @@ def f_raw(x, k, weight):
     :return: the Poisson distribution evaluated at x given the parameters.
     """
     term = 1
+    if x == 0:
+        return np.exp(-k)
     # calculate the term k^x / x!. Can't do this directly, x! is too large.
     for n in range(0, int(x)):
         term *= k / (x - n) * np.exp(-k/int(x))

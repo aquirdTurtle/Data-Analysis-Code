@@ -20,16 +20,45 @@ import scipy.special as special
 import scipy.interpolate as interp
 
 import MarksConstants as consts
-import FittingFunctions as fitFunc
 from Miscellaneous import transpose, round_sig, round_sig_str
 from copy import deepcopy
-from fitters import double_gaussian
-from fitters import cython_poissonian as poissonian
+from fitters import double_gaussian, cython_poissonian as poissonian, FullBalisticMotExpansion, LargeBeamMotExpansion
 
 from ExpFile import ExpFile, dataAddress
 from TimeTracker import TimeTracker
 
+import FittingFunctions as fitFunc
 
+
+def getTodaysTemperatureData():
+    path = dataAddress + 'Temperature_Data.csv'
+    df = pd.read_csv(path, header=None, sep=',| ', engine='python')
+    return df
+
+
+def Temperature():
+    df = getTodaysTemperatureData()
+    fig = figure(figsize=(30,15))
+    ax1 = fig.add_subplot(2,1,1)
+    ax2 = fig.add_subplot(2,1,2, sharex=ax1)
+
+    legends = ['1: Master Computer', '2: B236', '3: Auxiliary Table', '4: Main Exp. (Near Ion Pump)']
+    xpts = [x[:5] for x in df[1]]
+    ax1.clear()
+    for i, l in zip(np.arange(3,13,3), legends):
+        ax1.plot(xpts, df[i], label=l)
+    ax1.legend(loc='upper center', bbox_to_anchor=(0.5,1.2),ncol=4, fontsize=10)
+    ax1.set_ylabel('Temperature (C)')
+    setp(ax1.get_xticklabels(), visible=False)
+
+    ax2.clear()
+    for i, l in zip(np.arange(4,14,3), legends):
+        ax2.plot(xpts, df[i], label=l)
+    ax2.set_ylabel('Humidity (%)')
+    incr = int(len(xpts)/20)+1
+    ax2.set_xticks(xpts[::incr])
+    xlabel('Time (hour:minute)')
+    xticks(rotation=75);
 
 def splitData(data, picsPerSplit, picsPerRep, runningOverlap=0):
     data = np.reshape(data, (picsPerSplit, int(data.shape[1]/picsPerSplit), data.shape[2], data.shape[3]))
@@ -1060,11 +1089,11 @@ def computeMotNumber(sidemotPower, diagonalPower, motRadius, exposure, imagingLo
     in sec, typically 0.8 for the imaging loss accounting for the line filter, greyscaleReading is the integrated gray
     scale count with 4by4 binning on the Basler camera, and assuming gain set to 260 which is  unity gain for Basler
     """
-    # in cm
+    # in cm 
     sidemotWaist = .33 / (2 * np.sqrt(2))
-    # in cm
+    # in cm 
     diagonalWaist = 2.54 / 2
-    # intensities
+    # intensities 
     sidemotIntensity = beamIntensity(sidemotPower, sidemotWaist, motRadius)
     diagonalIntensity = beamIntensity(diagonalPower, diagonalWaist, motRadius)
     totalIntensity = sidemotIntensity + 2 * diagonalIntensity
@@ -1073,10 +1102,16 @@ def computeMotNumber(sidemotPower, diagonalPower, motRadius, exposure, imagingLo
     imagingLensFocalLength = 10
     fluorescence = computeFlorescence(greyscaleReading, imagingLoss, imagingLensDiameter, imagingLensFocalLength,
                                       exposure)
-
     print('Light Scattered off of full MOT:', fluorescence * consts.h * consts.Rb87_D2LineFrequency * 1e9, "nW")
     motNumber = fluorescence / rate
     return motNumber
+
+
+def newCalcMotTemperature(times, sigmas):
+    """ Small wrapper around a fit """
+    fitVals, fitCovariances = curve_fit(LargeBeamMotExpansion.f, times, sigmas, p0=LargeBeamMotExpansion.guess())
+    temperature = fitVals[2]
+    return temperature, fitVals, fitCovariances
 
 
 # TODO: for some reason this fitting is currently very finicky with respect to sigma_I. Don't understand why. fix this.
