@@ -5,7 +5,7 @@ from pandas import DataFrame
 from MainAnalysis import standardPopulationAnalysis, analyzeNiawgWave, standardTransferAnalysis, standardAssemblyAnalysis, AnalyzeRearrangeMoves
 from numpy import array as arr
 from random import randint
-from Miscellaneous import getColors, round_sig, round_sig_str, getMarkers
+from Miscellaneous import getColors, round_sig, round_sig_str, getMarkers, errString
 from matplotlib.pyplot import *
 import matplotlib as mpl
 from scipy.optimize import curve_fit as fit
@@ -24,16 +24,16 @@ from fitters import gaussian_2d, LargeBeamMotExpansion
 
 
 def indvHists(dat, thresh, colors, extra=None):
-    f, axs = subplots(10,10)
+    f, axs = subplots(5,5)
     for i, (d,t,c) in enumerate(zip(dat, thresh, colors[1:])):
         ax = axs[len(axs[0]) - i%len(axs[0]) - 1][int(i/len(axs))]
-        ax.hist(d, 50, color=c, histtype='stepfilled')
+        ax.hist(d, 100, color=c, histtype='stepfilled')
         ax.axvline(t, color=c, ls=':')
         ax.set_xticklabels([])
         ax.set_yticklabels([])
         ax.grid(False)
         if extra is not None:
-            t = ax.text(0.25, 10, 'L%:' + round_sig_str(np.mean(extra[i])), fontsize=8)
+            t = ax.text(0.25, 5, round_sig_str(np.mean(extra[i])), fontsize=8)
             t.set_bbox(dict(facecolor='k', alpha=0.5))
 
     f.subplots_adjust(wspace=0, hspace=0)
@@ -313,7 +313,7 @@ def standardImages(data,
                 else:
                     showPics(dataMinusAvg, key, fitParameters=pictureFitParams, colorMax=colorMax,
                              individualColorBars=individualColorBars)
-    return key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams
+    return key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, pictureFitErrors
 
 
 def plotMotTemperature(data, magnification=3, **standardImagesArgs):
@@ -356,24 +356,30 @@ def plotNewMotTemperature(data, magnification=3, **standardImagesArgs):
     """
     res = standardImages(data, showPictures=False, showPlot=False, scanType="Time(ms)", majorData='fits', 
                          loadType='scout', fitPics=True, manualAccumulation=True, **standardImagesArgs)
-    (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams) = res
+    (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, fitCov) = res
     # convert to meters
     waists = 2 * consts.baslerScoutPixelSize * abs(pictureFitParams[:, 3]) * magnification
     # convert to s
     times = key / 1000
     temp, fitVals, fitCov = newCalcMotTemperature(times, waists / 2)
+    errs = np.sqrt(np.diag(fitCov))
     f, ax = subplots()
-    ax.plot(times, waists, 'o', label='Raw Data Waist')
-    ax.plot(times, 2 * LargeBeamMotExpansion.f(times, *fitVals), label='balistic MOT expansion Fit Waist')
+    ax.plot(times, waists, 'bo', label='Raw Data Waist')
+    ax.plot(times, 2 * LargeBeamMotExpansion.f(times, *fitVals), 'c:', label='balistic MOT expansion Fit Waist')
+    ax.yaxis.label.set_color('c')
+    ax.grid(True,color='b')
     ax2 = ax.twinx()
-    ax2.plot(times, pictureFitParams[:, 0])
+    ax2.plot(times, pictureFitParams[:, 0], 'ro:', label='Fit Amplitude (counts)')
+    ax2.yaxis.label.set_color('r')
     ax.set_title('Measured atom cloud size over time')
     ax.set_xlabel('Time (s)')
     ax.set_ylabel('Gaussian fit waist (m)')
-    legend()
+    ax.legend()
+    ax2.legend()
+    ax2.grid(True,color='r')
     showPics(rawData, key, fitParameters=pictureFitParams)
     print('')
-    print("PGC Temperture (Large Laser Beam Approximation):", temp * 1e6, 'uK')
+    print("PGC Temperture (Large Laser Beam Approximation):", temp * 1e6, '(', errs[2]*1e6, ')', 'uK')
     print('Fit-Parameters:', fitVals)
     
     
@@ -815,7 +821,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     """
     (pic1Data, thresholds, avgPic, key, loadRateErr, loadRate, avgLoadRate, avgLoadErr, fits,
      fitModule, keyName, totalPic1AtomData, rawData, atomLocations, 
-     avgFits, atomImages) = standardPopulationAnalysis(fileNum, atomLocations, whichPic, picsPerRep, **StandardArgs)
+     avgFits, atomImages, gaussFitVals) = standardPopulationAnalysis(fileNum, atomLocations, whichPic, picsPerRep, **StandardArgs)
     colors, _ = getColors(len(atomLocations) + 1)
     if not show:
         return key, loadRate, loadRateErr, pic1Data, atomImages, thresholds
@@ -858,7 +864,10 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         else:
             centerIndex = fitModule.center()
             mainPlot.plot(avgFits['x'], avgFits['nom'], color='w', alpha = 1)
-
+    mainPlot.grid(True, color='#AAAAAA', which='Major')
+    mainPlot.grid(True, color='#090909', which='Minor')
+    mainPlot.set_yticks(np.arange(0,1,0.1))
+    mainPlot.set_yticks(np.arange(0,1,0.05), minor=True)
     mainPlot.set_ylim({-0.02, 1.01})
     if not min(key) == max(key):
         mainPlot.set_xlim(left=min(key) - (max(key) - min(key)) / len(key), right=max(key)
@@ -868,7 +877,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
 
     titletxt = keyName + " Atom " + typeName + " Scan"
     if len(loadRate[0]) == 1:
-        titletxt = keyName + " Atom " + typeName + " Point.\n Avg " + typeName + "% = " + round_sig_str(np.mean(avgLoadRate))
+        titletxt = keyName + " Atom " + typeName + " Point.\n Avg " + typeName + "% = " + errString(np.mean(avgLoadRate), np.mean(avgLoadErr) )
     
     mainPlot.set_title(titletxt, fontsize=30)
     mainPlot.set_ylabel("S %", fontsize=20)
@@ -888,7 +897,11 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     loadingPlot.set_xlabel("Key Values")
     loadingPlot.set_ylabel("Loading %")
     loadingPlot.set_xticks(key)
-    loadingPlot.set_title("Loading: Avg$ = " + str(round_sig(np.mean(arr(loadRate)))) + '$')
+    loadingPlot.set_yticks(np.arange(0,1,0.1), minor=True)
+    loadingPlot.set_yticks(np.arange(0,1,0.2))
+    loadingPlot.grid(True, color='#AAAAAA', which='Major')
+    loadingPlot.grid(True, color='#090909', which='Minor')
+    loadingPlot.set_title("Loading: Avg$ = " +  str(round_sig(np.mean(arr(loadRate)))) + '$')
     for item in ([loadingPlot.title, loadingPlot.xaxis.label, loadingPlot.yaxis.label] +
                      loadingPlot.get_xticklabels() + loadingPlot.get_yticklabels()):
         item.set_fontsize(10)
@@ -967,15 +980,18 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
             divider = make_axes_locatable(ax)
             cax = divider.append_axes('right', size='5%', pad=0.05)
             f.colorbar(im, cax, orientation='vertical')
+    avgLoads = []
+    for s in loadRate:
+        avgLoads.append(np.mean(s))
     if plotIndvHists:
-        indvHists(pic1Data, thresholds, colors, extra=thresholds)
+        indvHists(pic1Data, thresholds, colors, extra=avgLoads)
     # output thresholds
     """    thresholds = np.flip(np.reshape(thresholds, (10,10)),1)
     with open('J:/Code-Files/T-File.txt','w') as f:
         for row in thresholds:
             for thresh in row:
                 f.write(str(thresh) + ' ') """
-    return key, loadRate, loadRateErr, pic1Data, atomImages, thresholds
+    return key, loadRate, loadRateErr, pic1Data, atomImages, thresholds, gaussFitVals, totalPic1AtomData
 
 
 def Assembly(fileNumber, atomLocs1, pic1Num, partialCredit=False, **standardAssemblyArgs):
@@ -1406,7 +1422,7 @@ def showPics(data, key, fitParameters=np.array([]), individualColorBars=False, c
                 X, Y = np.meshgrid(x,y)
                 vals = gaussian_2d.f((X,Y), *fitParameters[count])
                 vals = np.reshape(vals, picture.shape)
-                im2 = plts2[rowCount,picCount].imshow(picture-vals, vmin=-10, vmax=10, origin='bottom',
+                im2 = plts2[rowCount,picCount].imshow(picture-vals, vmin=-2, vmax=2, origin='bottom',
                                                      extent=(x.min(), x.max(), y.min(), y.max()))
                 plts2[rowCount,picCount].axis('off')
                 plts2[rowCount,picCount].set_title(str(round_sig(key[count], 4)), fontsize=8)

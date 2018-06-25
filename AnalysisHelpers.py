@@ -1108,13 +1108,13 @@ def computeMotNumber(sidemotPower, diagonalPower, motRadius, exposure, imagingLo
 
 
 def newCalcMotTemperature(times, sigmas):
-    """ Small wrapper around a fit """
+    """ Small wrapper around a fit 
+    return temp, vals, cov
+    """
     fitVals, fitCovariances = curve_fit(LargeBeamMotExpansion.f, times, sigmas, p0=LargeBeamMotExpansion.guess())
-    temperature = fitVals[2]
-    return temperature, fitVals, fitCovariances
+    return fitVals[2], fitVals, fitCovariances
 
 
-# TODO: for some reason this fitting is currently very finicky with respect to sigma_I. Don't understand why. fix this.
 def calcMotTemperature(times, sigmas):
     # print(sigmas[0])
     guess = [sigmas[0], 0.1]
@@ -1278,7 +1278,7 @@ def getLoadingData(picSeries, loc, whichPic, picsPerRep, manThreshold, binWidth,
     pic1Data = normalizeData(picSeries, loc, whichPic, picsPerRep, borders)
     bins, binnedData = getBinData(binWidth, pic1Data)
     guess1, guess2 = guessGaussianPeaks(bins, binnedData)
-    guess = arr([max(binnedData), guess1, 30, max(binnedData)*0.75, guess2, 10])
+    guess = arr([max(binnedData), guess1, 30, max(binnedData)*0.75, guess2, 30])
     if manThreshold is None:
         gaussianFitVals = fitDoubleGaussian(bins, binnedData, guess)
         threshold, thresholdFid = calculateAtomThreshold(gaussianFitVals)

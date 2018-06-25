@@ -24,6 +24,10 @@ def f_raw(time, t_0, sigma_x, T):
     sigma_xt = np.sqrt(sigma_v**2*(time+t_0)**2 + sigma_x**2)
     return sigma_xt
 
+def f_unp(time, t_0, sigma_x, T):
+    sigma_v = unp.sqrt(mc.k_B * T / mc.Rb87_M)
+    sigma_xt = unp.sqrt(sigma_v**2*(time+t_0)**2 + sigma_x**2)
+    return sigma_xt
 
 def guess():
     """

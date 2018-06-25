@@ -46,4 +46,7 @@ def guess(key, values):
     :param values:
     :return: guess for gaussian parameters
     """
-    return [max(values) - min(values), key[np.argmax(values)], (max(key)-min(key))/2, min(values)]
+    return [max(values) - min(values), key[np.argmax(values)], (max(key)-min(key))/4, min(values)]
+
+def area_under(A1, x01, sig1, offset):
+    return A1 * sig1 * np.sqrt(2 * np.pi)

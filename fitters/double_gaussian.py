@@ -54,3 +54,6 @@ def guess(key, values):
     :param values:
     :return:
     """
+
+def areas(A1, x01, sig1, A2, x02, sig2):
+    return np.array([A1*sig1,A2*sig2])*np.sqrt(2*np.pi)

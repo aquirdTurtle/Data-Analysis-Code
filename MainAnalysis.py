@@ -385,7 +385,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
         atomImagesInc += 1
     pic1Data = arr(pic1Data.tolist())
     return (pic1Data, thresholds, avgPic, key, loadingRateErr, loadingRateList, allLoadingRate, allLoadingErr, loadFits,
-            fitModule, keyName, totalPic1AtomData, rawData, atomLocations, avgFits, atomImages)
+            fitModule, keyName, totalPic1AtomData, rawData, atomLocations, avgFits, atomImages, fitVals)
 
 
 def standardAssemblyAnalysis(fileNumber, atomLocs1, assemblyPic, atomLocs2=None, keyOffset=0, dataRange=None,
