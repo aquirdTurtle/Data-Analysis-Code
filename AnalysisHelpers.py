@@ -516,7 +516,6 @@ def simpleMotExpansion(t, sigma_y0, sigma_vy):
     I need to calculate a temperature.
 
     this simpler version ignores the size of the beam waist of the atoms.
-    It should generally behave better with noisy data.
 
     :param t:
     :param sigma_y0:
