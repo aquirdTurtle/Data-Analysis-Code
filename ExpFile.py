@@ -5,7 +5,7 @@ import numpy as np
 
 dataAddress = None
 
-def setPath(day, month, year):
+def setPath(day, month, year, repoAddress="J:\\Data repository\\New Data Repository"):
     """
     This function sets the location of where all of the data files are stored. It is occasionally called more
     than once in a notebook if the user needs to work past midnight.
@@ -15,10 +15,12 @@ def setPath(day, month, year):
     :param year: A number string, e.g. '2017'.
     :return:
     """
-    dataRepository = "J:\\Data repository\\New Data Repository"
     global dataAddress
-    dataAddress = dataRepository + "\\" + year + "\\" + month + "\\" + month + " " + day + "\\Raw Data\\"
+    dataAddress = repoAddress + "\\" + year + "\\" + month + "\\" + month + " " + day + "\\Raw Data\\"
     return dataAddress
+
+
+
 
 # Exp is short for experiment here.
 class ExpFile:
@@ -59,6 +61,7 @@ class ExpFile:
             # assume a file address itself
             path = fileID
         file = h5.File(path, 'r')
+        self.f = file
         return file
     
     def get_key(self):

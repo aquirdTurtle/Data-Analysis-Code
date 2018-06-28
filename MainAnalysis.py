@@ -328,7 +328,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
     if len(arr(atomLocations).shape) == 1:
         atomLocations = [atomLocations]
     if not len(key) == numOfVariations:
-        raise ValueError("ERROR: The Length of the key doesn't match the data found.")
+        raise ValueError("ERROR: The Length of the key doesn't match the data found. Key:", len(key), "vars:", numOfVariations)
     # ## Initial Data Analysis
     s = rawData.shape
     if analyzeTogether:
@@ -348,6 +348,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
         # fill lists with data
         allAtomPicData = []
         for i, atomLoc in enumerate(atomLocations):
+            #print(atomLoc, end=' ')
             (pic1Data[dataInc][i], pic1Atom[dataInc][i], thresholds[dataInc][i], thresholdFid[dataInc][i],
              fitVals[dataInc][i], bins[dataInc][i], binData[dataInc][i],
              atomCount[dataInc][i]) = getLoadingData(data, atomLoc, whichPic, picsPerRep, manualThreshold, 10,
@@ -385,7 +386,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
         atomImagesInc += 1
     pic1Data = arr(pic1Data.tolist())
     return (pic1Data, thresholds, avgPic, key, loadingRateErr, loadingRateList, allLoadingRate, allLoadingErr, loadFits,
-            fitModule, keyName, totalPic1AtomData, rawData, atomLocations, avgFits, atomImages)
+            fitModule, keyName, totalPic1AtomData, rawData, atomLocations, avgFits, atomImages, fitVals)
 
 
 def standardAssemblyAnalysis(fileNumber, atomLocs1, assemblyPic, atomLocs2=None, keyOffset=0, dataRange=None,
@@ -501,7 +502,8 @@ def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, loadPic=0, re
                           fitData=False, sufficientLoadingPostSelect=True, includesNoFlashPostSelect=False,
                           includesParallelMovePostSelect=False, isOnlyParallelMovesPostSelect=False,
                           noParallelMovesPostSelect=False, parallelMovePostSelectSize=None,
-                          postSelectOnNumberOfMoves=False, limitedMoves=-1, SeeIfMovesMakeSense=True, **popArgs):
+                          postSelectOnNumberOfMoves=False, limitedMoves=-1, SeeIfMovesMakeSense=True, 
+                          postSelectOnLoading=False, **popArgs):
     """
     Analyzes the rearrangement move log file and displays statistics for different types of moves.
     Updated to handle new info in the file that tells where the final location of the rearrangement was.
@@ -646,9 +648,13 @@ def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, loadPic=0, re
          rerngedAllLocsAtoms) = [[] for _ in range(8)]
         d = DataFrame()
         # looping through diff target locations...
+        print(arr(allRerngedAtoms).shape,'hi')
         for keyName, categoryPicNums in moveData.items():
-            tmp = arr([[allRerngedAtoms[0][int(i/2)] for i in categoryPicNums]])
-            rerngedAtoms = arr([[allRerngedAtoms[0][int(i/2)] for i in categoryPicNums if not bool(allLoadedAtoms[0][int(i/2)])]])
+            if postSelectOnLoading:
+                rerngedAtoms = arr([[locAtoms[int(i/2)] for i in categoryPicNums if not bool(allLoadedAtoms[j,int(i/2)])] 
+                                    for j, locAtoms in enumerate(allRerngedAtoms)])
+            else:
+                rerngedAtoms = arr([[locAtoms[int(i/2)] for i in categoryPicNums] for j, locAtoms in enumerate(allRerngedAtoms)])
             atomEvents = getEnsembleHits(rerngedAtoms)            
             # set the occurances, mean, error
             if len(atomEvents) == 0:
