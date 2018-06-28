@@ -328,7 +328,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
     if len(arr(atomLocations).shape) == 1:
         atomLocations = [atomLocations]
     if not len(key) == numOfVariations:
-        raise ValueError("ERROR: The Length of the key doesn't match the data found.")
+        raise ValueError("ERROR: The Length of the key doesn't match the data found. Key:", len(key), "vars:", numOfVariations)
     # ## Initial Data Analysis
     s = rawData.shape
     if analyzeTogether:
@@ -348,6 +348,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
         # fill lists with data
         allAtomPicData = []
         for i, atomLoc in enumerate(atomLocations):
+            #print(atomLoc, end=' ')
             (pic1Data[dataInc][i], pic1Atom[dataInc][i], thresholds[dataInc][i], thresholdFid[dataInc][i],
              fitVals[dataInc][i], bins[dataInc][i], binData[dataInc][i],
              atomCount[dataInc][i]) = getLoadingData(data, atomLoc, whichPic, picsPerRep, manualThreshold, 10,

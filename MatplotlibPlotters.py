@@ -659,7 +659,6 @@ def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingR
             if centerIndex is not None:
                 centers.append(fit['vals'][centerIndex])
             mainPlot.plot(fit['x'], fit['nom'], color=colors[i], alpha = 0.5)
-    mainPlot.set_ylim({-0.02, 1.01})
     if not min(key) == max(key):
         r = max(key) - min(key)
         mainPlot.set_xlim(left=min(key) - r / len(key), right=max(key)+ r / len(key))
@@ -673,7 +672,12 @@ def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingR
     mainPlot.set_title(titletxt, fontsize=30)
     mainPlot.set_ylabel("S %", fontsize=20)
     mainPlot.set_xlabel(keyName, fontsize=20)
+    mainPlot.grid(True, color='#AAAAAA', which='Major')
+    mainPlot.grid(True, color='#090909', which='Minor')
+    mainPlot.set_yticks(np.arange(0,1,0.1))
+    mainPlot.set_yticks(np.arange(0,1,0.05), minor=True)
     mainPlot.xaxis.set_label_coords(0.95, -0.1)
+    mainPlot.set_ylim({-0.02, 1.01})
     cols = 4 if longLegend else 10
     if legendOption:
         mainPlot.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), fancybox=True, ncol=cols, prop={'size': 12})
@@ -689,6 +693,10 @@ def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingR
     loadingPlot.set_xlabel("Key Values")
     loadingPlot.set_ylabel("Loading %")
     loadingPlot.set_xticks(key[0:-1:2])
+    loadingPlot.grid(True, color='#AAAAAA', which='Major')
+    loadingPlot.grid(True, color='#090909', which='Minor')
+    loadingPlot.set_yticks(np.arange(0,1,0.2))
+    loadingPlot.set_yticks(np.arange(0,1,0.1), minor=True)
     rotateTicks(loadingPlot)
 
     loadingPlot.set_title("Loading: Avg$ = " + str(round_sig(np.mean(arr(loadingRate.tolist())))) + '$')

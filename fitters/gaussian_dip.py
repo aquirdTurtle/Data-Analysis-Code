@@ -46,4 +46,4 @@ def guess(key, values):
     :param values:
     :return:
     """
-    return [max(values) - min(values), key[np.argmin(values)], max(key)-min(key), max(values)]
+    return [max(values) - min(values), key[np.argmin(values)], (max(key)-min(key))/4, max(values)]

@@ -271,7 +271,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModule=None, showCo
 
 
 def Loading(fileNum, atomLocations, showLoadingRate=True, showLoadingPic=False, plotCounts=False, countsMain=False,
-            indvHist=True, histMain=False, simplePlot=False, showTotalHist=False, histBins=100, **StandardArgs):
+            indvHist=True, histMain=False, simplePlot=False, showTotalHist=False, histBins=100, picsPerRep=1, whichPic=0, **StandardArgs):
     """
     Standard data analysis package for looking at loading rates throughout an experiment.
     return key, loadingRateList, loadingRateErr
@@ -292,7 +292,7 @@ def Loading(fileNum, atomLocations, showLoadingRate=True, showLoadingPic=False, 
     :return:
     """
 
-    res = standardPopulationAnalysis(fileNum, atomLocations, 0, 1, **StandardArgs)
+    res = standardPopulationAnalysis(fileNum, atomLocations, whichPic, picsPerRep, **StandardArgs)
     (pic1Data, thresholds, avgPic, key, loadingRateErr, loadingRateList, allLoadingRate, allLoadingErr, loadFits,
             fitModule, keyName, totalPic1AtomData, rawData, atomLocations, avgFits, atomImages, fitVals) = res 
     maxHeight = np.max(arr([np.histogram(data.flatten(), bins=histBins)[0] for data in pic1Data]).flatten())

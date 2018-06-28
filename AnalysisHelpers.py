@@ -152,8 +152,8 @@ def organizeTransferData(fileNumber, atomLocs1, atomLocs2, key=None, window=None
     return groupedData, atomLocs1, atomLocs2, keyName, repetitions, key
 
 
-def modFitFunc(hBiasIn, vBiasIn, depthIn, *testBiases):
-    newDepths = extrapolateModDepth(hBiasIn, vBiasIn, depthIn, testBiases)
+def modFitFunc(sign, hBiasIn, vBiasIn, depthIn, *testBiases):
+    newDepths = extrapolateModDepth(sign, hBiasIn, vBiasIn, depthIn, testBiases)
     if newDepths is None:
         return 1e9
     return np.std(newDepths)
@@ -180,15 +180,15 @@ def genAvgDiscrepancyImage(data, shape, locs):
 
 
 
-def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias):
-    print('Assuming that (', prev_V_Bisa[0],',',prev_V_Bisa[-1], ') is the bias of the (highest, lowest)-frequency row')
-    print('Assuming that (', prev_H_Bisa[0],',',prev_H_Bisa[-1], ') is the bias of the (lowest, highest)-frequency column')
+def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias, sign=1):
+    print('Assuming that (', prev_V_Bias[0],',',prev_V_Bias[-1], ') is the bias of the (highest, lowest)-frequency row')
+    print('Assuming that (', prev_H_Bias[0],',',prev_H_Bias[-1], ') is the bias of the (lowest, highest)-frequency column')
     print('Please note that if using the outputted centers from Survival(), then you need to reshape the data'
           ' into a 2D numpy array correctly to match the ordering of the V and H biases. This is normally done'
           ' via a call to np.reshape() and a transpose to match the comments above.')
     if type(prevDepth) is not type(arr([])) or type(prevDepth[0]) is not type(arr([])):
         raise TypeError('ERROR: previous depth array must be 2D numpy array')
-    result, modDepth = extrapolateEveningBiases(prev_H_Bias, prev_V_Bias, prevDepth);
+    result, modDepth = extrapolateEveningBiases(prev_H_Bias, prev_V_Bias, prevDepth, sign=sign);
     new_H_Bias = result['x'][:len(prev_H_Bias)]
     new_V_Bias = result['x'][len(prev_H_Bias):]
     print('Horizontal Changes')
@@ -209,7 +209,7 @@ def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias):
     print(']\n')
     
 
-def extrapolateEveningBiases(hBiasIn, vBiasIn, depthIn):
+def extrapolateEveningBiases(hBiasIn, vBiasIn, depthIn, sign=1):
     """
     depth in is some measure of the trap depth which is assumed to be roughly linear with the trap depth. It need not be in the right units.
     """
@@ -217,12 +217,12 @@ def extrapolateEveningBiases(hBiasIn, vBiasIn, depthIn):
     hBiasIn /= np.sum(hBiasIn)
     vBiasIn /= np.sum(vBiasIn)
     guess = np.concatenate((hBiasIn, vBiasIn))
-    f = lambda g: modFitFunc(hBiasIn, vBiasIn, depthIn, *g)
+    f = lambda g: modFitFunc(sign, hBiasIn, vBiasIn, depthIn, *g, )
     result = minimize(f, guess)
-    return result, extrapolateModDepth(hBiasIn, vBiasIn, depthIn, result['x'])
+    return result, extrapolateModDepth(sign, hBiasIn, vBiasIn, depthIn, result['x'])
 
 
-def extrapolateModDepth(hBiasIn, vBiasIn, depthIn, testBiases):
+def extrapolateModDepth(sign, hBiasIn, vBiasIn, depthIn, testBiases):
     """
     assumes that hBiasIn and vBiasIn are normalized.
     This function extrapolates what the depth of each tweezer should be based on the
@@ -245,10 +245,10 @@ def extrapolateModDepth(hBiasIn, vBiasIn, depthIn, testBiases):
     modDepth = deepcopy(depthIn)
     for rowInc, _ in enumerate(depthIn):
         dif = (vBiasTest[rowInc] - vBiasIn[rowInc])/vBiasIn[rowInc]
-        modDepth[rowInc] = modDepth[rowInc] * (1-dif)
+        modDepth[rowInc] = modDepth[rowInc] * (1- sign * dif)
     for colInc, _ in enumerate(transpose(depthIn)):
         dif = (hBiasTest[colInc] - hBiasIn[colInc])/hBiasIn[colInc]
-        modDepth[:, colInc] = modDepth[:, colInc] * (1-dif)
+        modDepth[:, colInc] = modDepth[:, colInc] * (1-sign * dif)
     return modDepth
 
 
@@ -1291,6 +1291,7 @@ def getLoadingData(picSeries, loc, whichPic, picsPerRep, manThreshold, binWidth,
 
     atomCount = 0
     pic1Atom = []
+    #print('t:',threshold)
     for point in pic1Data:
         if point > threshold:
             atomCount += 1
