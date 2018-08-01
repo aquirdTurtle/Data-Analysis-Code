@@ -21,7 +21,6 @@ from ExpFile import ExpFile
 from TimeTracker import TimeTracker
 
 
-
 def analyzeCodeTimingData(num, talk=True, numTimes=3):
     """
     Analyzing code timing data. Data is outputted in the following format:

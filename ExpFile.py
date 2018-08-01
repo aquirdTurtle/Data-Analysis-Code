@@ -2,6 +2,7 @@ import h5py as h5
 from colorama import Fore, Style
 from numpy import array as arr
 import numpy as np
+import numpy as np
 
 dataAddress = None
 
@@ -112,6 +113,14 @@ class ExpFile:
         pics = p_t.reshape((p_t.shape[0], p_t.shape[2], p_t.shape[1]))
         return pics
         
+    def get_avg_pic(self):
+        pics = self.get_pics()
+        avg_pic = np.zeros(pics[0].shape)
+        for p in pics:
+            avg_pic += p
+        avg_pic /= len(pics)
+        return avg_pic
+        
     def print_all(self):
         self.__print_hdf5_obj(self.f,'')
     
@@ -170,8 +179,10 @@ class ExpFile:
                 # I think it's a bug that this is nested like this.
                 for x in self.f['Master-Parameters']['Functions'][func]:
                     for y in self.f['Master-Parameters']['Functions'][func][x]:
-                        print(Style.DIM, y.decode('UTF-8'),end='')
-                print('\n---------------------------------------\n')
+                        # print(Style.DIM, y.decode('utf-8'), end='') for some reason the 
+                        # DIM isn't working at the moment on the data analysis comp...
+                        print(y.decode('utf-8'), end='')
+                print('\n---------------------------------------\ncount=')
             print('')
 
     def print_master_script(self):

@@ -24,7 +24,7 @@ from fitters import gaussian_2d, LargeBeamMotExpansion
 
 
 def indvHists(dat, thresh, colors, extra=None):
-    f, axs = subplots(5,5)
+    f, axs = subplots(10,10)
     for i, (d,t,c) in enumerate(zip(dat, thresh, colors[1:])):
         ax = axs[len(axs[0]) - i%len(axs[0]) - 1][int(i/len(axs))]
         ax.hist(d, 100, color=c, histtype='stepfilled')
@@ -818,7 +818,7 @@ def Loading(fileNum, atomLocations, **PopulationArgs):
 
 
 def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=True, plotCounts=False, legendOption=None, showImagePlots=True, 
-               plotIndvHists=False, showFitDetails=False, showFitCenterPlot=True, show=True, **StandardArgs):
+               plotIndvHists=False, showFitDetails=False, showFitCenterPlot=True, show=True, histMain=False, **StandardArgs):
     """
     Standard data analysis package for looking at population %s throughout an experiment.
 
@@ -849,7 +849,13 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     gridRight.update(left=0.2, right=0.946, wspace=0, hspace=1000)
     # Main Plot
     typeName = "L"
-    mainPlot = subplot(grid1[:, :12])
+    countPlot = subplot(gridRight[4:8, 12:15])    
+    if not histMain:
+        mainPlot = subplot(grid1[:, :12])
+        countHist = subplot(gridLeft[4:8, 15:16], sharey=countPlot)
+    else:
+        countHist = subplot(grid1[:, :12])
+        mainPlot = subplot(gridLeft[4:8, 15:16], sharey=countPlot)
     centers = []
     longLegend = len(loadRate[0]) == 1
     for i, (atomLoc, fit) in enumerate(zip(atomLocations, fits)):
@@ -914,7 +920,6 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
                      loadingPlot.get_xticklabels() + loadingPlot.get_yticklabels()):
         item.set_fontsize(10)
         # ### Count Series Plot
-    countPlot = subplot(gridRight[4:8, 12:15])    
     for i, loc in enumerate(atomLocations):
         countPlot.plot(pic1Data[i], color=colors[i], ls='', marker='.', markersize=1, alpha=0.3)
         # countPlot.plot(pic2Data[i], color=colors2[i], ls='', marker='.', markersize=1, alpha=0.8)
@@ -934,10 +939,13 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     tickVals = np.linspace(0, len(pic1Data[0]), len(key) + 1)
     countPlot.set_xticks(tickVals[0:-1:2])
     # Count Histogram Plot
-    countHist = subplot(gridLeft[4:8, 15:16], sharey=countPlot)
     for i, atomLoc in enumerate(atomLocations):
-        countHist.hist(pic1Data[i], 50, color=colors[i], orientation='horizontal', alpha=0.3, histtype='stepfilled')
-        countHist.axhline(thresholds[i], color=colors[i], alpha=0.3)
+        if histMain:
+            countHist.hist(pic1Data[i], 50, color=colors[i], orientation='vertical', alpha=0.3, histtype='stepfilled')
+            countHist.axvline(thresholds[i], color=colors[i], alpha=0.3)            
+        else:
+            countHist.hist(pic1Data[i], 50, color=colors[i], orientation='horizontal', alpha=0.3, histtype='stepfilled')
+            countHist.axhline(thresholds[i], color=colors[i], alpha=0.3)
     for item in ([countHist.title, countHist.xaxis.label, countHist.yaxis.label] +
                      countHist.get_xticklabels() + countHist.get_yticklabels()):
         item.set_fontsize(10)
