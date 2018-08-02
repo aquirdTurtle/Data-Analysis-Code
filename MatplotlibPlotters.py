@@ -758,7 +758,7 @@ def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingR
     if fitModule is not None and showFitCenterPlot:
         figure()
         fitCenterPic, vmin, vmax = genAvgDiscrepancyImage(centers, avgPics[0].shape, atomLocs1)
-        imshow(fitCenterPic, cmap=cm.get_cmap('seismic'), vmin=vmin, vmax=vmax, origin='lower')
+        imshow(fitCenterPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower')
         title('Fit-Centers (white is average)')
         colorbar()
     tt.clock('After-Main-Plots')
@@ -776,14 +776,14 @@ def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingR
         for s in survivalData:
             avgSurvivals.append(np.mean(s))
         avgSurvivalPic, vmin, vmax = genAvgDiscrepancyImage(avgSurvivals, avgPics[0].shape, atomLocs1)
-        ims.append(axs[2].imshow(avgSurvivalPic, cmap=cm.get_cmap('seismic'), vmin=vmin, vmax=vmax, origin='lower'))
+        ims.append(axs[2].imshow(avgSurvivalPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower'))
         axs[2].set_title('Avg Surv')
         
         avgLoads = []
         for l in loadingRate:
             avgLoads.append(np.mean(l))
         avgLoadPic, vmin, vmax = genAvgDiscrepancyImage(avgLoads, avgPics[0].shape, atomLocs1)
-        ims.append(axs[3].imshow(avgLoadPic, cmap=cm.get_cmap('seismic'), vmin=vmin, vmax=vmax, origin='lower'))
+        ims.append(axs[3].imshow(avgLoadPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower'))
         axs[3].set_title('Avg Load')
         
         for ax, im in zip(axs, ims):
@@ -973,7 +973,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     if fitModule is not None and showFitCenterPlot and fits[0] != []:
         figure()
         fitCenterPic, vmin, vmax = genAvgDiscrepancyImage(centers, avgPic.shape, atomLocations)
-        imshow(fitCenterPic, cmap=cm.get_cmap('seismic'), vmin=vmin, vmax=vmax, origin='lower')
+        imshow(fitCenterPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower')
         title('Fit-Centers (white is average)')
         colorbar()
     if showImagePlots:
@@ -987,7 +987,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         for l in loadRate:
             avgLoads.append(np.mean(l))
         avgLoadPic, vmin, vmax = genAvgDiscrepancyImage(avgLoads, avgPic.shape, atomLocations)
-        ims.append(axs[1].imshow(avgLoadPic, cmap=cm.get_cmap('seismic'), vmin=vmin, vmax=vmax, origin='lower'))
+        ims.append(axs[1].imshow(avgLoadPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower'))
         axs[1].set_title('Avg Load')
 
         for ax, im in zip(axs, ims):
