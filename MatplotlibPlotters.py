@@ -955,7 +955,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     # average image
     avgPlt = subplot(gridRight[8:12, 12:15])
     avgPlt.imshow(avgPic, origin='lower');
-    avgPlt.set_xticks([])
+    avgPlt.set_xticks([]) 
     avgPlt.set_yticks([])
     avgPlt.grid(False)
     for loc in atomLocations:
