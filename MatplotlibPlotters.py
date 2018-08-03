@@ -32,6 +32,7 @@ def indvHists(dat, thresh, colors, extra=None):
         ax.axvline(t, color=c, ls=':')
         ax.set_xticklabels([])
         ax.set_yticklabels([])
+        ax.set_xlim(min(dat.flatten()), max(dat.flatten()))
         ax.grid(False)
         if extra is not None:
             t = ax.text(0.25, 5, round_sig_str(np.mean(extra[i])), fontsize=8)

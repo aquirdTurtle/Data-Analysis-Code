@@ -181,6 +181,9 @@ def genAvgDiscrepancyImage(data, shape, locs):
 
 
 def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias, sign=1):
+    for d in prevDepth:
+        if d < 0:
+            print('ERROR: This function cannot currently deal with negative arguments.')
     print('Assuming that (', prev_V_Bias[0],',',prev_V_Bias[-1], ') is the bias of the (highest, lowest)-frequency row')
     print('Assuming that (', prev_H_Bias[0],',',prev_H_Bias[-1], ') is the bias of the (lowest, highest)-frequency column')
     print('Please note that if using the outputted centers from Survival(), then you need to reshape the data'
