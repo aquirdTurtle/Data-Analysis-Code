@@ -180,8 +180,8 @@ def genAvgDiscrepancyImage(data, shape, locs):
 
 
 
-def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias, sign=1):
-    for d in prevDepth:
+def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias, sign=1, hFreqs=None, vFreqs=None, hPhases=None, vPhases=None):
+    for d in prevDepth.flatten():
         if d < 0:
             print('ERROR: This function cannot currently deal with negative arguments.')
     print('Assuming that (', prev_V_Bias[0],',',prev_V_Bias[-1], ') is the bias of the (highest, lowest)-frequency row')
@@ -210,6 +210,20 @@ def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias, sign=1):
     for h in new_H_Bias:
         print(round_sig(h,4), ',', end=' ')
     print(']\n')
+    if hFreqs is None:
+        return
+    if not (len(new_H_Bias) == len(hFreqs) == len(hPhases)):
+        raise ValueError('Lengths of horizontal data dont match')
+    if not (len(new_V_Bias) == len(vFreqs) == len(vPhases)):
+        raise ValueError('Lengths of vertical data dont match')
+    with open('J:/Code-Files/New-Depth-Evening-Config.txt','w') as file:
+        file.write('HORIZONTAL:\n')
+        for f, b, p in zip(hFreqs, new_H_Bias, hPhases):
+            file.write(str(f) + '\t' + str(b) + '\t' + str(p) + '\n')
+        file.write('VERTICAL:\n')
+        for f, b, p in zip(vFreqs, reversed(new_V_Bias), vPhases):
+            file.write(str(f) + '\t' + str(b) + '\t' + str(p) + '\n')
+    
     
 
 def extrapolateEveningBiases(hBiasIn, vBiasIn, depthIn, sign=1):
