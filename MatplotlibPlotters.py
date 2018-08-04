@@ -25,19 +25,18 @@ from fitters import gaussian_2d, LargeBeamMotExpansion
 
 
 def indvHists(dat, thresh, colors, extra=None):
-    f, axs = subplots(10,10)
+    f, axs = subplots(10,10, figsize=(50,25))
     for i, (d,t,c) in enumerate(zip(dat, thresh, colors[1:])):
         ax = axs[len(axs[0]) - i%len(axs[0]) - 1][int(i/len(axs))]
         ax.hist(d, 100, color=c, histtype='stepfilled')
-        ax.axvline(t, color=c, ls=':')
+        ax.axvline(t, color='w', ls=':')
         ax.set_xticklabels([])
         ax.set_yticklabels([])
         ax.set_xlim(min(dat.flatten()), max(dat.flatten()))
         ax.grid(False)
         if extra is not None:
-            t = ax.text(0.25, 5, round_sig_str(np.mean(extra[i])), fontsize=8)
+            t = ax.text(0.25, 5, round_sig_str(np.mean(extra[i])), fontsize=24)
             t.set_bbox(dict(facecolor='k', alpha=0.5))
-
     f.subplots_adjust(wspace=0, hspace=0)
 
 
@@ -1004,11 +1003,13 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     if plotIndvHists:
         indvHists(pic1Data, thresholds, colors, extra=avgLoads)
     # output thresholds
-    """    thresholds = np.flip(np.reshape(thresholds, (10,10)),1)
+    """
+    thresholds = np.flip(np.reshape(thresholds, (10,10)),1)
     with open('J:/Code-Files/T-File.txt','w') as f:
         for row in thresholds:
             for thresh in row:
-                f.write(str(thresh) + ' ') """
+                f.write(str(thresh) + ' ') 
+    """
     return key, loadRate, loadRateErr, pic1Data, atomImages, thresholds, gaussFitVals, totalPic1AtomData
 
 

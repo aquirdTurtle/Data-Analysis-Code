@@ -9,15 +9,10 @@ from Miscellaneous import getStats, round_sig, errString
 from MarksFourierAnalysis import fft
 from matplotlib.pyplot import *
 from scipy.optimize import curve_fit as fit
-
 import FittingFunctions as fitFunc
-
 from AnalysisHelpers import *
-
 import fitters.linear
-
 from ExpFile import ExpFile
-
 from TimeTracker import TimeTracker
 
 
@@ -296,7 +291,6 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
 def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, analyzeTogether=False, 
                                 manualThreshold=None, fitModule=None, keyInput=None, fitIndv=False, subtractEdges=True):
     """
-    
     :param fileNum:
     :param atomLocations:
     :param whichPic:
@@ -327,13 +321,15 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
     if len(arr(atomLocations).shape) == 1:
         atomLocations = [atomLocations]
     if not len(key) == numOfVariations:
-        raise ValueError("ERROR: The Length of the key doesn't match the data found. Key:", len(key), "vars:", numOfVariations)
+        raise ValueError("ERROR: The Length of the key doesn't match the data found. Key:", 
+                         len(key), "vars:", numOfVariations)
     # ## Initial Data Analysis
     s = rawData.shape
     if analyzeTogether:
         newShape = (1, s[0], s[1], s[2])
     else:
-        newShape = (numOfVariations, repetitions * picsPerRep, s[1], s[2])
+        newShape = (numOfVariations, repetitions * picsPerRep, s[1], s[2])    
+    # Split the rawData by variations
     groupedData = rawData.reshape(newShape)
     groupedData, key, _ = orderData(groupedData, key)
     loadingRateList, loadingRateErr, loadFits = [[[] for _ in range(len(atomLocations))] for _ in range(3)]
@@ -342,22 +338,22 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
     totalPic1AtomData = []
     (pic1Data, pic1Atom, thresholds, thresholdFid, fitVals, bins, binData,
      atomCount) = arr([[[None for _ in atomLocations] for _ in groupedData] for _ in range(8)])
+
     for dataInc, data in enumerate(groupedData):
         print(str(dataInc) + ', ', end='')
-        # fill lists with data
         allAtomPicData = []
-        for i, atomLoc in enumerate(atomLocations):
-            #print(atomLoc, end=' ')
+        for i, atomLoc in enumerate(atomLocations):            
             (pic1Data[dataInc][i], pic1Atom[dataInc][i], thresholds[dataInc][i], thresholdFid[dataInc][i],
              fitVals[dataInc][i], bins[dataInc][i], binData[dataInc][i],
-             atomCount[dataInc][i]) = getLoadingData(data, atomLoc, whichPic, picsPerRep, manualThreshold, 10,
-                                                    subtractEdges=subtractEdges)
+             atomCount[dataInc][i]) = getLoadingData( data, atomLoc, whichPic, picsPerRep, manualThreshold, 5,
+                                                      subtractEdges=subtractEdges )
             totalPic1AtomData.append(pic1Atom[dataInc][i])
             allAtomPicData.append(np.mean(pic1Atom[dataInc][i]))
             loadingRateList[i].append(np.mean(pic1Atom[dataInc][i]))
             loadingRateErr[i].append(np.std(pic1Atom[dataInc][i]) / np.sqrt(len(pic1Atom[dataInc][i])))
         allLoadingRate[dataInc] = np.mean(allAtomPicData)
         allLoadingErr[dataInc] = np.std(allAtomPicData) / np.sqrt(len(allAtomPicData))
+    # 
     avgFits = None
     if fitModule is not None:
         if fitIndv:
@@ -374,7 +370,6 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
          fitVals[i], bins[i], binData[i], atomCount[i]) = getLoadingData( rawData, atomLoc, whichPic,
                                                                           picsPerRep, manualThreshold, 5,
                                                                           subtractEdges=subtractEdges)
-    print(pic1Atom.shape)
     atomImages = [np.zeros(rawData[0].shape) for _ in range(int(numOfPictures/picsPerRep))]
     atomImagesInc = 0
     for picInc in range(int(numOfPictures)):

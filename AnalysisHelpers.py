@@ -1281,7 +1281,6 @@ def getFitsDataFrame(fits, fitModule, avgFit):
 
 def getLoadingData(picSeries, loc, whichPic, picsPerRep, manThreshold, binWidth, subtractEdges=True):
     """
-
     :param picSeries:
     :param loc:
     :param whichPic:
@@ -1304,11 +1303,10 @@ def getLoadingData(picSeries, loc, whichPic, picsPerRep, manThreshold, binWidth,
         threshold, thresholdFid = ((max(pic1Data) + min(pic1Data))/2.0, 0) 
     else:
         gaussianFitVals = None
-        threshold, thresholdFid = (manThreshold, 0) 
-
+        threshold, thresholdFid = (manThreshold, 0)
+    
     atomCount = 0
     pic1Atom = []
-    #print('t:',threshold)
     for point in pic1Data:
         if point > threshold:
             atomCount += 1
