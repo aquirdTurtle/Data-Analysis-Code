@@ -12,14 +12,14 @@ from scipy.optimize import curve_fit as fit
 from AnalysisHelpers import (loadDataRay, loadCompoundBasler, processSingleImage, orderData,
                              normalizeData, getBinData, getSurvivalData, getSurvivalEvents, fitDoubleGaussian,
                              guessGaussianPeaks, calculateAtomThreshold, getAvgPic, getEnsembleHits,
-                             getEnsembleStatistics, handleFitting, getLoadingData, loadDetailedKey, processImageData,
+                             getEnsembleStatistics, handleFitting, #getLoadingData, 
+                             loadDetailedKey, processImageData,
                              fitPictures, fitGaussianBeamWaist, assemblePlotData, ballisticMotExpansion, simpleMotExpansion, 
                              calcMotTemperature,integrateData, computeMotNumber, getFitsDataFrame, genAvgDiscrepancyImage, 
                              getGridDims, newCalcMotTemperature)
-
 import MarksConstants as consts 
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-from matplotlib.patches import Ellipse    
+from matplotlib.patches import Ellipse
 from TimeTracker import TimeTracker
 from fitters import gaussian_2d, LargeBeamMotExpansion
 
@@ -617,7 +617,7 @@ def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingR
      repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPics, otherDimValues,
      locsList, genAvgs, genErrs, gaussianFitVals, tt) = res
     if not show:
-        return key, survivalData, survivalErrs, loadingRate
+        return key, survivalData, survivalErrs, loadingRate, avgSurvivalData
     if legendOption is None and len(atomLocs1) < 50:
         legendOption = True
     else:
@@ -753,8 +753,12 @@ def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingR
              marker='o', capsize=6, elinewidth=3, label='Avg')
     if fitModule is not None:
         mainPlot.plot(avgFit['x'], avgFit['nom'], color='#FFFFFFFF', ls=':')
-        fits_df = getFitsDataFrame(fits, fitModule, avgFit)
-        display(fits_df)
+        for label, fitVal, err in zip(fitModule.args(), avgFit['vals'], avgFit['errs']):
+            print(label,':', errString(fitVal, err))
+        print(avgFit['errs'])
+        if showFitDetails:
+            fits_df = getFitsDataFrame(fits, fitModule, avgFit)
+            display(fits_df)
     if fitModule is not None and showFitCenterPlot:
         figure()
         fitCenterPic, vmin, vmax = genAvgDiscrepancyImage(centers, avgPics[0].shape, atomLocs1)
@@ -833,7 +837,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
      avgFits, atomImages, gaussFitVals) = standardPopulationAnalysis(fileNum, atomLocations, whichPic, picsPerRep, **StandardArgs)
     colors, _ = getColors(len(atomLocations) + 1)
     if not show:
-        return key, loadRate, loadRateErr, pic1Data, atomImages, thresholds
+        return key, loadRate, loadRateErr, pic1Data, atomImages, thresholds,avgLoadRate
     if legendOption is None and len(atomLocations) < 50:
         legendOption = True
     else:
@@ -989,7 +993,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         avgLoadPic, vmin, vmax = genAvgDiscrepancyImage(avgLoads, avgPic.shape, atomLocations)
         ims.append(axs[1].imshow(avgLoadPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower'))
         axs[1].set_title('Avg Load')
-
+        
         for ax, im in zip(axs, ims):
             ax.set_yticklabels([])
             ax.set_xticklabels([])

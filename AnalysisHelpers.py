@@ -1278,18 +1278,42 @@ def getFitsDataFrame(fits, fitModule, avgFit):
     return fitDataFrame
 
 
+def getThresholds( pic1Data, binWidth, manThreshold ):
+    bins, binnedData = getBinData(binWidth, pic1Data)
+    guess1, guess2 = guessGaussianPeaks(bins, binnedData)
+    guess = arr([max(binnedData), guess1, 30, max(binnedData)*0.75, guess2, 30])
+    if manThreshold is None:
+        gaussianFitVals = fitDoubleGaussian(bins, binnedData, guess)
+        threshold, thresholdFid = calculateAtomThreshold(gaussianFitVals)
+    elif manThreshold=='auto':
+        gaussianFitVals = None
+        threshold, thresholdFid = ((max(pic1Data) + min(pic1Data))/2.0, 0) 
+    else:
+        gaussianFitVals = None
+        threshold, thresholdFid = (manThreshold, 0)
+    return threshold, thresholdFid, gaussianFitVals, bins, binnedData
 
+
+def getAtomBoolData(pic1Data, threshold):
+    atomCount = 0
+    pic1Atom = []
+    for point in pic1Data:
+        if point > threshold:
+            atomCount += 1
+            pic1Atom.append(1)
+        else:
+            pic1Atom.append(0)
+    return pic1Atom, atomCount
+
+
+def getAtomCountsData( pics, picsPerRep, whichPic, loc, subtractEdges=True ):
+    borders = getAvgBorderCount(pics, whichPic, picsPerRep) if subtractEdges else np.zeros(len(picSeries))
+    pic1Data = normalizeData(pics, loc, whichPic, picsPerRep, borders)
+    return list(pic1Data)
+
+
+"""
 def getLoadingData(picSeries, loc, whichPic, picsPerRep, manThreshold, binWidth, subtractEdges=True):
-    """
-    :param picSeries:
-    :param loc:
-    :param whichPic:
-    :param picsPerRep:
-    :param manThreshold:
-    :param binWidth:
-    :return:
-    """
-    # grab the first picture of each repetition
     borders = getAvgBorderCount(picSeries, whichPic, picsPerRep) if subtractEdges else np.zeros(len(picSeries))
     pic1Data = normalizeData(picSeries, loc, whichPic, picsPerRep, borders)
     bins, binnedData = getBinData(binWidth, pic1Data)
@@ -1304,7 +1328,6 @@ def getLoadingData(picSeries, loc, whichPic, picsPerRep, manThreshold, binWidth,
     else:
         gaussianFitVals = None
         threshold, thresholdFid = (manThreshold, 0)
-    
     atomCount = 0
     pic1Atom = []
     for point in pic1Data:
@@ -1314,11 +1337,11 @@ def getLoadingData(picSeries, loc, whichPic, picsPerRep, manThreshold, binWidth,
         else:
             pic1Atom.append(0)
     return list(pic1Data), pic1Atom, threshold, thresholdFid, gaussianFitVals, bins, binnedData, atomCount
+"""
 
 
 def calculateAtomThreshold(fitVals):
     """
-    TODO: Figure out how this is supposed to work.
     :param fitVals = [Amplitude1, center1, sigma1, amp2, center2, sigma2]
     """
     # difference between centers divided by sum of sigma?
