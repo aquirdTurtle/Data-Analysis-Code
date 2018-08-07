@@ -27,7 +27,7 @@ class ExpFile:
     """
     a wrapper around an hdf5 file for easier handling and management.
     """
-    def __init__(self, file_id=None):
+    def __init__(self, file_id=None, old=False):
         """
         if you give the constructor a file_id, it will automatically fill the relevant member variables.
         """
@@ -42,7 +42,10 @@ class ExpFile:
         self.data_addr = dataAddress
         if file_id is not None:
             self.f = self.open_hdf5(fileID=file_id)
-            self.key_name, self.key = self.get_key()
+            if old:
+                self.key_name, self.key = self.__get_old_key()
+            else:
+                self.key_name, self.key = self.get_key()
             self.pics = self.get_pics()
             self.reps = self.f['Master-Parameters']['Repetitions'][0]
             self.experiment_time, self.experiment_date = self.get_experiment_time_and_date()
@@ -109,6 +112,12 @@ class ExpFile:
         
     def get_pics(self):
         p_t = arr(self.f['Andor']['Pictures'])
+        pics = p_t.reshape((p_t.shape[0], p_t.shape[2], p_t.shape[1]))
+        return pics
+    
+    
+    def get_basler_pics(self):
+        p_t = arr(self.f['Basler']['Pictures'])
         pics = p_t.reshape((p_t.shape[0], p_t.shape[2], p_t.shape[1]))
         return pics
         
