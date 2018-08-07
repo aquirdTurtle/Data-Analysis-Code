@@ -27,7 +27,7 @@ def f_raw(coordinate, offset, *params):
     :return:
     """
     if len(params) % 5 != 0:
-        raise ValueError("Error: invlaid number of arguments passed to arb 2d gaussian sum. must be multiple of 6.")
+        raise ValueError("Error: invlaid number of arguments passed to arb 2d gaussian sum. must be multiple of 5.")
     gaussParams = np.reshape(params, (int(len(params)/5), 5))
     res = 0
     for p in gaussParams:

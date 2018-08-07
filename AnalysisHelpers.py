@@ -183,7 +183,10 @@ def genAvgDiscrepancyImage(data, shape, locs):
 
 
 
-def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias, sign=1):
+def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias, sign=1, hFreqs=None, vFreqs=None, hPhases=None, vPhases=None):
+    for d in prevDepth.flatten():
+        if d < 0:
+            print('ERROR: This function cannot currently deal with negative arguments.')
     print('Assuming that (', prev_V_Bias[0],',',prev_V_Bias[-1], ') is the bias of the (highest, lowest)-frequency row')
     print('Assuming that (', prev_H_Bias[0],',',prev_H_Bias[-1], ') is the bias of the (lowest, highest)-frequency column')
     print('Please note that if using the outputted centers from Survival(), then you need to reshape the data'
@@ -210,6 +213,20 @@ def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias, sign=1):
     for h in new_H_Bias:
         print(round_sig(h,4), ',', end=' ')
     print(']\n')
+    if hFreqs is None:
+        return
+    if not (len(new_H_Bias) == len(hFreqs) == len(hPhases)):
+        raise ValueError('Lengths of horizontal data dont match')
+    if not (len(new_V_Bias) == len(vFreqs) == len(vPhases)):
+        raise ValueError('Lengths of vertical data dont match')
+    with open('J:/Code-Files/New-Depth-Evening-Config.txt','w') as file:
+        file.write('HORIZONTAL:\n')
+        for f, b, p in zip(hFreqs, new_H_Bias, hPhases):
+            file.write(str(f) + '\t' + str(b) + '\t' + str(p) + '\n')
+        file.write('VERTICAL:\n')
+        for f, b, p in zip(vFreqs, reversed(new_V_Bias), vPhases):
+            file.write(str(f) + '\t' + str(b) + '\t' + str(p) + '\n')
+    
     
 
 def extrapolateEveningBiases(hBiasIn, vBiasIn, depthIn, sign=1):
@@ -1263,19 +1280,42 @@ def getFitsDataFrame(fits, fitModule, avgFit):
     return fitDataFrame
 
 
+def getThresholds( pic1Data, binWidth, manThreshold ):
+    bins, binnedData = getBinData(binWidth, pic1Data)
+    guess1, guess2 = guessGaussianPeaks(bins, binnedData)
+    guess = arr([max(binnedData), guess1, 30, max(binnedData)*0.75, guess2, 30])
+    if manThreshold is None:
+        gaussianFitVals = fitDoubleGaussian(bins, binnedData, guess)
+        threshold, thresholdFid = calculateAtomThreshold(gaussianFitVals)
+    elif manThreshold=='auto':
+        gaussianFitVals = None
+        threshold, thresholdFid = ((max(pic1Data) + min(pic1Data))/2.0, 0) 
+    else:
+        gaussianFitVals = None
+        threshold, thresholdFid = (manThreshold, 0)
+    return threshold, thresholdFid, gaussianFitVals, bins, binnedData
 
+
+def getAtomBoolData(pic1Data, threshold):
+    atomCount = 0
+    pic1Atom = []
+    for point in pic1Data:
+        if point > threshold:
+            atomCount += 1
+            pic1Atom.append(1)
+        else:
+            pic1Atom.append(0)
+    return pic1Atom, atomCount
+
+
+def getAtomCountsData( pics, picsPerRep, whichPic, loc, subtractEdges=True ):
+    borders = getAvgBorderCount(pics, whichPic, picsPerRep) if subtractEdges else np.zeros(len(picSeries))
+    pic1Data = normalizeData(pics, loc, whichPic, picsPerRep, borders)
+    return list(pic1Data)
+
+
+"""
 def getLoadingData(picSeries, loc, whichPic, picsPerRep, manThreshold, binWidth, subtractEdges=True):
-    """
-
-    :param picSeries:
-    :param loc:
-    :param whichPic:
-    :param picsPerRep:
-    :param manThreshold:
-    :param binWidth:
-    :return:
-    """
-    # grab the first picture of each repetition
     borders = getAvgBorderCount(picSeries, whichPic, picsPerRep) if subtractEdges else np.zeros(len(picSeries))
     pic1Data = normalizeData(picSeries, loc, whichPic, picsPerRep, borders)
     bins, binnedData = getBinData(binWidth, pic1Data)
@@ -1289,11 +1329,9 @@ def getLoadingData(picSeries, loc, whichPic, picsPerRep, manThreshold, binWidth,
         threshold, thresholdFid = ((max(pic1Data) + min(pic1Data))/2.0, 0) 
     else:
         gaussianFitVals = None
-        threshold, thresholdFid = (manThreshold, 0) 
-
+        threshold, thresholdFid = (manThreshold, 0)
     atomCount = 0
     pic1Atom = []
-    #print('t:',threshold)
     for point in pic1Data:
         if point > threshold:
             atomCount += 1
@@ -1301,11 +1339,11 @@ def getLoadingData(picSeries, loc, whichPic, picsPerRep, manThreshold, binWidth,
         else:
             pic1Atom.append(0)
     return list(pic1Data), pic1Atom, threshold, thresholdFid, gaussianFitVals, bins, binnedData, atomCount
+"""
 
 
 def calculateAtomThreshold(fitVals):
     """
-    TODO: Figure out how this is supposed to work.
     :param fitVals = [Amplitude1, center1, sigma1, amp2, center2, sigma2]
     """
     # difference between centers divided by sum of sigma?

@@ -82,28 +82,31 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModule=None, showCo
     """
     res = standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, fitModule=fitModule,
                                    **standardTransferArgs)
+    #(atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate, pic1Data, keyName, key,
+    # repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPics, otherDims, locationsList,
+    # genAvgs, genErrs, gaussianFitVals) = res
     (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate, pic1Data, keyName, key,
-     repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPics, otherDims, locationsList,
-     genAvgs, genErrs, gaussianFitVals) = res
+     repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPics, otherDimValues,
+     locsList, genAvgs, genErrs, gaussianFitVals, tt) = res
     if not show:
         return key, survivalData, survivalErrs, loadingRate
 
     # get the colors for the plots.
-    pltColors, pltColors2 = getColors(len(locationsList) + 1)
+    pltColors, pltColors2 = getColors(len(locsList) + 1)
     scanType = "S." if atomLocs1 == atomLocs2 else "T."
     if scanType == "S.":
         legends = [r"%d,%d " % (loc1[0], loc1[1]) + (scanType + "% = " + str(errString(d[0], e[0])) if len(d) == 1
-                   else "") for loc1, d, e in zip(locationsList, survivalData, survivalErrs)]
+                   else "") for loc1, d, e in zip(locsList, survivalData, survivalErrs)]
 
     elif otherDimValues[0] is not None:
         legends = [r"%d,%d>%d,%d @%d " % (loc1[0], loc1[1], loc2[0], loc2[1], other) +
                    (scanType + "%=" + str(errString(d[0]), e[0]) if len(d) == 1 else "")
-                   for loc1, loc2, d, e, other in zip(locationsList, locationsList, survivalData, survivalErrs,
+                   for loc1, loc2, d, e, other in zip(locsList, locsList, survivalData, survivalErrs,
                                                       otherDimValues)]
     else:
         legends = [r"%d,%d>%d,%d " % (loc1[0], loc1[1], loc2[0], loc2[1]) +
                    (scanType + "%=" + errString(d[0], e[0]) if len(d) == 1 else "")
-                   for loc1, loc2, d, e in zip(locationsList, locationsList, survivalData, survivalErrs)]
+                   for loc1, loc2, d, e in zip(locsList, locsList, survivalData, survivalErrs)]
     survivalErrs = list(survivalErrs)
     # Make the plots
     alphaVal = 0.5
@@ -116,7 +119,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModule=None, showCo
     if fitModule is not None:
         display(getFitsDataFrame(fits, fitModule, avgFit))
 
-    for data, err, loc, color, legend, fitData, gen, genErr in zip(survivalData, survivalErrs, locationsList, pltColors,
+    for data, err, loc, color, legend, fitData, gen, genErr in zip(survivalData, survivalErrs, locsList, pltColors,
                                                       legends, fits, genAvgs, genErrs):
         mainPlot.append(go.Scatter(x=key, y=data, opacity=alphaVal, mode="markers", name=legend,
                                    error_y={"type": 'data', "array": err, 'color': color},
@@ -142,7 +145,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModule=None, showCo
                                            opacity=alphaVal / 2, line={'color': color},
                                            legendgroup=legend, fill='tonexty', showlegend=False,
                                            hoverinfo='none', fillcolor='rgba(7, 164, 181, ' + str(alphaVal/2) + ')'))
-
+    print('0.')
     if fitModule is not None and fitModule.center() is not None:
         print('Fit Centers:')
         transferPic = np.zeros(avgPics[0].shape)
@@ -155,7 +158,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModule=None, showCo
         fitCenterFig = [go.Heatmap(z=fitCenterPic, colorscale='Viridis', colorbar=go.ColorBar(x=1, y=0.15, len=0.3))]
         layout = go.Layout(title='Fit-Center Pic')
         iplot(go.Figure(data=fitCenterFig, layout=layout))
-
+    print('1.')
     # countsFig.append(go.Scatter(y=atomCounts, mode='markers', opacity=0.1, marker={'color':color, 'size':1},
     #            legendgroup='avg', showlegend=False))
     # countsHist.append(go.Histogram(y=atomCounts, nbinsy=100, legendgroup='avg', showlegend=False, opacity=0.1,
@@ -177,6 +180,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModule=None, showCo
                                  showlegend=False, legendgroup=legend, marker={'size': 2, 'color': '#FF0000'}))
         avgFigs[1].append(go.Scatter(x=[loc2[1]], y=[loc2[0]], mode='markers', hoverinfo='none',
                                  showlegend=False, legendgroup=legend, marker={'size': 2, 'color': '#FF0000'}))
+    print('2.')
     # average stuff
     mainPlot.append(go.Scatter(x=key, y=avgSurvivalData, mode="markers", name='avg',
                                error_y={"type": 'data', "array": avgSurvivalErr, 'color': '#000000'},
