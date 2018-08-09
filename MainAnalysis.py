@@ -281,16 +281,18 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
 
 def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, analyzeTogether=False, 
                                 manualThreshold=None, fitModule=None, keyInput=None, fitIndv=False, subtractEdges=True,
-                                keyConversion=None):
+                                keyConversion=None, quiet=False):
     """
-    keyConversion should be a function which takes in a single value as an argument and converts it.
+    keyConversion should be a calibration which takes in a single value as an argument and converts it.
+        It needs a calibration function f() and a units function units()
     return: ( fullPixelCounts, thresholds, avgPic, key, avgLoadingErr, avgLoading, allLoadingRate, allLoadingErr, loadFits,
              fitModule, keyName, totalAtomData, rawData, atomLocations, avgFits, atomImages, threshFitVals )
     """
     atomLocations = unpackAtomLocations(atomLocations)
     with ExpFile(fileNum) as f:
         rawData, keyName, key, repetitions = f.pics, f.key_name, f.key, f.reps 
-        f.get_basic_info()
+        if not quiet:
+            f.get_basic_info()
     numOfPictures = rawData.shape[0]
     numOfVariations = int(numOfPictures / (repetitions * picsPerRep))
     # handle defaults.
@@ -309,7 +311,8 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
                          "Did you want to use a transfer-based function instead of a population-based function? Key:", 
                          len(key), "vars:", numOfVariations)
     if keyConversion is not None:
-        key = [keyConversion(k) for k in key]
+        key = [keyConversion.f(k) for k in key]
+        keyName += "; " + keyConversion.units()
     # ## Initial Data Analysis
     s = rawData.shape
     if analyzeTogether:
@@ -320,7 +323,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
     groupedData = rawData.reshape(newShape)
     groupedData, key, _ = orderData(groupedData, key)
     avgLoading, avgLoadingErr, loadFits = [[[] for _ in range(len(atomLocations))] for _ in range(3)]
-    print('Analyzing Variation... ', end='')
+
     allLoadingRate, allLoadingErr = [[[]] * len(groupedData) for _ in range(2)]
     totalAtomData = []
     
@@ -333,10 +336,12 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
         fullAtomData[i], fullAtomCount[i] = getAtomBoolData(fullPixelCounts[i], thresholds[i])
     fullAtomData = arr(fullAtomData.tolist())
     fullPixelCounts = arr(fullPixelCounts.tolist())
-    
+    if not quiet:
+        print('Analyzing Variation... ', end='')    
     (variationPixelData, variationAtomData, atomCount) = arr([[[None for _ in atomLocations] for _ in groupedData] for _ in range(3)])
     for dataInc, data in enumerate(groupedData):
-        print(str(dataInc) + ', ', end='')
+        if not quiet:
+            print(str(dataInc) + ', ', end='')
         allAtomPicData = []
         for i, atomLoc in enumerate(atomLocations):
             variationPixelData[dataInc][i] = getAtomCountsData( data, picsPerRep, whichPic, atomLoc, subtractEdges=subtractEdges )

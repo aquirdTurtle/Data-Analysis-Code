@@ -17,3 +17,7 @@ def f_date():
     A calibration curve corresponding to a given date
     """
     
+def units():
+    """
+    return the units for if the user uses f(). E.g. MOT Frequency (MHz) (Relative to ...)
+    """

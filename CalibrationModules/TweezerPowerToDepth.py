@@ -20,3 +20,5 @@ def f_August_7th_2018(power_mw):
     # number comes from my light shift notebook calculations
     return 0.33228517568020316 * power_mw / 100
     
+def units():
+    return "Trap Depth: (mK)"

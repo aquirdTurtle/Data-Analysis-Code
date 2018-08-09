@@ -5,6 +5,10 @@ import uncertainties.unumpy as unp
 from fitters import linear
 
 
+def f(dacVal):
+    return f_RelativeToResonance(dacVal)
+
+
 def f_RelativeToResonance(dacVal):
     return 240 - f_raw(dacVal)
 
@@ -33,3 +37,6 @@ def f_August2018Correction(dacVal):
     In principle we should at some point recalibrate this.
     """
     return f_June2018(dacVal) - 2.3
+
+def units():
+    return "D1 Frequency (MHz) (Relative to Free-Space Resonance)"
