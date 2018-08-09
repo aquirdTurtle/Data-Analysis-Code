@@ -822,8 +822,9 @@ def Loading(fileNum, atomLocations, **PopulationArgs):
     return Population(fileNum, atomLocations, 0, 1, **PopulationArgs)
 
 
-def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=True, plotCounts=False, legendOption=None, showImagePlots=True, 
-               plotIndvHists=False, showFitDetails=False, showFitCenterPlot=True, show=True, histMain=False, **StandardArgs):
+def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=True, plotCounts=False, legendOption=None,
+               showImagePlots=True, plotIndvHists=False, showFitDetails=False, showFitCenterPlot=True, show=True, histMain=False,
+               **StandardArgs):
     """
     Standard data analysis package for looking at population %s throughout an experiment.
 

@@ -127,6 +127,10 @@ class ExpFile:
     def print_all_groups(self):
         self.__print_groups(self.f,'')
 
+        
+    def print_parameters(self):
+        self.__print_hdf5_obj(self.f['Master-Parameters']['Seq #1 Variables'],'')
+        
     def __print_groups(self, obj, prefix):
         """
         Used recursively to print the structure of the file.
