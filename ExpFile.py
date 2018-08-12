@@ -6,6 +6,7 @@ import numpy as np
 
 dataAddress = None
 
+
 def setPath(day, month, year, repoAddress="J:\\Data repository\\New Data Repository"):
     """
     This function sets the location of where all of the data files are stored. It is occasionally called more
@@ -28,7 +29,7 @@ class ExpFile:
     """
     a wrapper around an hdf5 file for easier handling and management.
     """
-    def __init__(self, file_id=None):
+    def __init__(self, file_id=None, old=False):
         """
         if you give the constructor a file_id, it will automatically fill the relevant member variables.
         """
@@ -43,7 +44,10 @@ class ExpFile:
         self.data_addr = dataAddress
         if file_id is not None:
             self.f = self.open_hdf5(fileID=file_id)
-            self.key_name, self.key = self.get_key()
+            if old:
+                self.key_name, self.key = self.__get_old_key()
+            else:
+                self.key_name, self.key = self.get_key()
             self.pics = self.get_pics()
             self.reps = self.f['Master-Parameters']['Repetitions'][0]
             self.experiment_time, self.experiment_date = self.get_experiment_time_and_date()
@@ -112,6 +116,12 @@ class ExpFile:
         p_t = arr(self.f['Andor']['Pictures'])
         pics = p_t.reshape((p_t.shape[0], p_t.shape[2], p_t.shape[1]))
         return pics
+    
+    
+    def get_basler_pics(self):
+        p_t = arr(self.f['Basler']['Pictures'])
+        pics = p_t.reshape((p_t.shape[0], p_t.shape[2], p_t.shape[1]))
+        return pics
         
     def get_avg_pic(self):
         pics = self.get_pics()
@@ -120,7 +130,16 @@ class ExpFile:
             avg_pic += p
         avg_pic /= len(pics)
         return avg_pic
-        
+
+    def get_avg_basler_pic(self):
+        pics = self.get_basler_pics()
+        avg_pic = np.zeros(pics[0].shape)
+        for p in pics:
+            avg_pic += p
+        avg_pic /= len(pics)
+        return avg_pic
+    
+    
     def print_all(self):
         self.__print_hdf5_obj(self.f,'')
     

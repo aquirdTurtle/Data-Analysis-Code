@@ -36,14 +36,16 @@ def getTodaysTemperatureData():
     return df
 
 
-def Temperature():
+def Temperature(show=True):
     df = getTodaysTemperatureData()
-    fig = figure(figsize=(30,15))
-    ax1 = fig.add_subplot(2,1,1)
-    ax2 = fig.add_subplot(2,1,2, sharex=ax1)
 
     legends = ['1: Master Computer', '2: B236', '3: Auxiliary Table', '4: Main Exp. (Near Ion Pump)']
     xpts = [x[:5] for x in df[1]]
+    if not show:
+        return xpts, df
+    fig = figure(figsize=(30,15))
+    ax1 = fig.add_subplot(2,1,1)
+    ax2 = fig.add_subplot(2,1,2, sharex=ax1)
     ax1.clear()
     for i, l in zip(np.arange(3,13,3), legends):
         ax1.plot(xpts, df[i], label=l)
@@ -59,6 +61,7 @@ def Temperature():
     ax2.set_xticks(xpts[::incr])
     xlabel('Time (hour:minute)')
     xticks(rotation=75);
+    return xpts, df
 
 def splitData(data, picsPerSplit, picsPerRep, runningOverlap=0):
     data = np.reshape(data, (picsPerSplit, int(data.shape[1]/picsPerSplit), data.shape[2], data.shape[3]))
@@ -560,7 +563,6 @@ def simpleMotExpansion(t, sigma_y0, sigma_vy):
     I need to calculate a temperature.
 
     this simpler version ignores the size of the beam waist of the atoms.
-    It should generally behave better with noisy data.
 
     :param t:
     :param sigma_y0:
@@ -1419,6 +1421,10 @@ def normalizeData(data, atomLocation, picture, picturesPerExperiment, borders):
     count=0
     for imageInc in range(0, dimensions[0]):
         if (imageInc + picturesPerExperiment - picture) % picturesPerExperiment == 0:
+            if len(atomLocation) != 2:
+                raise TypeError('AtomLocation, which has value ' + str(atomLocation) + ', should be 2 elements.')
+            if len(borders) <= count:
+                raise IndexError('borders, of len ' + str(len(borders)), 'is not long enough!')
             allData = np.append(allData, rawData[imageInc][atomLocation[0]][atomLocation[1]] - borders[count])
             count += 1
     return allData
