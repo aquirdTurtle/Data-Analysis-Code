@@ -928,7 +928,6 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         # ### Count Series Plot
     for i, loc in enumerate(atomLocations):
         countPlot.plot(pic1Data[i], color=colors[i], ls='', marker='.', markersize=1, alpha=0.3)
-        # countPlot.plot(pic2Data[i], color=colors2[i], ls='', marker='.', markersize=1, alpha=0.8)
         countPlot.axhline(thresholds[i], color=colors[i], alpha=0.3)
 
 
