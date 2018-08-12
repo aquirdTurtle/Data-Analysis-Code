@@ -6,6 +6,7 @@ import numpy as np
 
 dataAddress = None
 
+
 def setPath(day, month, year, repoAddress="J:\\Data repository\\New Data Repository"):
     """
     This function sets the location of where all of the data files are stored. It is occasionally called more
@@ -129,7 +130,16 @@ class ExpFile:
             avg_pic += p
         avg_pic /= len(pics)
         return avg_pic
-        
+
+    def get_avg_basler_pic(self):
+        pics = self.get_basler_pics()
+        avg_pic = np.zeros(pics[0].shape)
+        for p in pics:
+            avg_pic += p
+        avg_pic /= len(pics)
+        return avg_pic
+    
+    
     def print_all(self):
         self.__print_hdf5_obj(self.f,'')
     
