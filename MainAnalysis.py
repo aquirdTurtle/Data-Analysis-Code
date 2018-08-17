@@ -318,7 +318,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
         newShape = (numOfVariations, repetitions * picsPerRep, s[1], s[2])    
     # Split the rawData by variations
     groupedData = rawData.reshape(newShape)
-    groupedData, key, _ = orderData(groupedData, key)
+    #groupedData, key, _ = orderData(groupedData, key)
     avgLoading, avgLoadingErr, loadFits = [[[] for _ in range(len(atomLocations))] for _ in range(3)]
     print('Analyzing Variation... ', end='')
     allLoadingRate, allLoadingErr = [[[]] * len(groupedData) for _ in range(2)]

@@ -3,5 +3,10 @@
 __pycache__/
 # jupyter notebooks are not meant to be syncronized with this repository.
 *.ipynb
+!CalibrationModules/*.ipynb
+Figures/
+Data/
+Analysis code backup/
+Videos/
 # created by jupyter.
 .ipynb_checkpoints/
