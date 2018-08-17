@@ -329,7 +329,6 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
 
     print(groupedData.shape)
     #groupedData, key, _ = orderData(groupedData, key)
-    print('no ordering...')
     avgLoading, avgLoadingErr, loadFits = [[[] for _ in range(len(atomLocations))] for _ in range(3)]
     allLoadingRate, allLoadingErr = [[[]] * len(groupedData) for _ in range(2)]
     totalAtomData = []
