@@ -36,6 +36,18 @@ epsilon0 = 8.854187817e-12
 # Magnetic Constant, vacuum permeability, in Henrys / meter or newtons / Amp^2, exact
 mu0 = 4e-7 * pi
 
+# Pauli Matrices
+X = sigma_x = sp.Matrix([[0, 1], [1, 0]])
+Y = sigma_y = sp.Matrix([[0, -1j], [1j, 0]])
+Z = sigma_z = sp.Matrix([[1, 0], [0, -1]])
+# Hadamard
+H = hadamard = sp.Matrix([[1, 1], [1, -1]])
+# Phase Gate
+S = phaseGate = sp.Matrix([[1, 0], [0, 1j]])
+
+def phaseShiftGate(phi):
+    return sp.Matrix([[1, 0], [[0, sp.exp(1j * phi)]]])
+
 # ######################
 # ### Rubidium Constants
 
@@ -248,11 +260,11 @@ cameraConversion = 117e-18
 # of the signal by the 780nm filter.
 # C = 161*10**-18
 
-# note: I don't know what the limiting aperture is, but I believe that it's a bit larger than either of these.
+# note: I don't know what the limiting aperture is, but I believe that it's a bit larger than either of these. (what?!?!?!?)
 # This parameter could probably be extracted from Zeemax calculations.
 # (in meters)
 
-# ... what?!?!?!? these are both too big... I don't know why these are set to these numbers.
+# ... what?!?!?!? these are both too big... I don't know why these are set to these numbers...
 ____sillLensInputApertureDiameter____ = 40e-3
 ____sillLensExitApertureDiameter____ = 40e-3
 
@@ -272,14 +284,3 @@ EpsilonTrap = 0
 # the third is the sigma minus polarization component.
 uTrap = [0, 1, 0]
 
-# Pauli Matrices
-X = sigma_x = sp.Matrix([[0, 1], [1, 0]])
-Y = sigma_y = sp.Matrix([[0, -1j], [1j, 0]])
-Z = sigma_z = sp.Matrix([[1, 0], [0, -1]])
-# Hadamard
-H = hadamard = sp.Matrix([[1, 1], [1, -1]])
-# Phase Gate
-S = phaseGate = sp.Matrix([[1, 0], [0, 1j]])
-
-def phaseShiftGate(phi):
-    return sp.Matrix([[1, 0], [[0, sp.exp(1j * phi)]]])

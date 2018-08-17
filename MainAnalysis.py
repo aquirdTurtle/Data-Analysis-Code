@@ -281,7 +281,7 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
 
 def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, analyzeTogether=False, 
                                 manualThreshold=None, fitModule=None, keyInput=None, fitIndv=False, subtractEdges=True,
-                                keyConversion=None, quiet=False):
+                                keyConversion=None, quiet=False, dataRange=None, picSlice=None):
     """
     keyConversion should be a calibration which takes in a single value as an argument and converts it.
         It needs a calibration function f() and a units function units()
@@ -318,12 +318,19 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
     if analyzeTogether:
         newShape = (1, s[0], s[1], s[2])
     else:
-        newShape = (numOfVariations, repetitions * picsPerRep, s[1], s[2])    
+        newShape = (numOfVariations, repetitions * picsPerRep, s[1], s[2])
     # Split the rawData by variations
     groupedData = rawData.reshape(newShape)
-    groupedData, key, _ = orderData(groupedData, key)
-    avgLoading, avgLoadingErr, loadFits = [[[] for _ in range(len(atomLocations))] for _ in range(3)]
+    key, groupedData = applyDataRange(dataRange, groupedData, key)
+    if picSlice is not None:
+        rawData = rawData[picSlice[0]:picSlice[1]]
+        numOfPictures = rawData.shape[0]
+        numOfVariations = int(numOfPictures / (repetitions * picsPerRep))
 
+    print(groupedData.shape)
+    #groupedData, key, _ = orderData(groupedData, key)
+    print('no ordering...')
+    avgLoading, avgLoadingErr, loadFits = [[[] for _ in range(len(atomLocations))] for _ in range(3)]
     allLoadingRate, allLoadingErr = [[[]] * len(groupedData) for _ in range(2)]
     totalAtomData = []
     
@@ -627,7 +634,7 @@ def AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, loadPic=0, re
         res = standardPopulationAnalysis( fileNumber, locations, rerngedPic, picsPerRep, **popArgs)
         allRerngedAtoms = res[11]
         res = standardPopulationAnalysis( fileNumber, locations, loadPic, picsPerRep, **popArgs)
-        allLoadedAtoms = res[11]        
+        allLoadedAtoms = res[11]
         (loadData, loadAtoms, rerngedData, rerngedAtoms, loadAllLocsData, loadAllLocsAtoms, rerngedAllLocsData,
          rerngedAllLocsAtoms) = [[] for _ in range(8)]
         d = DataFrame()

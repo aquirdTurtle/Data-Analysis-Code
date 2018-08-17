@@ -12,7 +12,7 @@ from scipy.optimize import curve_fit as fit
 from AnalysisHelpers import (loadDataRay, loadCompoundBasler, processSingleImage, orderData,
                              normalizeData, getBinData, getSurvivalData, getSurvivalEvents, fitDoubleGaussian,
                              guessGaussianPeaks, calculateAtomThreshold, getAvgPic, getEnsembleHits,
-                             getEnsembleStatistics, handleFitting, #getLoadingData, 
+                             getEnsembleStatistics, handleFitting, 
                              loadDetailedKey, processImageData,
                              fitPictures, fitGaussianBeamWaist, assemblePlotData, ballisticMotExpansion, simpleMotExpansion, 
                              calcMotTemperature,integrateData, computeMotNumber, getFitsDataFrame, genAvgDiscrepancyImage, 
@@ -864,47 +864,51 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         mainPlot = subplot(gridLeft[4:8, 15:16], sharey=countPlot)
     centers = []
     longLegend = len(loadRate[0]) == 1
-    for i, (atomLoc, fit) in enumerate(zip(atomLocations, fits)):
-        leg = r"[%d,%d] " % (atomLoc[0], atomLoc[1])
-        if longLegend:
-            leg += (typeName + " % = " + str(round_sig(loadRate[i][0])) + "$\pm$ "
-                    + str(round_sig(loadRateErr[i][0])))
-        mainPlot.errorbar(key, loadRate[i], yerr=loadRateErr[i], color=colors[i], ls='',
-                          capsize=6, elinewidth=3, label=leg, alpha=0.2, marker=markers[i%len(markers)])
+    if len(arr(key).shape) == 2:
+        # 2d scan: no normal plot possible, so make colormap plot of avg
+        key1, key2 = key[:,0], key[:,1]
+        key1 = np.sort(key1)
+        key2 = np.sort(key2)
+    else:
+        for i, (atomLoc, fit) in enumerate(zip(atomLocations, fits)):
+            leg = r"[%d,%d] " % (atomLoc[0], atomLoc[1])
+            if longLegend:
+                leg += (typeName + " % = " + str(round_sig(loadRate[i][0])) + "$\pm$ "
+                        + str(round_sig(loadRateErr[i][0])))
+            mainPlot.errorbar(key, loadRate[i], yerr=loadRateErr[i], color=colors[i], ls='',
+                              capsize=6, elinewidth=3, label=leg, alpha=0.2, marker=markers[i%len(markers)])
+            if fitModule is not None:
+                if fit == [] or fit['vals'] is None:
+                    continue
+                centerIndex = fitModule.center()
+                if centerIndex is not None:
+                    centers.append(fit['vals'][centerIndex])
+                mainPlot.plot(fit['x'], fit['nom'], color=colors[i], alpha = 0.5)
         if fitModule is not None:
-            if fit == [] or fit['vals'] is None:
-                continue
-            centerIndex = fitModule.center()
-            if centerIndex is not None:
-                centers.append(fit['vals'][centerIndex])
-            mainPlot.plot(fit['x'], fit['nom'], color=colors[i], alpha = 0.5)
-    if fitModule is not None:
-        if avgFits['vals'] is None:
-            print('Avg Fit Failed!')
-        else:
-            centerIndex = fitModule.center()
-            mainPlot.plot(avgFits['x'], avgFits['nom'], color='w', alpha = 1)
-    mainPlot.grid(True, color='#AAAAAA', which='Major')
-    mainPlot.grid(True, color='#090909', which='Minor')
-    mainPlot.set_yticks(np.arange(0,1,0.1))
-    mainPlot.set_yticks(np.arange(0,1,0.05), minor=True)
-    mainPlot.set_ylim({-0.02, 1.01})
-    if not min(key) == max(key):
-        mainPlot.set_xlim(left=min(key) - (max(key) - min(key)) / len(key), right=max(key)
-                          + (max(key) - min(key)) / len(key))
-    mainPlot.set_xticks(key)
-    rotateTicks(mainPlot)
-
-    titletxt = keyName + " Atom " + typeName + " Scan"
-    if len(loadRate[0]) == 1:
-        titletxt = keyName + " Atom " + typeName + " Point.\n Avg " + typeName + "% = " + errString(np.mean(avgLoadRate), np.mean(avgLoadErr) )
-    
-    mainPlot.set_title(titletxt, fontsize=30)
-    mainPlot.set_ylabel("S %", fontsize=20)
-    mainPlot.set_xlabel(keyName, fontsize=20)
-    if legendOption == True:
-        cols = 4 if longLegend else 10
-        mainPlot.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), fancybox=True, ncol=cols, prop={'size': 12})
+            if avgFits['vals'] is None:
+                print('Avg Fit Failed!')
+            else:
+                centerIndex = fitModule.center()
+                mainPlot.plot(avgFits['x'], avgFits['nom'], color='w', alpha = 1)
+        mainPlot.grid(True, color='#AAAAAA', which='Major')
+        mainPlot.grid(True, color='#090909', which='Minor')
+        mainPlot.set_yticks(np.arange(0,1,0.1))
+        mainPlot.set_yticks(np.arange(0,1,0.05), minor=True)
+        mainPlot.set_ylim({-0.02, 1.01})
+        if not min(key) == max(key):
+            mainPlot.set_xlim(left=min(key) - (max(key) - min(key)) / len(key), right=max(key)
+                              + (max(key) - min(key)) / len(key))
+        mainPlot.set_xticks(key)
+        rotateTicks(mainPlot)
+        titletxt = keyName + " Atom " + typeName + " Scan"
+        if len(loadRate[0]) == 1:
+            titletxt = keyName + " Atom " + typeName + " Point.\n Avg " + typeName + "% = " + errString(np.mean(avgLoadRate), np.mean(avgLoadErr) ) 
+        mainPlot.set_title(titletxt, fontsize=30)
+        mainPlot.set_ylabel("S %", fontsize=20)
+        mainPlot.set_xlabel(keyName, fontsize=20)
+        if legendOption == True:
+            cols = 4 if longLegend else 10
+            mainPlot.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), fancybox=True, ncol=cols, prop={'size': 12})
     # Loading Plot
     loadingPlot = subplot(grid1[0:3, 12:16])
     for i, loc in enumerate(atomLocations):

@@ -2,7 +2,7 @@ import h5py as h5
 from colorama import Fore, Style
 from numpy import array as arr
 import numpy as np
-import numpy as np
+import Miscellaneous as misc
 
 dataAddress = None
 
@@ -84,7 +84,7 @@ class ExpFile:
                 keyValues.append(arr(self.f['Master-Parameters']['Seq #1 Variables'][var]))
         if foundOne:
             if len(keyNames) > 1:
-                return keyNames, arr(transpose(arr(keyValues)))
+                return keyNames, arr(misc.transpose(arr(keyValues)))
             else:
                 return keyNames[0], arr(keyValues[0])
         else:
