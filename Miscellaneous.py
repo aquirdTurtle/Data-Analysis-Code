@@ -196,8 +196,10 @@ def errString(val, err, precision=3):
     valE = getExp(val)
     # determine number of values of err to show.
     errE = getExp(err)
-    if valE == float('Inf') or valE == float('-Inf') or errE == float('Inf') or errE == float('-Inf'):
+    if valE == float('Inf') or valE == float('-Inf'):
         return "?(?)"
+    if errE == float('Inf') or errE == float('-Inf'):
+        return  round_sig_str(val, precision) +'(?)'
     try:
         num = int(errE-valE+precision)
         if num < 0:

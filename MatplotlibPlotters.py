@@ -6,6 +6,7 @@ from MainAnalysis import standardPopulationAnalysis, analyzeNiawgWave, standardT
 from numpy import array as arr
 from random import randint
 from Miscellaneous import getColors, round_sig, round_sig_str, getMarkers, errString
+import Miscellaneous as misc
 from matplotlib.pyplot import *
 import matplotlib as mpl
 from scipy.optimize import curve_fit as fit
@@ -17,11 +18,12 @@ from AnalysisHelpers import (loadDataRay, loadCompoundBasler, processSingleImage
                              fitPictures, fitGaussianBeamWaist, assemblePlotData, ballisticMotExpansion, simpleMotExpansion, 
                              calcMotTemperature,integrateData, computeMotNumber, getFitsDataFrame, genAvgDiscrepancyImage, 
                              getGridDims, newCalcMotTemperature)
+import AnalysisHelpers as ah
 import MarksConstants as consts 
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.patches import Ellipse
 from TimeTracker import TimeTracker
-from fitters import gaussian_2d, LargeBeamMotExpansion
+from fitters import gaussian_2d, LargeBeamMotExpansion, exponential_saturation
 
 
 def indvHists(dat, thresh, colors, extra=None):
@@ -80,36 +82,8 @@ def plotNiawg(fileIndicator, points=300, plotTogether=True, plotVolts=False):
     show()
 
 
-def standardImages(data,
-                   # Cosmetic Parameters
-                   scanType="", xLabel="", plotTitle="", convertKey=False, showPictures=True, showPlot=True,
-                   allThePics=False, bigPics=False, colorMax=-1, individualColorBars=False, majorData='counts',
-                   # Global Data Manipulation Options
-                   loadType='andor', window=(0, 0, 0, 0), smartWindow=False, xMin=0, xMax=0, yMin=0, yMax=0,
-                   accumulations=1, key=arr([]), zeroCorners=False, dataRange=(0, 0), manualAccumulation=False,
-                   # Local Data Manipulation Options
-                   plottedData=None, bg=arr([0]), location=(-1, -1), fitBeamWaist=False, fitPics=False,
-                   cameraType='dataray', fitWidthGuess=80):
+def old_atEndOfStandardImages():
     """
-    This function analyzes and plots fits pictures. It does not know anything about atoms,
-    it just looks at pixels or integrates regions of the picture. It is commonly used, to look at background noise
-    or the MOT.
-    :return key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams
-    ### Required parameters
-    :param data: the number of the fits file and (by default) the number of the key file. The function knows where to
-        look for the file with the corresponding name. Alternatively, an array of pictures to be used directly.
-    ### Cosmetic parameters
-    * Change the way the data is diplayed, but not how it is analyzed.
-    :param scanType: a string which characterizes what was scanned during the run. Depending on this string, axis names
-        are assigned to the axis of the plots produced by this function. This parameter, if it is to do
-        anything, must be one of a defined list of types, which can be looked up in the getLabels function.
-    :param xLabel: Specify the xlabel that appears on the plots. Will override an xlabel specified by the scan type,
-        but leave other scanType options un-marred.
-    :param plotTitle: Specify the title that appears on the plots. Will override a title specified by the scan type,
-        but leave other scanType options un-marred.
-    :param convertKey: For frequency scans. If this is true, use the dacToFrequency conversion constants declared in the
-        constants section of the base notebook to convert the key into frequency units instead of voltage
-        units. This should probably eventually be expanded to handle other conversions as well.
     :param showPictures: if this is True, show all of the pictures taken during the experiment.
     :param showPlot: if this is true, the function plots the integrated or point data. This would only be false if you
         justwant the data arrays to do data visualization yourself.
@@ -118,172 +92,14 @@ def standardImages(data,
     :param bigPics: if this is true, then when the pictures are shown, instead of compressing the pictures to all fit
         in a reasonably sized figure, each picture gets its own figure. allThePics must be false, showPictures must
         be true.
-    :param colorMax: by default the colorbars in the displayed pictures are chosen to range from the minimum value in
-        the pic to the maximum value. If this is set, then instead you can specify an offset for the maximum (e.g. -5
-        for 5th highest value in the picture). This is usefull, e.g. if cosmic rays are messing with your pictures.
-    :param individualColorBars: by default, the pictures are all put on the same colorbar for comparison. If this is
-        true, each picture gets its own colorbar, which can make it easier to see features in each individual picture,
-        but generally makes comparison between pictures harder.
-    :param majorData: (expects one of 'counts', 'fits') Identifies the data to appear in the big plot, the other gets
-        shown in the small plot.
-    ### GLOBAL Data Manipulation Options
-    * these manipulate all the data that is analyzed and plotted.
-    :param manualAccumulation: manually add together "accumulations" pictures together to form accumulated pictures for
-        pictures for analysis.
-    :param cameraType: determines scaling of pixels
-    :param loadType: (expects one of 'fits', 'dataray', 'basler') determines the loading function used to load the image
-        data.
-    :param window: (expects format (xMin, xMax, yMin, xMax)). Specifies a window of the picture to be analyzed in lieu
-        of the entire picture. This command overrides the individual arguments (e.g. xMin) if both are present. The
-        rest of the picture is completely discarded and not used for any data analysis, e.g. fitting. This defaults to
-        cover the entire picture
-    :param xMin:
-    :param yMax:
-    :param yMin:
-    :param xMax: Specify a particular bound on the image to be analyzed; other parameters are left
-        untouched. See above description of the window parameter. These default to cover
-        the entire picture.
-    :param accumulations: If using accumulation mode on the Andor, set this parameter to the number of accumulations per
-        image so that the data can be properly normalized for comparison to other pictures, backgrounds, etc.
-        Defaults to 1.
-    :param key: give the function a custom key. By default, the function looks for a key in the raw data file, but
-        sometimes scans are done without the master code specifying the key.
-    :param zeroCorners: If this is true, average the four corners of the picture and subtract this average from every
-        picture. This applies to the raw, -bg, and -avg data. for the latter two, the average is calculated and
-        subtracted after the bg or avg is subtracted.
-    :param dataRange: Specify which key values to analyze. By default, analyze all of them. (0,-1) will drop the last
-        key value, etc.
-    :param smartWindow: Not properly implemented at the moment.
-    ### LOCAL Data Manipulation Parameters
-    * These add extra analysis or change certain parts of the data analysis while leaving other parts intact.
-    :param fitWidthGuess: a manual guess for the threshold fit.
-    :param plottedData: (can include "raw", "-bg", and or "-avg") An array of strings which tells the function which
-        data to plot. Can be used to plot multiple sets of data simultaneously, if needed. Defaults to raw. If only
-        a single set is plotted, then that set is also shown in the pictures. In the case that multiple are
-        shown, it's a bit funny right now.
-    :param bg: A background picture, or a constant value, which is subtracted from each picture.
-        defaults to subtracting nothing.
-    :param location: Specify a specific pixel to be analyzed instead of the whole picture.
-    :param fitPics: Attempt a 2D gaussian fit to each picture.
-    :param fitBeamWaist: Don't think this works yet. The idea is that if gaussianFitPics is also true, then you can
-    use this        to fit a gaussian beam profile to the expanding gaussian fits. This could be useful, e.g. when
-        calibrating the camera position.
+
     """
-    if plottedData is None:
-        plottedData = ["raw"]
-    # Check for incompatible parameters.
-    if bigPics and allThePics:
-        raise ValueError("ERROR: can't use both bigPics and allThePics.")
-    if fitBeamWaist and not fitPics:
-        raise ValueError(
-            "ERROR: Can't use fitBeamWaist and not fitPics! The fitBeamWaist attempts to use the fit values "
-            "found by the gaussian fits.")
     if bigPics and not showPictures:
         raise ValueError("Can't show bigPics if not showPics!")
     if allThePics and not showPictures:
         raise ValueError("Can't show allThePics if not showPics!")
-    # the key
-    if key.size == 0:
-        origKey, keyName = loadDetailedKey(data)
-    else:
-        origKey = key
-    # this section could be expanded to handle different types of conversions.
-    if convertKey:
-        a = consts.opBeamDacToVoltageConversionConstants
-        key = [a[0] + x * a[1] + x ** 2 * a[2] + x ** 3 * a[3] for x in origKey]
-    else:
-        # both keys the same.
-        key = origKey
-    if len(key) == 0:
-        raise RuntimeError('key was empty!')
-
-    """ ### Handle data ### 
-    If the corresponding inputs are given, all data gets...
-    - normalized for accumulations
-    - normalized using the normData array
-    - like values in the key & data are averaged
-    - key and data is ordered in ascending order.
-    - windowed.
-    """
-    if type(data) == int or (type(data) == np.array and type(data[0]) == int):
-        if loadType == 'andor':
-            rawData, _, _, _ = loadHDF5(data)
-        elif loadType == 'scout' or  loadType == 'ace':
-            rawData = loadCompoundBasler(data, loadType)
-        elif loadType == 'dataray':
-            raise ValueError('Loadtype of "dataray" has become deprecated and needs to be reimplemented.')
-        else:
-            raise ValueError('Bad value for LoadType.')
-    else:
-        # assume the user inputted a picture or array of pictures.
-        print('Assuming input is a picture or array of pictures.')
-        rawData = data
-    print('Data Loaded.')
-    res = processImageData(key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulations, dataRange, zeroCorners,
-                                smartWindow, manuallyAccumulate=manualAccumulation)
-    key, rawData, dataMinusBg, dataMinusAvg, avgPic = res
-    
-    if fitPics:
-        # should improve this to handle multiple sets.
-        if '-bg' in plottedData:
-            print('fitting background-subtracted data.')
-            pictureFitParams, pictureFitErrors = fitPictures(dataMinusBg, range(len(key)), guessSigma_x=fitWidthGuess,
-                                                             guessSigma_y=fitWidthGuess)
-        elif '-avg' in plottedData:
-            print('fitting average-subtracted data.')
-            pictureFitParams, pictureFitErrors = fitPictures(dataMinusAvg, range(len(key)), guessSigma_x=fitWidthGuess,
-                                                             guessSigma_y=fitWidthGuess)
-        else:
-            print('fitting raw data.')
-            pictureFitParams, pictureFitErrors = fitPictures(rawData, range(len(key)), guessSigma_x=fitWidthGuess,
-                                                             guessSigma_y=fitWidthGuess)
-    else:
-        pictureFitParams, pictureFitErrors = np.zeros((len(key), 7)), np.zeros((len(key), 7))
-
-    # convert to normal optics convention. the equation uses gaussian as exp(x^2/2sigma^2), I want the waist,
-    # which is defined as exp(2x^2/waist^2):
-    waists = 2 * abs(arr([pictureFitParams[:, 3], pictureFitParams[:, 4]]))
-    positions = arr([pictureFitParams[:, 1], pictureFitParams[:, 2]])
-    if cameraType == 'dataray':
-        pixelSize = consts.dataRayPixelSize
-    elif cameraType == 'andor':
-        pixelSize = consts.andorPixelSize
-    elif cameraType == 'ace':
-        pixelSize = consts.baslerAcePixelSize
-    elif cameraType == 'scout':
-        pixelSize = consts.baslerScoutPixelSize
-    else:
-        raise ValueError("Error: Bad Value for 'cameraType'.")
-    waists *= pixelSize
-    positions *= pixelSize
-    # average of the two dimensions
-    avgWaists = []
-    for pair in np.transpose(arr(waists)):
-        avgWaists.append((pair[0] + pair[1]) / 2)
-    if fitBeamWaist:
-        try:
-            waistFitParamsX, waistFitErrsX = fitGaussianBeamWaist(waists[0], key, 850e-9)
-            waistFitParamsY, waistFitErrsY = fitGaussianBeamWaist(waists[1], key, 850e-9)
-            waistFitParams = [waistFitParamsX, waistFitParamsY]
-            # assemble the data structures for plotting.
-            countData, fitData = assemblePlotData(rawData, dataMinusBg, dataMinusAvg, positions, waists,
-                                                  plottedData, scanType, xLabel, plotTitle, location,
-                                                  waistFits=waistFitParams, key=key)
-        except RuntimeError:
-            print('gaussian waist fit failed!')
-            # assemble the data structures for plotting.
-            countData, fitData = assemblePlotData(rawData, dataMinusBg, dataMinusAvg, positions, waists,
-                                                  plottedData, scanType, xLabel, plotTitle, location)
-    else:
-        # assemble the data structures for plotting.
-        countData, fitData = assemblePlotData(rawData, dataMinusBg, dataMinusAvg, positions, waists,
-                                              plottedData, scanType, xLabel, plotTitle, location)
-    if majorData == 'counts':
-        majorPlotData, minorPlotData = countData, fitData
-    elif majorData == 'fits':
-        minorPlotData, majorPlotData = countData, fitData
-    else:
-        raise ValueError("incorect 'majorData' argument")
+    if bigPics and allThePics:
+        raise ValueError("ERROR: can't use both bigPics and allThePics.")
     if showPlot:
         plotPoints(key, majorPlotData, minorPlot=minorPlotData, picture=avgPic, picTitle="Average Picture")
     if showPlot and showPictures:
@@ -314,7 +130,6 @@ def standardImages(data,
                 else:
                     showPics(dataMinusAvg, key, fitParameters=pictureFitParams, colorMax=colorMax,
                              individualColorBars=individualColorBars)
-    return key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, pictureFitErrors
 
 
 def plotMotTemperature(data, magnification=3, **standardImagesArgs):
@@ -347,7 +162,7 @@ def plotMotTemperature(data, magnification=3, **standardImagesArgs):
     print("MOT Temperature (simple (don't trust?)):", simpleTemp * 1e6, 'uK')
 
     
-def plotNewMotTemperature(data, magnification=3, **standardImagesArgs):
+def plotNewMotTemperature(data, key=None, magnification=3, **standardImagesArgs):
     """
     Calculate the mot temperature, and plot the data that led to this.
 
@@ -355,14 +170,7 @@ def plotNewMotTemperature(data, magnification=3, **standardImagesArgs):
     :param standardImagesArgs: see the standardImages function to see the acceptable arguments here.
     :return:
     """
-    res = standardImages(data, showPictures=False, showPlot=False, scanType="Time(ms)", majorData='fits', 
-                         loadType='scout', fitPics=True, manualAccumulation=True, **standardImagesArgs)
-    (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, fitCov) = res
-    # convert to meters
-    waists = 2 * consts.baslerScoutPixelSize * abs(pictureFitParams[:, 3]) * magnification
-    # convert to s
-    times = key / 1000
-    temp, fitVals, fitCov = newCalcMotTemperature(times, waists / 2)
+    temp, fitVals, fitCov, times, waists, rawData, pictureFitParams = ah.temperatureAnalysis(data, magnification, key=key, **standardImagesArgs)
     errs = np.sqrt(np.diag(fitCov))
     f, ax = subplots()
     ax.plot(times, waists, 'bo', label='Raw Data Waist')
@@ -370,7 +178,7 @@ def plotNewMotTemperature(data, magnification=3, **standardImagesArgs):
     ax.yaxis.label.set_color('c')
     ax.grid(True,color='b')
     ax2 = ax.twinx()
-    ax2.plot(times, pictureFitParams[:, 0], 'ro:', label='Fit Amplitude (counts)')
+    ax2.plot(times, pictureFitParams[:, 0], 'ro:', marker='*', label='Fit Amplitude (counts)')
     ax2.yaxis.label.set_color('r')
     ax.set_title('Measured atom cloud size over time')
     ax.set_xlabel('Time (s)')
@@ -379,14 +187,12 @@ def plotNewMotTemperature(data, magnification=3, **standardImagesArgs):
     ax2.legend()
     ax2.grid(True,color='r')
     showPics(rawData, key, fitParameters=pictureFitParams)
-    print('')
-    print("PGC Temperture (Large Laser Beam Approximation):", temp * 1e6, '(', errs[2]*1e6, ')', 'uK')
+    print("\nTemperture in the Large Laser Beam Approximation:", misc.errString(temp * 1e6, errs[2]*1e6), 'uK')
     print('Fit-Parameters:', fitVals)
+    return pictureFitParams,rawData
+
     
-    
-def plotMotNumberAnalysis(dataSetNumber, motKey, exposureTime, window=(0, 0, 0, 0), cameraType='scout',
-                          showStandardImages=False, sidemotPower=2.05, diagonalPower=8, motRadius=8 * 8e-6,
-                          imagingLoss=0.8, detuning=10e6):
+def plotMotNumberAnalysis(dataSetNumber, motKey, exposureTime,  *fillAnalysisArgs):
     """
     Calculate the MOT number and plot the data that resulted in the #.
 
@@ -407,30 +213,19 @@ def plotMotNumberAnalysis(dataSetNumber, motKey, exposureTime, window=(0, 0, 0, 
     :param imagingLoss: the loss in the imaging path due to filtering, imperfect reflections, etc.
     :param detuning: detuning of the mot beams during the imaging.
     """
-    _, rawData, _, _, _, _ = standardImages(dataSetNumber, key=motKey, scanType="time (s)",
-                                            window=window, loadType=cameraType, showPlot=showStandardImages)
-    intRawData = integrateData(rawData)
-    try:
-        # its always an exponential saturation fit for this data.
-        popt, pcov = fit(fitFunc.exponentialSaturation, motKey, intRawData, p0=[np.min(intRawData) - np.max(intRawData),
-                                                                                1 / 2, np.max(intRawData)])
-    except RuntimeError:
-        print('MOT # Fit failed!')
-        # probably failed because of a bad guess. Show the user the guess fit to help them debug.
-        popt = [np.min(intRawData) - np.max(intRawData), 1 / 2, np.max(intRawData)]
+    rawData, intRawData, motnumber, fitParams, fluorescence = ah.motFillAnalysis(dataSetNumber, motKey, exposureTime, *fillAnalysisArgs)
     figure()
     plot(motKey, intRawData, 'bo', label='data', color='b')
     xfitPts = np.linspace(min(motKey), max(motKey), 1000)
-    plot(xfitPts, fitFunc.exponentialSaturation(xfitPts, *popt), 'b-', label='fit', color='r', linestyle=':')
+    plot(xfitPts, exponential_saturation.f(xfitPts, *fitParams), 'b-', label='fit', color='r', linestyle=':')
     xlabel('loading time (s)')
     ylabel('integrated counts')
     title('Mot Fill Curve')
-    print("integrated saturated counts subtracting background =", -popt[0])
-    print("loading time 1/e =", popt[1], "s")
-    motNum = computeMotNumber(sidemotPower, diagonalPower, motRadius, exposureTime, imagingLoss, -popt[0],
-                              detuning=detuning)
-    print('MOT Number:', motNum)
-    return motNum
+    print("integrated saturated counts subtracting background =", -fitParams[0])
+    print("loading time 1/e =", fitParams[1], "s")
+    print('MOT Number:', motnumber)
+    print('Light Scattered off of full MOT:', fluorescence * consts.h * consts.Rb87_D2LineFrequency * 1e9, "nW")
+    return motnumber
 
 
 def atomHist(key, atomLocs, pic1Data, bins, binData, fitVals, thresholds, avgPic, atomCount, variationNumber):
@@ -833,9 +628,10 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     This routine is designed for analyzing experiments with only one picture per cycle. Typically
     These are loading exeriments, for example. There's no survival calculation.
     """
+    res = standardPopulationAnalysis(fileNum, atomLocations, whichPic, picsPerRep, **StandardArgs)
     (pic1Data, thresholds, avgPic, key, loadRateErr, loadRate, avgLoadRate, avgLoadErr, fits,
-     fitModule, keyName, totalPic1AtomData, rawData, atomLocations, 
-     avgFits, atomImages, gaussFitVals) = standardPopulationAnalysis(fileNum, atomLocations, whichPic, picsPerRep, **StandardArgs)
+     fitModule, keyName, totalPic1AtomData, rawData, atomLocations,  avgFits, atomImages, 
+     gaussFitVals, totalAvg, totalErr) = res
     colors, _ = getColors(len(atomLocations) + 1)
     if not show:
         return key, loadRate, loadRateErr, pic1Data, atomImages, thresholds,avgLoadRate
@@ -902,7 +698,8 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         rotateTicks(mainPlot)
         titletxt = keyName + " Atom " + typeName + " Scan"
         if len(loadRate[0]) == 1:
-            titletxt = keyName + " Atom " + typeName + " Point.\n Avg " + typeName + "% = " + errString(np.mean(avgLoadRate), np.mean(avgLoadErr) ) 
+            print(avgLoadErr)
+            titletxt = keyName + " Atom " + typeName + " Point.\n Avg " + typeName + "% = " + errString(totalAvg, totalErr ) 
         mainPlot.set_title(titletxt, fontsize=30)
         mainPlot.set_ylabel("S %", fontsize=20)
         mainPlot.set_xlabel(keyName, fontsize=20)
@@ -1018,7 +815,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
             for thresh in row:
                 f.write(str(thresh) + ' ') 
     """
-    return key, loadRate, loadRateErr, pic1Data, atomImages, thresholds, gaussFitVals, totalPic1AtomData
+    return {'Key': key, 'Loading': loadRate, 'Loading_Error': loadRateErr, 'Pixel_Counts':pic1Data, 'Atom_Images':atomImages, 'Thresholds':thresholds, 'Threshold_Gaussian_Fits:':gaussFitVals, 'Continuous_Pixel_Counts':totalPic1AtomData, 'Raw_Data':rawData}
 
 
 def Assembly(fileNumber, atomLocs1, pic1Num, partialCredit=False, **standardAssemblyArgs):
@@ -1342,7 +1139,7 @@ def showPicComparisons(data, key, fitParameters=np.array([])):
         fig.suptitle(str(key[inc]))
 
 
-def showBigPics(data, key, fitParameters=np.array([]), individualColorBars=False, colorMax=-1):
+def showBigPics(data, key, fitParams=np.array([]), individualColorBars=False, colorMax=-1):
     """
     formerly the "bigPictures" option.
 
@@ -1371,9 +1168,9 @@ def showBigPics(data, key, fitParameters=np.array([]), individualColorBars=False
         im = pcolormesh(picture, vmin=minimum, vmax=maximum)
         axis('off')
         title(str(round_sig(key[count], 4)), fontsize=8)
-        if fitParameters.size != 0:
-            if (fitParameters[count] != np.zeros(len(fitParameters[count]))).all():
-                data_fitted = fitFunc.gaussian_2D((x, y), *fitParameters[count])
+        if fitParams.size != 0:
+            if (fitParams[count] != np.zeros(len(fitParams[count]))).all():
+                data_fitted = fitFunc.gaussian_2D((x, y), *fitParams[count])
                 try:
                     contour(x, y, data_fitted.reshape(picture.shape[0], picture.shape[1]), 2, colors='w', alpha=0.35,
                             linestyles="dashed")
@@ -1385,36 +1182,18 @@ def showBigPics(data, key, fitParameters=np.array([]), individualColorBars=False
         fig.colorbar(im, cax=cax)
 
 
-def showPics(data, key, fitParameters=np.array([]), individualColorBars=False, colorMax=-1):
-    """
-    formerly the default option.
-
-    :param data:
-    :param key:
-    :param fitParameters:
-    :param individualColorBars:
-    :param colorMax:
-    :return:
-    """
-    # if data.ndim != 3:
-    #    raise ValueError("Incorrect dimensions for data input to show pics if you don't want individual pics.")
+def showPics(data, key, fitParams=np.array([]), indvColorBars=False, colorMax=-1):
     num = len(data)
     gridsize1, gridsize2 = (0, 0)
     for i in range(100):
         if i*i >= num:
             gridsize1 = i
-            if i*(i-1) >= num:
-                gridsize2 = i-1
-            else:
-                gridsize2 = i
+            gridsize2 = i-1 if i*(i-1) >= num else i
             break
     fig, plts = subplots(gridsize2, gridsize1, figsize=(15, 10))
     fig2, plts2 = subplots(gridsize2, gridsize1, figsize=(15, 10))
-    count = 0
-    rowCount = 0
-    picCount = 0
-    maximum = sorted(data.flatten())[colorMax]
-    minimum = min(data.flatten())
+    rowCount, picCount, count = 0,0,0
+    maximum, minimum = sorted(data.flatten())[colorMax], min(data.flatten())
     # get picture fits & plots
     for row in plts:
         for _ in row:
@@ -1423,33 +1202,29 @@ def showPics(data, key, fitParameters=np.array([]), individualColorBars=False, c
                 count += 1
                 picCount += 1
                 continue
-            picture = data[count]
-            if individualColorBars:
-                maximum = max(picture.flatten())
-                minimum = min(picture.flatten())
-            x = np.linspace(1, picture.shape[1], picture.shape[1])
-            y = np.linspace(1, picture.shape[0], picture.shape[0])
+            pic = data[count]
+            if indvColorBars:
+                maximum, minimum = max(pic.flatten()), min(pic.flatten())
+            y, x = [np.linspace(1, pic.shape[i], pic.shape[i]) for i in range(2)]
             x, y = np.meshgrid(x, y)
-            im = plts[rowCount, picCount].imshow( picture, origin='bottom', extent=(x.min(), x.max(), y.min(), y.max()),
+            im = plts[rowCount, picCount].imshow( pic, origin='bottom', extent=(x.min(), x.max(), y.min(), y.max()),
                                                   vmin=minimum, vmax=maximum )
             plts[rowCount, picCount].axis('off')
             plts[rowCount, picCount].set_title(str(round_sig(key[count], 4)), fontsize=8)
-            if fitParameters.size != 0:
-                if (fitParameters[count] != np.zeros(len(fitParameters[count]))).all():
-                    # data_fitted = gaussian_2D((x, y), *fitParameters[count])
+            if fitParams.size != 0:
+                if (fitParamefitParamsters[count] != np.zeros(len(fitParams[count]))).all():
                     try:
-                        ellipse = Ellipse(xy=(fitParameters[count][1], fitParameters[count][2]),
-                                          width=2*fitParameters[count][3], height=2*fitParameters[count][4],
-                                          angle=fitParameters[count][5], edgecolor='r', fc='None', lw=2, alpha=0.2)
+                        ellipse = Ellipse(xy=(fitParams[count][1], fitParams[count][2]),
+                                          width=2*fitParams[count][3], height=2*fitParams[count][4],
+                                          angle=-fitParams[count][5]*180/np.pi, edgecolor='r', fc='None', lw=2, alpha=0.2)
                         plts[rowCount, picCount].add_patch(ellipse)
                     except ValueError:
                         pass
                 plts2[rowCount,picCount].grid(0)
-                x, y = np.arange(0,len(picture[0])), np.arange(0,len(picture))
+                x, y = np.arange(0,len(pic[0])), np.arange(0,len(pic))
                 X, Y = np.meshgrid(x,y)
-                vals = gaussian_2d.f((X,Y), *fitParameters[count])
-                vals = np.reshape(vals, picture.shape)
-                im2 = plts2[rowCount,picCount].imshow(picture-vals, vmin=-2, vmax=2, origin='bottom',
+                vals = np.reshape(gaussian_2d.f((X,Y), *fitParams[count]), pic.shape)
+                im2 = plts2[rowCount,picCount].imshow(pic-vals, vmin=-2, vmax=2, origin='bottom',
                                                      extent=(x.min(), x.max(), y.min(), y.max()))
                 plts2[rowCount,picCount].axis('off')
                 plts2[rowCount,picCount].set_title(str(round_sig(key[count], 4)), fontsize=8)

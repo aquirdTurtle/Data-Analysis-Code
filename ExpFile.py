@@ -53,16 +53,23 @@ class ExpFile:
     
     def __enter__(self):
         return self
+
     
     def __exit__(self, exc_type, exc_value, traceback):
-        return self.f.close()
+        try:
+            return self.f.close()
+        except AttributeError:
+            return
             
-    def open_hdf5(self, fileID=None):
+    
+    def open_hdf5(self, fileID=None, useBase=False):
         
         if type(fileID) == int:
             path = self.data_addr + "data_" + str(fileID) + ".h5"
-        else:
+        elif useBase:
             # assume a file address itself
+            path = self.data_addr + fileID + ".h5"
+        else:
             path = fileID
         file = h5.File(path, 'r')
         self.f = file

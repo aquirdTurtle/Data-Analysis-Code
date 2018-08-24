@@ -15,19 +15,49 @@ from warnings import warn
 
 from matplotlib.pyplot import *
 
-from scipy.optimize import minimize, basinhopping, curve_fit
+import scipy.optimize as opt
+#from scipy.optimize import minimize, basinhopping, curve_fit
 import scipy.special as special
 import scipy.interpolate as interp
 
 import MarksConstants as consts
 from Miscellaneous import transpose, round_sig, round_sig_str
 from copy import deepcopy
-from fitters import double_gaussian, cython_poissonian as poissonian, FullBalisticMotExpansion, LargeBeamMotExpansion
+from fitters import (double_gaussian, cython_poissonian as poissonian, 
+                    FullBalisticMotExpansion, LargeBeamMotExpansion, gaussian_2d, exponential_saturation)
+
+import MainAnalysis as ma
+#import MatplotlibPlotters as mp
 
 from ExpFile import ExpFile, dataAddress
 from TimeTracker import TimeTracker
 
-import FittingFunctions as fitFunc
+
+def temperatureAnalysis( data, magnification, **standardImagesArgs ):
+    res = ma.standardImages(data, scanType="Time(ms)", majorData='fits', fitPics=True, manualAccumulation=True, **standardImagesArgs)
+    (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, fitCov) = res
+    # convert to meters
+    waists = 2 * consts.baslerScoutPixelSize * np.sqrt((pictureFitParams[:, 3]**2+pictureFitParams[:, 4]**2)/2) * magnification
+    # convert to s
+    times = key / 1000
+    temp, fitVals, fitCov = newCalcMotTemperature(times, waists / 2)
+    return temp, fitVals, fitCov, times, waists, rawData, pictureFitParams
+
+
+def motFillAnalysis( dataSetNumber, motKey, exposureTime, window=(0,0,0,0), sidemotPower=2.05, diagonalPower=8, motRadius=8 * 8e-6,
+                     imagingLoss=0.8, detuning=10e6 ):
+    rawData = ma.standardImages(dataSetNumber, key=motKey, scanType="time (s)", window=window, quiet=True)[1]
+    intRawData = integrateData(rawData)
+    try:
+        fitParams, pcov = opt.curve_fit( exponential_saturation.f, motKey, intRawData,
+                                   p0=[np.min(intRawData) - np.max(intRawData), 1 / 2, np.max(intRawData)] )
+    except RuntimeError:
+        print('MOT # Fit failed!')
+        # probably failed because of a bad guess. Show the user the guess fit to help them debug.
+        popt = [np.min(intRawData) - np.max(intRawData), 1 / 2, np.max(intRawData)]
+    motNum, fluorescence = computeMotNumber(sidemotPower, diagonalPower, motRadius, exposureTime, imagingLoss, -fitParams[0],
+                              detuning=detuning)
+    return rawData, intRawData, motNum, fitParams, fluorescence
 
 
 def getTodaysTemperatureData():
@@ -310,10 +340,10 @@ def fitWithClass(fitClass, key, vals, errs=None):
             print('Not enough data points to constrain a fit!')
             raise RuntimeError()
         if errs is not None:
-            fitValues, fitCovs = curve_fit(fitClass.f, key, vals, p0=[fitClass.guess(key, vals)], sigma=errs,
+            fitValues, fitCovs = opt.curve_fit(fitClass.f, key, vals, p0=[fitClass.guess(key, vals)], sigma=errs,
                                      absolute_sigma=True)
         else:
-            fitValues, fitCovs = curve_fit(fitClass.f, key, vals, p0=[fitClass.guess(key, vals)])
+            fitValues, fitCovs = opt.curve_fit(fitClass.f, key, vals, p0=[fitClass.guess(key, vals)])
         fitErrs = np.sqrt(np.diag(fitCovs))
         corr_vals = unc.correlated_values(fitValues, fitCovs)
         fitUncObject = fitClass.f_unc(xFit, *corr_vals)
@@ -601,13 +631,14 @@ def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1):
     x, y = np.meshgrid(x, y)
     initial_guess = [np.max(pic) - np.min(pic), pos[1], pos[0], guessSigma_x, guessSigma_y, 0, np.min(pic)]
     try:
-        popt, pcov = curve_fit(fitFunc.gaussian_2D, (x, y), pic, p0=initial_guess, maxfev=2000)
+        popt, pcov = opt.curve_fit(gaussian_2d.f, (x, y), pic, p0=initial_guess)#, maxfev=2000)
     except RuntimeError:
         popt = np.zeros(len(initial_guess))
         pcov = np.zeros((len(initial_guess), len(initial_guess)))
         warn('Fit Pic Failed!')
+        
     if showFit:
-        data_fitted = fitFunc.gaussian_2D((x, y), *popt)
+        data_fitted = gaussian_2d.f((x, y), *popt)
         fig, ax = subplots(1, 1)
         grid('off')
         im = ax.pcolormesh(picture, extent=(x.min(), x.max(), y.min(), y.max()))
@@ -653,9 +684,8 @@ def fitPictures(pictures, dataRange, guessSigma_x=1, guessSigma_y=1):
 
 
 def fitDoubleGaussian(binCenters, binnedData, fitGuess):
-    from scipy.optimize import curve_fit
     try:
-        fitVals, fitCovNotUsed = curve_fit( lambda x, a1, a2, a3, a4, a5, a6:
+        fitVals, fitCovNotUsed = opt.curve_fit( lambda x, a1, a2, a3, a4, a5, a6:
                                             double_gaussian.f(x, a1, a2, a3, a4, a5, a6, 0),
                                             binCenters, binnedData, fitGuess )
     except:
@@ -1059,7 +1089,7 @@ def computeScatterRate(totalIntensity, D2Line_Detuning):
     :param totalIntensity: the total intensity (from all beams) shining on the atoms.
     :param D2Line_Detuning: the detuning, in Hz, of the light shining on the atoms from the D2 transition.
     """
-    isat = consts.Rb87_I_ResonantIsotropicSaturationIntensity
+    isat = consts.Rb87_I_Sat_ResonantIsotropic_2_to_3
     rate = (consts.Rb87_D2Gamma / 2) * (totalIntensity / isat) / (1 + 4 * (D2Line_Detuning / consts.Rb87_D2Gamma) ** 2
                                                                   + totalIntensity / isat)
     return rate
@@ -1120,16 +1150,15 @@ def computeMotNumber(sidemotPower, diagonalPower, motRadius, exposure, imagingLo
     imagingLensFocalLength = 10
     fluorescence = computeFlorescence(greyscaleReading, imagingLoss, imagingLensDiameter, imagingLensFocalLength,
                                       exposure)
-    print('Light Scattered off of full MOT:', fluorescence * consts.h * consts.Rb87_D2LineFrequency * 1e9, "nW")
     motNumber = fluorescence / rate
-    return motNumber
+    return motNumber, fluorescence
 
 
 def newCalcMotTemperature(times, sigmas):
     """ Small wrapper around a fit 
     return temp, vals, cov
     """
-    fitVals, fitCovariances = curve_fit(LargeBeamMotExpansion.f, times, sigmas, p0=LargeBeamMotExpansion.guess())
+    fitVals, fitCovariances = opt.curve_fit(LargeBeamMotExpansion.f, times, sigmas, p0=LargeBeamMotExpansion.guess())
     return fitVals[2], fitVals, fitCovariances
 
 
@@ -1149,8 +1178,8 @@ def calcMotTemperature(times, sigmas):
     # sigma_I /= np.cos(2*pi/3)
     sigma_I /= np.cos(consts.pi/4)
     sigma_I = 100
-    fitVals, fitCovariances = curve_fit(lambda x, a, b: ballisticMotExpansion(x, a, b, sigma_I), times, sigmas, p0=guess)
-    simpleVals, simpleCovariances = curve_fit(simpleMotExpansion, times, sigmas, p0=guess)
+    fitVals, fitCovariances = opt.curve_fit(lambda x, a, b: ballisticMotExpansion(x, a, b, sigma_I), times, sigmas, p0=guess)
+    simpleVals, simpleCovariances = opt.curve_fit(simpleMotExpansion, times, sigmas, p0=guess)
     temperature = consts.Rb87_M / consts.k_B * fitVals[1]**2
     tempFromSimple = consts.Rb87_M / consts.k_B * simpleVals[1]**2
     return temperature, tempFromSimple, fitVals, fitCovariances, simpleVals, simpleCovariances
@@ -1810,7 +1839,6 @@ def processImageData(key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulat
             xMax = 0
         if yMax < 0:
             yMax = 0
-    print(rawData.shape)
     if manuallyAccumulate:
         # ignore shape[1], which is the number of pics in each variation. These are what are getting averaged.
         avgPics = np.zeros((int(rawData.shape[0] / accumulations), rawData.shape[1], rawData.shape[2]))
@@ -1901,7 +1929,7 @@ def handleFitting(fitType, key, data):
                 raise RuntimeError()
             widthGuess = np.std(key) / 2
             centerGuess = key[list(data).index(max(data))]
-            fitValues, fitCovs = curve_fit(fitFunc.quadraticBump, key, data, p0=[max(data), -1/widthGuess, centerGuess])
+            fitValues, fitCovs = opt.curve_fit(fitFunc.quadraticBump, key, data, p0=[max(data), -1/widthGuess, centerGuess])
             fitErrs = np.sqrt(np.diag(fitCovs))
             a, b, c = unc.correlated_values(fitValues, fitCovs)
             fitObject = fitFunc.quadraticBump(xFit, a, b, c)
@@ -1919,7 +1947,7 @@ def handleFitting(fitType, key, data):
             widthGuess = np.std(key) / 2
             # Get all the atoms
             centerGuess = key[list(data).index(max(data))]
-            fitValues, fitCovs = curve_fit(fitFunc.gaussian, key, data, p0=[-0.95, centerGuess, widthGuess, 0.95])
+            fitValues, fitCovs = opt.curve_fit(fitFunc.gaussian, key, data, p0=[-0.95, centerGuess, widthGuess, 0.95])
             fitErrs = np.sqrt(np.diag(fitCovs))
             a, b, c, d = unc.correlated_values(fitValues, fitCovs)
             fitObject = fitFunc.uncGaussian(xFit, a, b, c, d)
@@ -1937,7 +1965,7 @@ def handleFitting(fitType, key, data):
 
             widthGuess = np.std(key) / 2
             centerGuess = key[list(data).index(min(data))]
-            fitValues, fitCovs = curve_fit(fitFunc.gaussian, key, data, p0=[-0.95, centerGuess, widthGuess, 0.95])
+            fitValues, fitCovs = opt.curve_fit(fitFunc.gaussian, key, data, p0=[-0.95, centerGuess, widthGuess, 0.95])
             fitErrs = np.sqrt(np.diag(fitCovs))
             a, b, c, d = unc.correlated_values(fitValues, fitCovs)
             fitObject = fitFunc.uncGaussian(xFit, a, b, c, d)
@@ -1954,7 +1982,7 @@ def handleFitting(fitType, key, data):
 
             decayConstantGuess = np.std(key)
             ampGuess = data[0]
-            fitValues, fitCovs = curve_fit(fitFunc.exponentialDecay, key, data, p0=[ampGuess, decayConstantGuess])
+            fitValues, fitCovs = opt.curve_fit(fitFunc.exponentialDecay, key, data, p0=[ampGuess, decayConstantGuess])
             fitErrs = np.sqrt(np.diag(fitCovs))
             a, b = unc.correlated_values(fitValues, fitCovs)
             fitObject = fitFunc.uncExponentialDecay(xFit, a,b)
@@ -1972,7 +2000,7 @@ def handleFitting(fitType, key, data):
 
             decayConstantGuess = (np.max(key)+np.min(key))/4
             ampGuess = data[-1]
-            fitValues, fitCovs = curve_fit(fitFunc.exponentialSaturation, key, data,
+            fitValues, fitCovs = opt.curve_fit(fitFunc.exponentialSaturation, key, data,
                                      p0=[-ampGuess, decayConstantGuess, ampGuess])
             fitErrs = np.sqrt(np.diag(fitCovs))
             a, b, c = unc.correlated_values(fitValues, fitCovs)
@@ -1991,7 +2019,7 @@ def handleFitting(fitType, key, data):
             phiGuess = 0
             OmegaGuess = np.pi / np.max(key)
             # Omega is the Rabi rate
-            fitValues, fitCovs = curve_fit(fitFunc.RabiFlop, key, data, p0=[ampGuess, OmegaGuess, phiGuess])
+            fitValues, fitCovs = opt.curve_fit(fitFunc.RabiFlop, key, data, p0=[ampGuess, OmegaGuess, phiGuess])
             fitErrs = np.sqrt(np.diag(fitCovs))
             a, b, c = unc.correlated_values(fitValues, fitCovs)
             fitObject = fitFunc.uncRabiFlop(xFit, a, b, c)

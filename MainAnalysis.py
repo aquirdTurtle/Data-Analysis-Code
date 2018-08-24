@@ -16,6 +16,205 @@ from ExpFile import ExpFile
 from TimeTracker import TimeTracker
 
 
+def standardImages(data, 
+                   # Cosmetic Parameters
+                   scanType="", xLabel="", plotTitle="", convertKey=False, 
+                   colorMax=-1, individualColorBars=False, majorData='counts',
+                   # Global Data Manipulation Options
+                   loadType='andor', window=(0, 0, 0, 0), smartWindow=False, xMin=0, xMax=0, yMin=0, yMax=0,
+                   accumulations=1, key=arr([]), zeroCorners=False, dataRange=(0, 0), manualAccumulation=False,
+                   # Local Data Manipulation Options
+                   plottedData=None, bg=arr([0]), location=(-1, -1), fitBeamWaist=False, fitPics=False,
+                   cameraType='dataray', fitWidthGuess=80, quiet=False):
+    """
+    This function analyzes and plots fits pictures. It does not know anything about atoms,
+    it just looks at pixels or integrates regions of the picture. It is commonly used, to look at background noise
+    or the MOT.
+    :return key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams
+    ### Required parameters
+    :param data: the number of the fits file and (by default) the number of the key file. The function knows where to
+        look for the file with the corresponding name. Alternatively, an array of pictures to be used directly.
+    ### Cosmetic parameters
+    * Change the way the data is diplayed, but not how it is analyzed.
+    :param scanType: a string which characterizes what was scanned during the run. Depending on this string, axis names
+        are assigned to the axis of the plots produced by this function. This parameter, if it is to do
+        anything, must be one of a defined list of types, which can be looked up in the getLabels function.
+    :param xLabel: Specify the xlabel that appears on the plots. Will override an xlabel specified by the scan type,
+        but leave other scanType options un-marred.
+    :param plotTitle: Specify the title that appears on the plots. Will override a title specified by the scan type,
+        but leave other scanType options un-marred.
+    :param convertKey: For frequency scans. If this is true, use the dacToFrequency conversion constants declared in the
+        constants section of the base notebook to convert the key into frequency units instead of voltage
+        units. This should probably eventually be expanded to handle other conversions as well.
+    :param colorMax: by default the colorbars in the displayed pictures are chosen to range from the minimum value in
+        the pic to the maximum value. If this is set, then instead you can specify an offset for the maximum (e.g. -5
+        for 5th highest value in the picture). This is usefull, e.g. if cosmic rays are messing with your pictures.
+    :param individualColorBars: by default, the pictures are all put on the same colorbar for comparison. If this is
+        true, each picture gets its own colorbar, which can make it easier to see features in each individual picture,
+        but generally makes comparison between pictures harder.
+    :param majorData: (expects one of 'counts', 'fits') Identifies the data to appear in the big plot, the other gets
+        shown in the small plot.
+    ### GLOBAL Data Manipulation Options
+    * these manipulate all the data that is analyzed and plotted.
+    :param manualAccumulation: manually add together "accumulations" pictures together to form accumulated pictures for
+        pictures for analysis.
+    :param cameraType: determines scaling of pixels
+    :param loadType: (expects one of 'fits', 'dataray', 'basler') determines the loading function used to load the image
+        data.
+    :param window: (expects format (xMin, xMax, yMin, xMax)). Specifies a window of the picture to be analyzed in lieu
+        of the entire picture. This command overrides the individual arguments (e.g. xMin) if both are present. The
+        rest of the picture is completely discarded and not used for any data analysis, e.g. fitting. This defaults to
+        cover the entire picture
+    :param xMin:
+    :param yMax:
+    :param yMin:
+    :param xMax: Specify a particular bound on the image to be analyzed; other parameters are left
+        untouched. See above description of the window parameter. These default to cover
+        the entire picture.
+    :param accumulations: If using accumulation mode on the Andor, set this parameter to the number of accumulations per
+        image so that the data can be properly normalized for comparison to other pictures, backgrounds, etc.
+        Defaults to 1.
+    :param key: give the function a custom key. By default, the function looks for a key in the raw data file, but
+        sometimes scans are done without the master code specifying the key.
+    :param zeroCorners: If this is true, average the four corners of the picture and subtract this average from every
+        picture. This applies to the raw, -bg, and -avg data. for the latter two, the average is calculated and
+        subtracted after the bg or avg is subtracted.
+    :param dataRange: Specify which key values to analyze. By default, analyze all of them. (0,-1) will drop the last
+        key value, etc.
+    :param smartWindow: Not properly implemented at the moment.
+    ### LOCAL Data Manipulation Parameters
+    * These add extra analysis or change certain parts of the data analysis while leaving other parts intact.
+    :param fitWidthGuess: a manual guess for the threshold fit.
+    :param plottedData: (can include "raw", "-bg", and or "-avg") An array of strings which tells the function which
+        data to plot. Can be used to plot multiple sets of data simultaneously, if needed. Defaults to raw. If only
+        a single set is plotted, then that set is also shown in the pictures. In the case that multiple are
+        shown, it's a bit funny right now.
+    :param bg: A background picture, or a constant value, which is subtracted from each picture.
+        defaults to subtracting nothing.
+    :param location: Specify a specific pixel to be analyzed instead of the whole picture.
+    :param fitPics: Attempt a 2D gaussian fit to each picture.
+    :param fitBeamWaist: Don't think this works yet. The idea is that if gaussianFitPics is also true, then you can
+    use this        to fit a gaussian beam profile to the expanding gaussian fits. This could be useful, e.g. when
+        calibrating the camera position.
+    """
+    if plottedData is None:
+        plottedData = ["raw"]
+    # Check for incompatible parameters.
+    if fitBeamWaist and not fitPics:
+        raise ValueError(
+            "ERROR: Can't use fitBeamWaist and not fitPics! The fitBeamWaist attempts to use the fit values "
+            "found by the gaussian fits.")
+
+    # the key
+    if key.size == 0:
+        origKey, keyName = loadDetailedKey(data)
+    else:
+        origKey = key
+    # this section could be expanded to handle different types of conversions.
+    if convertKey:
+        a = consts.opBeamDacToVoltageConversionConstants
+        key = [a[0] + x * a[1] + x ** 2 * a[2] + x ** 3 * a[3] for x in origKey]
+    else:
+        # both keys the same.
+        key = origKey
+    if len(key) == 0:
+        raise RuntimeError('key was empty!')
+
+    """ ### Handle data ### 
+    If the corresponding inputs are given, all data gets...
+    - normalized for accumulations
+    - normalized using the normData array
+    - like values in the key & data are averaged
+    - key and data is ordered in ascending order.
+    - windowed.
+    """
+    if type(data) == int or (type(data) == np.array and type(data[0]) == int):
+        if loadType == 'andor':
+            rawData, _, _, _ = loadHDF5(data)
+        elif loadType == 'scout' or  loadType == 'ace':
+            rawData = loadCompoundBasler(data, loadType)
+        elif loadType == 'dataray':
+            raise ValueError('Loadtype of "dataray" has become deprecated and needs to be reimplemented.')
+        else:
+            raise ValueError('Bad value for LoadType.')
+    else:
+        # assume the user inputted a picture or array of pictures.
+        if not quiet:
+            print('Assuming input is a picture or array of pictures.')
+        rawData = data
+    if not quiet:
+        print('Data Loaded.')
+    res = processImageData( key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulations, dataRange, zeroCorners,
+                            smartWindow, manuallyAccumulate=manualAccumulation )
+    key, rawData, dataMinusBg, dataMinusAvg, avgPic = res
+    if fitPics:
+        # should improve this to handle multiple sets.
+        if '-bg' in plottedData:
+            if not quiet:
+                print('fitting background-subtracted data.')
+            pictureFitParams, pictureFitErrors = fitPictures(dataMinusBg, range(len(key)), guessSigma_x=fitWidthGuess,
+                                                             guessSigma_y=fitWidthGuess)
+        elif '-avg' in plottedData:
+            if not quiet:
+                print('fitting average-subtracted data.')
+            pictureFitParams, pictureFitErrors = fitPictures(dataMinusAvg, range(len(key)), guessSigma_x=fitWidthGuess,
+                                                             guessSigma_y=fitWidthGuess)
+        else:
+            if not quiet:
+                print('fitting raw data.')
+            pictureFitParams, pictureFitErrors = fitPictures(rawData, range(len(key)), guessSigma_x=fitWidthGuess,
+                                                             guessSigma_y=fitWidthGuess*0.6)
+    else:
+        pictureFitParams, pictureFitErrors = np.zeros((len(key), 7)), np.zeros((len(key), 7))
+
+    # convert to normal optics convention. the equation uses gaussian as exp(x^2/2sigma^2), I want the waist,
+    # which is defined as exp(2x^2/waist^2):
+    waists = 2 * abs(arr([pictureFitParams[:, 3], pictureFitParams[:, 4]]))
+    positions = arr([pictureFitParams[:, 1], pictureFitParams[:, 2]])
+    if cameraType == 'dataray':
+        pixelSize = consts.dataRayPixelSize
+    elif cameraType == 'andor':
+        pixelSize = consts.andorPixelSize
+    elif cameraType == 'ace':
+        pixelSize = consts.baslerAcePixelSize
+    elif cameraType == 'scout':
+        pixelSize = consts.baslerScoutPixelSize
+    else:
+        raise ValueError("Error: Bad Value for 'cameraType'.")
+    waists *= pixelSize
+    positions *= pixelSize
+    # average of the two dimensions
+    avgWaists = []
+    for pair in np.transpose(arr(waists)):
+        avgWaists.append((pair[0] + pair[1]) / 2)
+    if fitBeamWaist:
+        try:
+            waistFitParamsX, waistFitErrsX = fitGaussianBeamWaist(waists[0], key, 850e-9)
+            waistFitParamsY, waistFitErrsY = fitGaussianBeamWaist(waists[1], key, 850e-9)
+            waistFitParams = [waistFitParamsX, waistFitParamsY]
+            # assemble the data structures for plotting.
+            countData, fitData = assemblePlotData(rawData, dataMinusBg, dataMinusAvg, positions, waists,
+                                                  plottedData, scanType, xLabel, plotTitle, location,
+                                                  waistFits=waistFitParams, key=key)
+        except RuntimeError:
+            print('gaussian waist fit failed!')
+            # assemble the data structures for plotting.
+            countData, fitData = assemblePlotData(rawData, dataMinusBg, dataMinusAvg, positions, waists,
+                                                  plottedData, scanType, xLabel, plotTitle, location)
+    else:
+        # assemble the data structures for plotting.
+        countData, fitData = assemblePlotData(rawData, dataMinusBg, dataMinusAvg, positions, waists,
+                                              plottedData, scanType, xLabel, plotTitle, location)
+    if majorData == 'counts':
+        majorPlotData, minorPlotData = countData, fitData
+    elif majorData == 'fits':
+        minorPlotData, majorPlotData = countData, fitData
+    else:
+        raise ValueError("incorect 'majorData' argument")
+    return key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, pictureFitErrors
+
+
+
 def analyzeCodeTimingData(num, talk=True, numTimes=3):
     """
     Analyzing code timing data. Data is outputted in the following format:
@@ -326,8 +525,6 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
         rawData = rawData[picSlice[0]:picSlice[1]]
         numOfPictures = rawData.shape[0]
         numOfVariations = int(numOfPictures / (repetitions * picsPerRep))
-
-    print(groupedData.shape)
     #groupedData, key, _ = orderData(groupedData, key)
     avgLoading, avgLoadingErr, loadFits = [[[] for _ in range(len(atomLocations))] for _ in range(3)]
     allLoadingRate, allLoadingErr = [[[]] * len(groupedData) for _ in range(2)]
@@ -340,6 +537,9 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
         res = getThresholds( fullPixelCounts[i], 5, manualThreshold )
         thresholds[i], threshFids[i], threshFitVals[i], threshBins[i], threshBinData[i] = res
         fullAtomData[i], fullAtomCount[i] = getAtomBoolData(fullPixelCounts[i], thresholds[i])
+    flatTotal = arr(arr(fullAtomData).tolist()).flatten()
+    totalAvg = np.mean(flatTotal)
+    totalErr = np.std(flatTotal) / np.sqrt(len(flatTotal))
     fullAtomData = arr(fullAtomData.tolist())
     fullPixelCounts = arr(fullPixelCounts.tolist())
     if not quiet:
@@ -377,7 +577,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
         atomImagesInc += 1
 
     return ( fullPixelCounts, thresholds, avgPic, key, avgLoadingErr, avgLoading, allLoadingRate, allLoadingErr, loadFits,
-             fitModule, keyName, totalAtomData, rawData, atomLocations, avgFits, atomImages, threshFitVals )
+             fitModule, keyName, totalAtomData, rawData, atomLocations, avgFits, atomImages, threshFitVals, totalAvg, totalErr )
 
 
 def standardAssemblyAnalysis(fileNumber, atomLocs1, assemblyPic, atomLocs2=None, keyOffset=0, dataRange=None,
