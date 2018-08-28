@@ -366,7 +366,7 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
                               fitModule=None, histSecondPeakGuess=None, outputMma=False, varyingDim=None,
                               subtractEdgeCounts=True, loadPic=0, transferPic=1, postSelectionCondition=None,
                               postSelectionConnected=False, getGenerationStats=False, normalizeForLoadingRate=False, 
-                              rerng=False, tt=None, **organizerArgs ):
+                              rerng=False, tt=None, rigorousThresholdFinding=True, **organizerArgs,  ):
     """
     Standard data analysis package for looking at survival rates throughout an experiment.
     Returns key, survivalData, survivalErrors
@@ -419,11 +419,11 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
     allPics = getAvgPics(groupedData)
     avgPics = [allPics[loadPic], allPics[transferPic]]
     
-    (fullPixelCounts, thresholds, threshFids, threshFitVals, threshBins, threshBinData) = arr([[None] * len(atomLocs1)] * 6)
+    (fullPixelCounts, thresholds, threshFids, threshFitVals, threshBins, threshBinData, rmsResiduals) = arr([[None] * len(atomLocs1)] * 7)
     for i, atomLoc in enumerate(atomLocs1):
         fullPixelCounts[i] = getAtomCountsData( rawData, picsPerRep, loadPic, atomLoc, subtractEdges=subtractEdgeCounts )
-        res = getThresholds( fullPixelCounts[i], 5, manualThreshold )
-        thresholds[i], threshFids[i], threshFitVals[i], threshBins[i], threshBinData[i] = res
+        res = getThresholds( fullPixelCounts[i], 5, manualThreshold, rigorous=rigorousThresholdFinding )
+        thresholds[i], threshFids[i], threshFitVals[i], threshBins[i], threshBinData[i], rmsResiduals[i] = res
     
     (loadPicData, transPicData, atomCounts, bins, binnedData, survivalData, survivalErrs,
      loadingRate, loadAtoms, transAtoms, genAvgs, genErrs) = arr([[None] * len(atomLocs1)] * 12)
@@ -475,7 +475,7 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
         outputDataToMmaNotebook(fileNumber, survivalData, survivalErrs, loadingRate, key)
     return (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate, loadPicData, keyName, key,
             repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPics, otherDims, locationsList,
-            genAvgs, genErrs, threshFitVals, tt)
+            genAvgs, genErrs, threshFitVals, tt, threshFids, rmsResiduals)
 
 
 def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, analyzeTogether=False, 
@@ -530,12 +530,12 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
     allLoadingRate, allLoadingErr = [[[]] * len(groupedData) for _ in range(2)]
     totalAtomData = []
     
-    (fullPixelCounts, fullAtomData, thresholds, threshFids, threshFitVals, threshBins, threshBinData,
-     fullAtomCount) = arr([[None] * len(atomLocations)] * 8)
+    (fullPixelCounts, fullAtomData, thresholds, threshFids, threshFitVals, threshBins, threshBinData, rmsResiduals,
+     fullAtomCount) = arr([[None] * len(atomLocations)] * 9)
     for i, atomLoc in enumerate(atomLocations):
         fullPixelCounts[i] = getAtomCountsData( rawData, picsPerRep, whichPic, atomLoc, subtractEdges=subtractEdges )
         res = getThresholds( fullPixelCounts[i], 5, manualThreshold )
-        thresholds[i], threshFids[i], threshFitVals[i], threshBins[i], threshBinData[i] = res
+        thresholds[i], threshFids[i], threshFitVals[i], threshBins[i], threshBinData[i], rmsResiduals[i] = res
         fullAtomData[i], fullAtomCount[i] = getAtomBoolData(fullPixelCounts[i], thresholds[i])
     flatTotal = arr(arr(fullAtomData).tolist()).flatten()
     totalAvg = np.mean(flatTotal)
@@ -577,7 +577,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
         atomImagesInc += 1
 
     return ( fullPixelCounts, thresholds, avgPic, key, avgLoadingErr, avgLoading, allLoadingRate, allLoadingErr, loadFits,
-             fitModule, keyName, totalAtomData, rawData, atomLocations, avgFits, atomImages, threshFitVals, totalAvg, totalErr )
+             fitModule, keyName, totalAtomData, rawData, atomLocations, avgFits, atomImages, threshFitVals, totalAvg, totalErr, threshFids )
 
 
 def standardAssemblyAnalysis(fileNumber, atomLocs1, assemblyPic, atomLocs2=None, keyOffset=0, dataRange=None,

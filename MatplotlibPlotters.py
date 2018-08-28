@@ -23,22 +23,27 @@ import MarksConstants as consts
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.patches import Ellipse
 from TimeTracker import TimeTracker
-from fitters import gaussian_2d, LargeBeamMotExpansion, exponential_saturation
+from fitters import gaussian_2d, LargeBeamMotExpansion, exponential_saturation, double_gaussian
 
 
-def indvHists(dat, thresh, colors, extra=None):
+def indvHists(dat, thresh, colors, extra=None, extraname=None, extra2=None, extra2Name=None, gaussianFitVals=None):
     f, axs = subplots(10,10, figsize=(50,25))
     for i, (d,t,c) in enumerate(zip(dat, thresh, colors[1:])):
         ax = axs[len(axs[0]) - i%len(axs[0]) - 1][int(i/len(axs))]
-        ax.hist(d, 100, color=c, histtype='stepfilled')
+        heights, _, _ = ax.hist(d, 100, color=c, histtype='stepfilled')
         ax.axvline(t, color='w', ls=':')
+        if gaussianFitVals is not None:
+            g = gaussianFitVals[i]
+            xpts = np.linspace(min(d), max(d), 1000)
+            ax.plot(xpts, double_gaussian.f(xpts, *g), 'w')
         ax.set_xticklabels([])
         ax.set_yticklabels([])
         ax.set_xlim(min(dat.flatten()), max(dat.flatten()))
         ax.grid(False)
         if extra is not None:
-            t = ax.text(0.25, 5, round_sig_str(np.mean(extra[i])), fontsize=24)
-            t.set_bbox(dict(facecolor='k', alpha=0.5))
+            txt = extraname + round_sig_str( np.mean(extra[i])) if extraname is not None else round_sig_str(np.mean(extra[i]))
+            t = ax.text( 0.25, max(heights)-5, txt, fontsize=24 )
+            t.set_bbox(dict(facecolor='k', alpha=0.3))
     f.subplots_adjust(wspace=0, hspace=0)
 
 
@@ -186,7 +191,7 @@ def plotNewMotTemperature(data, key=None, magnification=3, **standardImagesArgs)
     ax.legend()
     ax2.legend()
     ax2.grid(True,color='r')
-    showPics(rawData, key, fitParameters=pictureFitParams)
+    showPics(rawData, key, fitParams=pictureFitParams)
     print("\nTemperture in the Large Laser Beam Approximation:", misc.errString(temp * 1e6, errs[2]*1e6), 'uK')
     print('Fit-Parameters:', fitVals)
     return pictureFitParams,rawData
@@ -410,7 +415,7 @@ def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingR
     tt.clock('After-Standard-Analysis')
     (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate, pic1Data, keyName, key,
      repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPics, otherDimValues,
-     locsList, genAvgs, genErrs, gaussianFitVals, tt) = res
+     locsList, genAvgs, genErrs, gaussianFitVals, tt, threshFids, rmsResiduals) = res
     if not show:
         return key, survivalData, survivalErrs, loadingRate, avgSurvivalData
     if legendOption is None and len(atomLocs1) < 50:
@@ -534,7 +539,6 @@ def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingR
     
     # average image
     avgPlt1 = subplot(gridRight[8:12, 11:13])
-    
     avgPlt2 = subplot(gridRight[8:12, 13:15])
     for plt, dat, locs in zip([avgPlt1, avgPlt2], avgPics, [atomLocs1, atomLocs2]):
         plt.imshow(dat, origin='lower', cmap='Greys_r');
@@ -563,7 +567,7 @@ def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingR
     tt.clock('After-Main-Plots')
     if showImagePlots:
         ims = []
-        f, axs = subplots(1,4)
+        f, axs = subplots(1,8, figsize=(30,12))
 
         ims.append(axs[0].imshow(avgPics[0], origin='lower'))
         axs[0].set_title('Avg 1st Pic')
@@ -576,14 +580,36 @@ def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingR
             avgSurvivals.append(np.mean(s))
         avgSurvivalPic, vmin, vmax = genAvgDiscrepancyImage(avgSurvivals, avgPics[0].shape, atomLocs1)
         ims.append(axs[2].imshow(avgSurvivalPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower'))
-        axs[2].set_title('Avg Surv')
+        axs[2].set_title('Avg Surv:' + str(misc.round_sig(np.mean(avgSurvivals))), fontsize=12)
         
         avgLoads = []
         for l in loadingRate:
             avgLoads.append(np.mean(l))
         avgLoadPic, vmin, vmax = genAvgDiscrepancyImage(avgLoads, avgPics[0].shape, atomLocs1)
         ims.append(axs[3].imshow(avgLoadPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower'))
-        axs[3].set_title('Avg Load')
+        axs[3].set_title('Avg Load:' + str(misc.round_sig(np.mean(avgLoads))), fontsize=12)
+        
+        thresholdPic, vmin, vmax = genAvgDiscrepancyImage(thresholds, avgPics[0].shape, atomLocs1)
+        ims.append(axs[4].imshow(thresholdPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower'))
+        axs[4].set_title('Thresholds:' + str(misc.round_sig(np.mean(thresholds))), fontsize=12)
+        
+        thresholdFidPic, vmin, vmax = genAvgDiscrepancyImage(threshFids, avgPics[0].shape, atomLocs1)
+        ims.append(axs[5].imshow(thresholdFidPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower'))
+        axs[5].set_title('Thresholds Fidelities:' + str(misc.round_sig(np.mean(threshFids))), fontsize=12)
+                        
+        imagePeakDiff = []
+        for g in gaussianFitVals:
+            if g is not None:
+                imagePeakDiff.append(abs(g[1] - g[4]))
+            else:
+                imagePeakDiff.append(0)
+        peakDiffImage, vmin, vmax = genAvgDiscrepancyImage(imagePeakDiff, avgPics[0].shape, atomLocs1)
+        ims.append(axs[6].imshow(peakDiffImage, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower'))
+        axs[6].set_title('Imaging-Signal:' + str(misc.round_sig(np.mean(imagePeakDiff))), fontsize=12)
+
+        residualImage, _, vmax = genAvgDiscrepancyImage(rmsResiduals, avgPics[0].shape, atomLocs1)
+        ims.append(axs[7].imshow(residualImage, cmap=cm.get_cmap('inferno'), vmin=0, vmax=vmax, origin='lower'))
+        axs[7].set_title('Fit Rms Residuals:' + str(misc.round_sig(np.mean(rmsResiduals))), fontsize=12)
         
         for ax, im in zip(axs, ims):
             ax.set_yticklabels([])
@@ -591,10 +617,11 @@ def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingR
             ax.grid(False)
             divider = make_axes_locatable(ax)
             cax = divider.append_axes('right', size='5%', pad=0.05)
-            f.colorbar(im, cax, orientation='vertical')
+            cb = f.colorbar(im, cax, orientation='vertical')
+            cb.ax.tick_params(labelsize=8) 
         tt.clock('After-Image-Plots')
     if plotIndvHists:
-        indvHists(pic1Data, thresholds, colors, extra=avgSurvivals)
+        indvHists(pic1Data, thresholds, colors, extra=avgSurvivals, extraname='S:', gaussianFitVals=gaussianFitVals)
         tt.clock('After-Indv-Hists')
     if timeit:
         tt.display()
@@ -619,7 +646,7 @@ def Loading(fileNum, atomLocations, **PopulationArgs):
 
 def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=True, plotCounts=False, legendOption=None,
                showImagePlots=True, plotIndvHists=False, showFitDetails=False, showFitCenterPlot=True, show=True, histMain=False,
-               **StandardArgs):
+               mainAlpha=0.2, avgColor='w', **StandardArgs):
     """
     Standard data analysis package for looking at population %s throughout an experiment.
 
@@ -629,12 +656,12 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     These are loading exeriments, for example. There's no survival calculation.
     """
     res = standardPopulationAnalysis(fileNum, atomLocations, whichPic, picsPerRep, **StandardArgs)
-    (pic1Data, thresholds, avgPic, key, loadRateErr, loadRate, avgLoadRate, avgLoadErr, fits,
-     fitModule, keyName, totalPic1AtomData, rawData, atomLocations,  avgFits, atomImages, 
-     gaussFitVals, totalAvg, totalErr) = res
+    (locCounts, thresholds, avgPic, key, loadRateErr, loadRate, avgLoadRate, avgLoadErr, fits,
+     fitModule, keyName, atomData, rawData, atomLocations,  avgFits, atomImages,
+     gaussFitVals, totalAvg, totalErr, threshFids) = res
     colors, _ = getColors(len(atomLocations) + 1)
     if not show:
-        return key, loadRate, loadRateErr, pic1Data, atomImages, thresholds,avgLoadRate
+        return key, loadRate, loadRateErr, locCounts, atomImages, thresholds, avgLoadRate
     if legendOption is None and len(atomLocations) < 50:
         legendOption = True
     else:
@@ -672,7 +699,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
                 leg += (typeName + " % = " + str(round_sig(loadRate[i][0])) + "$\pm$ "
                         + str(round_sig(loadRateErr[i][0])))
             mainPlot.errorbar(key, loadRate[i], yerr=loadRateErr[i], color=colors[i], ls='',
-                              capsize=6, elinewidth=3, label=leg, alpha=0.2, marker=markers[i%len(markers)])
+                              capsize=6, elinewidth=3, label=leg, alpha=mainAlpha, marker=markers[i%len(markers)])
             if fitModule is not None:
                 if fit == [] or fit['vals'] is None:
                     continue
@@ -685,7 +712,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
                 print('Avg Fit Failed!')
             else:
                 centerIndex = fitModule.center()
-                mainPlot.plot(avgFits['x'], avgFits['nom'], color='w', alpha = 1)
+                mainPlot.plot(avgFits['x'], avgFits['nom'], color=avgColor, alpha = 1)
         mainPlot.grid(True, color='#AAAAAA', which='Major')
         mainPlot.grid(True, color='#090909', which='Minor')
         mainPlot.set_yticks(np.arange(0,1,0.1))
@@ -726,9 +753,9 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     for item in ([loadingPlot.title, loadingPlot.xaxis.label, loadingPlot.yaxis.label] +
                      loadingPlot.get_xticklabels() + loadingPlot.get_yticklabels()):
         item.set_fontsize(10)
-        # ### Count Series Plot
+    # ### Count Series Plot
     for i, loc in enumerate(atomLocations):
-        countPlot.plot(pic1Data[i], color=colors[i], ls='', marker='.', markersize=1, alpha=0.3)
+        countPlot.plot(locCounts[i], color=colors[i], ls='', marker='.', markersize=1, alpha=0.3)
         countPlot.axhline(thresholds[i], color=colors[i], alpha=0.3)
 
 
@@ -741,16 +768,16 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     for item in ([countPlot.title, countPlot.xaxis.label, countPlot.yaxis.label] +
                      countPlot.get_xticklabels() + countPlot.get_yticklabels()):
         item.set_fontsize(10)
-    countPlot.set_xlim((0, len(pic1Data[0])))
-    tickVals = np.linspace(0, len(pic1Data[0]), len(key) + 1)
+    countPlot.set_xlim((0, len(locCounts[0])))
+    tickVals = np.linspace(0, len(locCounts[0]), len(key) + 1)
     countPlot.set_xticks(tickVals[0:-1:2])
     # Count Histogram Plot
     for i, atomLoc in enumerate(atomLocations):
         if histMain:
-            countHist.hist(pic1Data[i], 50, color=colors[i], orientation='vertical', alpha=0.3, histtype='stepfilled')
+            countHist.hist(locCounts[i], 50, color=colors[i], orientation='vertical', alpha=0.3, histtype='stepfilled')
             countHist.axvline(thresholds[i], color=colors[i], alpha=0.3)            
         else:
-            countHist.hist(pic1Data[i], 50, color=colors[i], orientation='horizontal', alpha=0.3, histtype='stepfilled')
+            countHist.hist(locCounts[i], 50, color=colors[i], orientation='horizontal', alpha=0.3, histtype='stepfilled')
             countHist.axhline(thresholds[i], color=colors[i], alpha=0.3)
     for item in ([countHist.title, countHist.xaxis.label, countHist.yaxis.label] +
                      countHist.get_xticklabels() + countHist.get_yticklabels()):
@@ -766,10 +793,10 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     for loc in atomLocations:
         circ = Circle((loc[1], loc[0]), 0.2, color='r')
         avgPlt.add_artist(circ)
-    mainPlot.errorbar(key, avgLoadRate, yerr=avgLoadErr, color="#FFFFFFFF", ls='',
+    mainPlot.errorbar(key, avgLoadRate, yerr=avgLoadErr, color=avgColor, ls='',
              marker='o', capsize=6, elinewidth=3, label='Avg')
     if fitModule is not None and showFitDetails:
-        mainPlot.plot(avgFit['x'], avgFit['nom'], color='#FFFFFFFF', ls=':')
+        mainPlot.plot(avgFit['x'], avgFit['nom'], color=avgColor, ls=':')
         fits_df = getFitsDataFrame(fits, fitModule, avgFit)
         display(fits_df)
     elif fitModule is not None:
@@ -783,8 +810,8 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         colorbar()
     if showImagePlots:
         ims = []
-        f, axs = subplots(1,2)
-
+        f, axs = subplots(1,4)
+        
         ims.append(axs[0].imshow(avgPic, origin='lower'))
         axs[0].set_title('Avg 1st Pic')
 
@@ -794,6 +821,14 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         avgLoadPic, vmin, vmax = genAvgDiscrepancyImage(avgLoads, avgPic.shape, atomLocations)
         ims.append(axs[1].imshow(avgLoadPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower'))
         axs[1].set_title('Avg Load')
+        
+        thresholdPic, vmin, vmax = genAvgDiscrepancyImage(thresholds, avgPic.shape, atomLocations)
+        ims.append(axs[2].imshow(thresholdPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower'))
+        axs[2].set_title('Thresholds')
+        
+        thresholdFidPic, vmin, vmax = genAvgDiscrepancyImage(threshFids, avgPic.shape, atomLocations)
+        ims.append(axs[3].imshow(thresholdFidPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower'))
+        axs[3].set_title('Thresholds Fidelities')
         
         for ax, im in zip(axs, ims):
             ax.set_yticklabels([])
@@ -806,16 +841,16 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     for s in loadRate:
         avgLoads.append(np.mean(s))
     if plotIndvHists:
-        indvHists(pic1Data, thresholds, colors, extra=avgLoads)
-    # output thresholds
+        indvHists(locCounts, thresholds, colors, extra=avgLoads, extraname='L:')
     """
+    # output thresholds
     thresholds = np.flip(np.reshape(thresholds, (10,10)),1)
     with open('J:/Code-Files/T-File.txt','w') as f:
         for row in thresholds:
             for thresh in row:
                 f.write(str(thresh) + ' ') 
     """
-    return {'Key': key, 'Loading': loadRate, 'Loading_Error': loadRateErr, 'Pixel_Counts':pic1Data, 'Atom_Images':atomImages, 'Thresholds':thresholds, 'Threshold_Gaussian_Fits:':gaussFitVals, 'Continuous_Pixel_Counts':totalPic1AtomData, 'Raw_Data':rawData}
+    return {'Key': key, 'Loading': loadRate, 'Loading_Error': loadRateErr, 'Pixel_Counts':locCounts, 'Atom_Images':atomImages, 'Thresholds':thresholds, 'Threshold_Gaussian_Fits:':gaussFitVals, 'Atom_Data':atomData, 'Raw_Data':rawData}
 
 
 def Assembly(fileNumber, atomLocs1, pic1Num, partialCredit=False, **standardAssemblyArgs):
@@ -1212,7 +1247,7 @@ def showPics(data, key, fitParams=np.array([]), indvColorBars=False, colorMax=-1
             plts[rowCount, picCount].axis('off')
             plts[rowCount, picCount].set_title(str(round_sig(key[count], 4)), fontsize=8)
             if fitParams.size != 0:
-                if (fitParamefitParamsters[count] != np.zeros(len(fitParams[count]))).all():
+                if (fitParams[count] != np.zeros(len(fitParams[count]))).all():
                     try:
                         ellipse = Ellipse(xy=(fitParams[count][1], fitParams[count][2]),
                                           width=2*fitParams[count][3], height=2*fitParams[count][4],

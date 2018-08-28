@@ -22,6 +22,7 @@ import scipy.interpolate as interp
 
 import MarksConstants as consts
 from Miscellaneous import transpose, round_sig, round_sig_str
+import Miscellaneous as misc
 from copy import deepcopy
 from fitters import (double_gaussian, cython_poissonian as poissonian, 
                     FullBalisticMotExpansion, LargeBeamMotExpansion, gaussian_2d, exponential_saturation)
@@ -31,7 +32,6 @@ import MainAnalysis as ma
 
 from ExpFile import ExpFile, dataAddress
 from TimeTracker import TimeTracker
-
 
 def temperatureAnalysis( data, magnification, **standardImagesArgs ):
     res = ma.standardImages(data, scanType="Time(ms)", majorData='fits', fitPics=True, manualAccumulation=True, **standardImagesArgs)
@@ -688,10 +688,13 @@ def fitDoubleGaussian(binCenters, binnedData, fitGuess):
         fitVals, fitCovNotUsed = opt.curve_fit( lambda x, a1, a2, a3, a4, a5, a6:
                                             double_gaussian.f(x, a1, a2, a3, a4, a5, a6, 0),
                                             binCenters, binnedData, fitGuess )
-    except:
+    except opt.OptimizeWarning:
         warn('Double-Gaussian Fit Failed!')
         fitVals = (0, 0, 0, 0, 0, 0)
-    return fitVals
+    except RuntimeError:
+        warn('Double-Gaussian Fit Failed!')
+        fitVals = (0, 0, 0, 0, 0, 0)        
+    return [*fitVals,0]
 
 
 def fitGaussianBeamWaist(data, key, wavelength):
@@ -1308,20 +1311,53 @@ def getFitsDataFrame(fits, fitModule, avgFit):
     return fitDataFrame
 
 
-def getThresholds( pic1Data, binWidth, manThreshold ):
-    bins, binnedData = getBinData(binWidth, pic1Data)
-    guess1, guess2 = guessGaussianPeaks(bins, binnedData)
-    guess = arr([max(binnedData), guess1, 30, max(binnedData)*0.75, guess2, 30])
+def getThresholds( picData, binWidth, manThreshold, rigorous=True ):
+    bins, binnedData = getBinData( binWidth, picData )
+    # inner outwards
+    binGuessIteration = [bins[(len(bins) + (~i, i)[i%2]) // 2] for i in range(len(bins))]
+    # binGuessIteration = list(reversed(bins[:len(bins)//2]))
+    gWidth = 25
+    ampFac = 0.35
     if manThreshold is None:
+        guess1, guess2 = guessGaussianPeaks( bins, binnedData )
+        guess = arr([max(binnedData), guess1, gWidth, max(binnedData)*ampFac, guess2, gWidth])
         gaussianFitVals = fitDoubleGaussian(bins, binnedData, guess)
         threshold, thresholdFid = calculateAtomThreshold(gaussianFitVals)
+        rmsResidual = getNormalizedRmsDeviationOfResiduals(bins, binnedData, double_gaussian.f, gaussianFitVals)
+        if rigorous:
+            for r in range(len(binGuessIteration)):
+                if thresholdFid - rmsResidual*0.05 > 0.98:
+                    break
+                g_r = binGuessIteration[r]
+                guess = arr([max(binnedData), guess1, gWidth, max(binnedData)*ampFac, g_r, gWidth])
+                gaussianFitVals2 = fitDoubleGaussian(bins, binnedData, guess)
+                threshold2, thresholdFid2 = calculateAtomThreshold(gaussianFitVals2)
+                rmsResidual2 = getNormalizedRmsDeviationOfResiduals(bins, binnedData, double_gaussian.f, gaussianFitVals2)
+                if thresholdFid2 - rmsResidual2 > thresholdFid - rmsResidual:
+                    threshold, gaussianFitVals, thresholdFid, rmsResidual = threshold2, gaussianFitVals2, thresholdFid2, rmsResidual2
     elif manThreshold=='auto':
         gaussianFitVals = None
-        threshold, thresholdFid = ((max(pic1Data) + min(pic1Data))/2.0, 0) 
+        threshold, thresholdFid = ((max(picData) + min(picData))/2.0, 0) 
+        rmsResidual=0
+    elif manThreshold=='auto_guess':
+        guess = arr([max(binnedData), (max(picData) + min(picData))/4.0, gWidth,
+                     max(binnedData)*0.5, 3*(max(picData) + min(picData))/4.0, gWidth])
+        gaussianFitVals = fitDoubleGaussian(bins, binnedData, guess)
+        threshold, thresholdFid = calculateAtomThreshold(gaussianFitVals)
+        rmsResidual2 = getNormalizedRmsDeviationOfResiduals(bins, binnedData, double_gaussian.f, gaussianFitVals)
     else:
         gaussianFitVals = None
         threshold, thresholdFid = (manThreshold, 0)
-    return threshold, thresholdFid, gaussianFitVals, bins, binnedData
+        rmsResidual=0
+    return threshold, thresholdFid, gaussianFitVals, bins, binnedData, rmsResidual
+
+
+def getNormalizedRmsDeviationOfResiduals(xdata, ydata, function, fitVals):
+    """
+    calculates residuals, calculates the rms average of them, and then normalizes by the average of the actual data.
+    """
+    residuals = ydata - function(xdata, *fitVals)
+    return np.sqrt(sum(residuals**2) / len(residuals)) / np.mean(ydata)
 
 
 def getAtomBoolData(pic1Data, threshold):
@@ -1382,7 +1418,7 @@ def calculateAtomThreshold(fitVals):
 
 
 def getFidelity(threshold, fitVals):
-    a1, x1, s1, a2, x2, s2 = fitVals
+    a1, x1, s1, a2, x2, s2, o = fitVals
     return 0.5 * (1 + 0.5 *
                   (  special.erf(np.abs(threshold-x1)/(np.sqrt(2)*s1)) 
                    + special.erf(np.abs(threshold-x2)/(np.sqrt(2)*s2))))
@@ -1501,9 +1537,11 @@ def guessGaussianPeaks(binCenters, binnedData):
     :param binnedData: the binned data data points.
     :return: the two guesses.
     """
-    #  I this offset use to get an appropriate width for the no-atoms peak. Arguably since I use this to manually shift the width, I should
+    # This offset is to prevent negative x values while working with the poissonian. If set wrong guesses can start to work funny.
+    # The offset is only use to get an appropriate width for the no-atoms peak. Arguably since I use this to manually shift the width, I should
     # just use a gaussian instead of a poissonian.
-    randomOffset = 600
+    randomOffset = 800
+    poisonAmplitude = 2
     binCenters += randomOffset
     # get index corresponding to global max
     guess1Index = np.argmax(binnedData)
@@ -1512,7 +1550,7 @@ def guessGaussianPeaks(binCenters, binnedData):
     binnedDataNoPoissonian = []
     for binInc in range(0, len(binCenters)):
         binnedDataNoPoissonian.append(binnedData[binInc] 
-                                      - poissonian.f(binCenters[binInc], guess1Location, 3 * max(binnedData) /
+                                      - poissonian.f(binCenters[binInc], guess1Location, poisonAmplitude * max(binnedData) /
                                                      poissonian.f(guess1Location, guess1Location, 1)))
     guess2Index = np.argmax(binnedDataNoPoissonian)
     guess2Location = binCenters[guess2Index]
