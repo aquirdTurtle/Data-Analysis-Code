@@ -783,41 +783,6 @@ def Rearrange(rerngInfoAddress, fileNumber, locations,splitByNumberOfMoves=False
     ax.set_title('Rearranging Individual Move Fidelity Analysis')
     rotateTicks(ax)
     return allData, pics, moves
-
-
-def showPicComparisons(data, key, fitParameters=np.array([])):
-    """
-    formerly the "individualPics" option.
-    expects structure:
-    data[key value number][raw, -background, -average][2d pic]
-    """
-    if data.ndim != 4:
-        raise ValueError("Incorrect dimensions for data input to show pics if you want individual pics.")
-    titles = ['Raw Picture', 'Background Subtracted', 'Average Subtracted']
-    for inc in range(len(data)):
-        figure()
-        fig, plts = subplots(1, len(data[inc]), figsize=(15, 6))
-        count = 0
-        for pic in data[inc]:
-            x = np.linspace(1, pic.shape[1], pic.shape[1])
-            y = np.linspace(1, pic.shape[0], pic.shape[0])
-            x, y = np.meshgrid(x, y)
-            im = plts[count].pcolormesh(pic, extent=(x.min(), x.max(), y.min(), y.max()))
-            fig.colorbar(im, ax=plts[count], fraction=0.046, pad=0.04)
-            plts[count].set_title(titles[count])
-            plts[count].axis('off')
-            if fitParameters.size != 0:
-                if (fitParameters[count] != np.zeros(len(fitParameters[count]))).all():
-                    data_fitted = fitFunc.gaussian_2D((x, y), *fitParameters[count])
-                    try:
-                        # used to be "picture" which was unresolved, assuming should have been pic, as I've changed
-                        # below.
-                        plts[count].contour(x, y, data_fitted.reshape(pic.shape[0], pic.shape[1]), 2, colors='w',
-                                            alpha=0.35, linestyles="dashed")
-                    except ValueError:
-                        pass
-            count += 1
-        fig.suptitle(str(key[inc]))
         
 
 def showPics(data, key, fitParams=np.array([]), indvColorBars=False, colorMax=-1):
