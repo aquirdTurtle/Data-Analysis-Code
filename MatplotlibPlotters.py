@@ -95,38 +95,8 @@ def plotNiawg(fileIndicator, points=300, plotTogether=True, plotVolts=False):
     xlim(0, 160e6)
     show()
 
-
-def plotMotTemperature(data, magnification=3, **standardImagesArgs):
-    """
-    Calculate the mot temperature, and plot the data that led to this.
-
-    :param data:
-    :param standardImagesArgs: see the standardImages function to see the acceptable arguments here.
-    :return:
-    """
-    res = standardImages(data, showPictures=False, showPlot=False, scanType="Time(ms)", majorData='fits', 
-                         loadType='scout', fitPics=True, manualAccumulation=True, **standardImagesArgs)
-    (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams) = res
-    # convert to meters
-    waists = 2 * consts.baslerScoutPixelSize * abs(pictureFitParams[:, 3]) * magnification
-    # convert to s
-    times = key / 1000
-    temp, simpleTemp, fitVals, fitCov, simpleFitVals, simpleFitCov = calcMotTemperature(times, waists / 2)
-    figure()
-    plot(times, waists, 'o', label='Raw Data Waist')
-    plot(times, 2 * ballisticMotExpansion(times, *fitVals, 100), label='balistic MOT expansion Fit Waist')
-    plot(times, 2 * simpleMotExpansion(times, *simpleFitVals), label='simple MOT expansion Fit Waist ')
-    title('Measured atom cloud size over time')
-    xlabel('time (s)')
-    ylabel('gaussian fit waist (m)')
-    legend()
-    showPics(rawData, key, fitParameters=pictureFitParams)
-    print("PGC Temperture (full ballistic):", temp * 1e6, 'uK')
-    # the simple balistic fit doesn't appear to work...
-    print("MOT Temperature (simple (don't trust?)):", simpleTemp * 1e6, 'uK')
-
     
-def plotNewMotTemperature(data, key=None, magnification=3, **standardImagesArgs):
+def plotMotTemperature(data, key=None, magnification=3, **standardImagesArgs):
     """
     Calculate the mot temperature, and plot the data that led to this.
 
