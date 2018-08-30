@@ -169,10 +169,13 @@ def organizeTransferData(fileNumber, loadLocs, transLocs, key=None, window=None,
         repetitions = int(numberOfPictures / picsPerRep)
     numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
     groupedDataRaw = rawData.reshape((numberOfVariations, repetitions * picsPerRep, rawData.shape[1], rawData.shape[2]))
+    #print(key)
     res = sliceMultidimensionalData(dimSlice, key, groupedDataRaw, varyingDim=varyingDim)
-    (key, slicedData, otherDimValues, varyingDim) = res
-    slicedOrderedData, key, otherDimValues = orderData(slicedData, key, keyDim=varyingDim,
-                                                       otherDimValues=otherDimValues)
+    (_, slicedData, otherDimValues, varyingDim) = res
+    #print('not ordering data!')
+    slicedOrderedData = slicedData
+    #slicedOrderedData, key, otherDimValues = orderData( slicedData, key, keyDim=varyingDim, 
+    #                                                    otherDimValues=otherDimValues )
     key, groupedData = applyDataRange(dataRange, slicedOrderedData, key)
     # check consistency
     numberOfPictures = int(groupedData.shape[0] * groupedData.shape[1])
@@ -1315,7 +1318,8 @@ def getThresholds( picData, binWidth, manThreshold, rigorous=True ):
     bins, binnedData = getBinData( binWidth, picData )
     # inner outwards
     binGuessIteration = [bins[(len(bins) + (~i, i)[i%2]) // 2] for i in range(len(bins))]
-    # binGuessIteration = list(reversed(bins[:len(bins)//2]))
+    #binGuessIteration = list(reversed(bins[:len(bins)//2]))
+    #binGuessIteration = list(bins[len(bins)//2:])
     gWidth = 25
     ampFac = 0.35
     if manThreshold is None:
@@ -1333,8 +1337,14 @@ def getThresholds( picData, binWidth, manThreshold, rigorous=True ):
                 gaussianFitVals2 = fitDoubleGaussian(bins, binnedData, guess)
                 threshold2, thresholdFid2 = calculateAtomThreshold(gaussianFitVals2)
                 rmsResidual2 = getNormalizedRmsDeviationOfResiduals(bins, binnedData, double_gaussian.f, gaussianFitVals2)
+                
                 if thresholdFid2 - rmsResidual2 > thresholdFid - rmsResidual:
                     threshold, gaussianFitVals, thresholdFid, rmsResidual = threshold2, gaussianFitVals2, thresholdFid2, rmsResidual2
+                    #print('!',end='')
+                else:
+                    pass
+                    #print('.',end='')
+        #print(r,'/',len(binGuessIteration))
     elif manThreshold=='auto':
         gaussianFitVals = None
         threshold, thresholdFid = ((max(picData) + min(picData))/2.0, 0) 
@@ -1593,24 +1603,21 @@ def getGenStatistics(genData, repetitionsPerVariation):
     return genAverages, genErrors
 
 
-def getGenerationEvents(pic1Atoms, pic2Atoms):
+def getGenerationEvents(loadAtoms, finAtomsAtoms):
     """
     This is more or less the opposite of "GetSurvivalEvents". It counts events as +1 when you start with no atom and end
-    with an atom. This could be used to characterize all sorts of things, e.g. hopping, backgruond catches, etc.
+    with an atom. This could be used to characterize all sorts of things, e.g. hopping, background catches, rearranging, etc.
+    :param loadAtoms:
+    :param finAtomsAtoms:
 
-    :param pic1Atoms:
-    :param pic2Atoms:
     :return:
     """
     # this will include entries for when there is no atom in the first picture.
     genData = np.array([])
     genData.astype(int)
-    # flattens variations & locations?
-    # if len(data.shape) == 4:
-    #     data.reshape((data.shape[0] * data.shape[1], data.shape[2], data.shape[3]))
-
     # this doesn't take into account loss, since these experiments are feeding-back on loss.
-    for atom1, atom2 in zip(pic1Atoms, pic2Atoms):
+    # there shoukld be a smarter / faster way to do this like the survival method.
+    for atom1, atom2 in zip(loadAtoms, finAtomsAtoms):
         if atom1:
             # not interesting for generation
             genData = np.append(genData, [-1])
@@ -1633,8 +1640,8 @@ def getSurvivalEvents(pic1Atoms, pic2Atoms):
     # -1 = no atom in the first place.
     survivalData = np.zeros(pic1Atoms.shape) - 1
     # convert to 1 if atom and atom survived
-    survivalData += 2*pic1Atoms * pic2Atoms
-    # convert to 0 if atom and atom didn't survive
+    survivalData += 2 * pic1Atoms * pic2Atoms
+    # convert to 0 if atom and atom didn't survive. This and the above can't both evaluate to non-zero.
     survivalData += pic1Atoms * (~pic2Atoms)
     return survivalData.flatten()
 

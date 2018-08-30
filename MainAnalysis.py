@@ -452,7 +452,8 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
         else:
             genAvgs[i], genErrs[i] = [None, None]
     # Positioning of this is very important.
-    res = groupMultidimensionalData(key, varyingDim, atomLocs1, survivalData, survivalErrs, loadingRate)
+    #res = groupMultidimensionalData(key, varyingDim, atomLocs1, survivalData, survivalErrs, loadingRate)
+    res = (key, atomLocs1, survivalErrs, survivalData, loadingRate, [None for _ in range(len(key)*len(atomLocs1))])
     (key, locationsList, survivalErrs, survivalData, loadingRate, otherDims) = res
 
     loadPicData = arr(loadPicData.tolist())

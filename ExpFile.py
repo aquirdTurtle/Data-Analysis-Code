@@ -196,12 +196,16 @@ class ExpFile:
             else:
                 raise TypeError('???')
     
-    def print_functions(self, brief=True, prefix=''):
+    def print_functions(self, brief=True, prefix='', which=None):
         """
         print the list of all functions which were created at the time of the experiment.
         if not brief, print the contents of every function.
         """
         for func in self.f['Master-Parameters']['Functions']:
+            if which is not None:
+                if func != which:
+                    print(func)
+                    continue
             print(prefix,'-',func,end='')
             if not brief:
                 print(': \n---------------------------------------')
