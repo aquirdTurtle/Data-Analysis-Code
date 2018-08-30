@@ -818,41 +818,7 @@ def showPicComparisons(data, key, fitParameters=np.array([])):
                         pass
             count += 1
         fig.suptitle(str(key[inc]))
-
-
-def showBigPics(data, key, fitParams=np.array([]), individualColorBars=False, colorMax=-1):
-    """
-    """
-    if data.ndim != 3:
-        raise ValueError("Incorrect dimensions for data input showBigPics.")
-    count = 0
-    maximum = sorted(data.flatten())[colorMax]
-    minimum = min(data.flatten())
-    # get picture fits & plots
-    for picture in data:
-        fig = figure()
-        grid(0)
-        if individualColorBars:
-            maximum = max(picture.flatten())
-            minimum = min(picture.flatten())
-        x = np.linspace(1, picture.shape[1], picture.shape[1])
-        y = np.linspace(1, picture.shape[0], picture.shape[0])
-        x, y = np.meshgrid(x, y)
-        im = pcolormesh(picture, vmin=minimum, vmax=maximum)
-        axis('off')
-        title(str(round_sig(key[count], 4)), fontsize=8)
-        if fitParams.size != 0:
-            if (fitParams[count] != np.zeros(len(fitParams[count]))).all():
-                data_fitted = fitFunc.gaussian_2D((x, y), *fitParams[count])
-                try:
-                    contour(x, y, data_fitted.reshape(picture.shape[0], picture.shape[1]), 2, colors='w', alpha=0.35,
-                            linestyles="dashed")
-                except ValueError:
-                    pass
-        count += 1
-        cax = fig.add_axes([0.95, 0.1, 0.03, 0.8])
-        fig.colorbar(im, cax=cax)
-
+        
 
 def showPics(data, key, fitParams=np.array([]), indvColorBars=False, colorMax=-1):
     num = len(data)
