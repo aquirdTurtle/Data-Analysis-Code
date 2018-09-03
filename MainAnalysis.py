@@ -13,7 +13,9 @@ import FittingFunctions as fitFunc
 from AnalysisHelpers import *
 import fitters.linear
 from ExpFile import ExpFile
+import ExpFile as exp
 from TimeTracker import TimeTracker
+import AnalysisHelpers as ah
 
 
 def standardImages(data, 
@@ -27,75 +29,6 @@ def standardImages(data,
                    plottedData=None, bg=arr([0]), location=(-1, -1), fitBeamWaist=False, fitPics=False,
                    cameraType='dataray', fitWidthGuess=80, quiet=False):
     """
-    This function analyzes and plots fits pictures. It does not know anything about atoms,
-    it just looks at pixels or integrates regions of the picture. It is commonly used, to look at background noise
-    or the MOT.
-    :return key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams
-    ### Required parameters
-    :param data: the number of the fits file and (by default) the number of the key file. The function knows where to
-        look for the file with the corresponding name. Alternatively, an array of pictures to be used directly.
-    ### Cosmetic parameters
-    * Change the way the data is diplayed, but not how it is analyzed.
-    :param scanType: a string which characterizes what was scanned during the run. Depending on this string, axis names
-        are assigned to the axis of the plots produced by this function. This parameter, if it is to do
-        anything, must be one of a defined list of types, which can be looked up in the getLabels function.
-    :param xLabel: Specify the xlabel that appears on the plots. Will override an xlabel specified by the scan type,
-        but leave other scanType options un-marred.
-    :param plotTitle: Specify the title that appears on the plots. Will override a title specified by the scan type,
-        but leave other scanType options un-marred.
-    :param convertKey: For frequency scans. If this is true, use the dacToFrequency conversion constants declared in the
-        constants section of the base notebook to convert the key into frequency units instead of voltage
-        units. This should probably eventually be expanded to handle other conversions as well.
-    :param colorMax: by default the colorbars in the displayed pictures are chosen to range from the minimum value in
-        the pic to the maximum value. If this is set, then instead you can specify an offset for the maximum (e.g. -5
-        for 5th highest value in the picture). This is usefull, e.g. if cosmic rays are messing with your pictures.
-    :param individualColorBars: by default, the pictures are all put on the same colorbar for comparison. If this is
-        true, each picture gets its own colorbar, which can make it easier to see features in each individual picture,
-        but generally makes comparison between pictures harder.
-    :param majorData: (expects one of 'counts', 'fits') Identifies the data to appear in the big plot, the other gets
-        shown in the small plot.
-    ### GLOBAL Data Manipulation Options
-    * these manipulate all the data that is analyzed and plotted.
-    :param manualAccumulation: manually add together "accumulations" pictures together to form accumulated pictures for
-        pictures for analysis.
-    :param cameraType: determines scaling of pixels
-    :param loadType: (expects one of 'fits', 'dataray', 'basler') determines the loading function used to load the image
-        data.
-    :param window: (expects format (xMin, xMax, yMin, xMax)). Specifies a window of the picture to be analyzed in lieu
-        of the entire picture. This command overrides the individual arguments (e.g. xMin) if both are present. The
-        rest of the picture is completely discarded and not used for any data analysis, e.g. fitting. This defaults to
-        cover the entire picture
-    :param xMin:
-    :param yMax:
-    :param yMin:
-    :param xMax: Specify a particular bound on the image to be analyzed; other parameters are left
-        untouched. See above description of the window parameter. These default to cover
-        the entire picture.
-    :param accumulations: If using accumulation mode on the Andor, set this parameter to the number of accumulations per
-        image so that the data can be properly normalized for comparison to other pictures, backgrounds, etc.
-        Defaults to 1.
-    :param key: give the function a custom key. By default, the function looks for a key in the raw data file, but
-        sometimes scans are done without the master code specifying the key.
-    :param zeroCorners: If this is true, average the four corners of the picture and subtract this average from every
-        picture. This applies to the raw, -bg, and -avg data. for the latter two, the average is calculated and
-        subtracted after the bg or avg is subtracted.
-    :param dataRange: Specify which key values to analyze. By default, analyze all of them. (0,-1) will drop the last
-        key value, etc.
-    :param smartWindow: Not properly implemented at the moment.
-    ### LOCAL Data Manipulation Parameters
-    * These add extra analysis or change certain parts of the data analysis while leaving other parts intact.
-    :param fitWidthGuess: a manual guess for the threshold fit.
-    :param plottedData: (can include "raw", "-bg", and or "-avg") An array of strings which tells the function which
-        data to plot. Can be used to plot multiple sets of data simultaneously, if needed. Defaults to raw. If only
-        a single set is plotted, then that set is also shown in the pictures. In the case that multiple are
-        shown, it's a bit funny right now.
-    :param bg: A background picture, or a constant value, which is subtracted from each picture.
-        defaults to subtracting nothing.
-    :param location: Specify a specific pixel to be analyzed instead of the whole picture.
-    :param fitPics: Attempt a 2D gaussian fit to each picture.
-    :param fitBeamWaist: Don't think this works yet. The idea is that if gaussianFitPics is also true, then you can
-    use this        to fit a gaussian beam profile to the expanding gaussian fits. This could be useful, e.g. when
-        calibrating the camera position.
     """
     if plottedData is None:
         plottedData = ["raw"]
@@ -106,6 +39,7 @@ def standardImages(data,
             "found by the gaussian fits.")
 
     # the key
+    """
     if key.size == 0:
         origKey, keyName = loadDetailedKey(data)
     else:
@@ -119,7 +53,7 @@ def standardImages(data,
         key = origKey
     if len(key) == 0:
         raise RuntimeError('key was empty!')
-
+    """
     """ ### Handle data ### 
     If the corresponding inputs are given, all data gets...
     - normalized for accumulations
@@ -137,6 +71,16 @@ def standardImages(data,
             raise ValueError('Loadtype of "dataray" has become deprecated and needs to be reimplemented.')
         else:
             raise ValueError('Bad value for LoadType.')
+    elif type(data) == type('a string'):
+        # assume a file address for an HDF5 file.
+        with exp.ExpFile() as f:
+            f.open_hdf5(data,True)
+            if loadType == 'andor':
+                rawData = f.get_pics()
+            elif loadType == 'basler':
+                rawData = f.get_basler_pics()
+            if key is None:
+                kn, key = f.get_key()
     else:
         # assume the user inputted a picture or array of pictures.
         if not quiet:
@@ -153,17 +97,17 @@ def standardImages(data,
             if not quiet:
                 print('fitting background-subtracted data.')
             pictureFitParams, pictureFitErrors = fitPictures(dataMinusBg, range(len(key)), guessSigma_x=fitWidthGuess,
-                                                             guessSigma_y=fitWidthGuess)
+                                                             guessSigma_y=fitWidthGuess, quiet=quiet)
         elif '-avg' in plottedData:
             if not quiet:
                 print('fitting average-subtracted data.')
             pictureFitParams, pictureFitErrors = fitPictures(dataMinusAvg, range(len(key)), guessSigma_x=fitWidthGuess,
-                                                             guessSigma_y=fitWidthGuess)
+                                                             guessSigma_y=fitWidthGuess, quiet=quiet)
         else:
             if not quiet:
                 print('fitting raw data.')
             pictureFitParams, pictureFitErrors = fitPictures(rawData, range(len(key)), guessSigma_x=fitWidthGuess,
-                                                             guessSigma_y=fitWidthGuess*0.6)
+                                                             guessSigma_y=fitWidthGuess*0.6, quiet=quiet)
     else:
         pictureFitParams, pictureFitErrors = np.zeros((len(key), 7)), np.zeros((len(key), 7))
 
@@ -364,119 +308,96 @@ def analyzeScatterData(fileNumber, atomLocs1, connected=False, loadPic=1, transf
 
 def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, manualThreshold=None,
                               fitModule=None, histSecondPeakGuess=None, outputMma=False, varyingDim=None,
-                              subtractEdgeCounts=True, loadPic=0, transferPic=1, postSelectionCondition=None,
-                              postSelectionConnected=False, getGenerationStats=False, normalizeForLoadingRate=False, 
-                              rerng=False, tt=None, rigorousThresholdFinding=True, **organizerArgs,  ):
+                              subtractEdgeCounts=True, loadPic=0, transPic=1, postSelectionCondition=None,
+                              postSelectionConnected=False, getGenerationStats=False, rerng=False, tt=None,
+                             rigorousThresholdFinding=True, **organizerArgs ):
     """
-    Standard data analysis package for looking at survival rates throughout an experiment.
-    Returns key, survivalData, survivalErrors
-
-    :param fileNumber: for the HDF5 File. Path is automatic.
-    :param atomLocs1: the loading atom arrangement.
-    :param atomLocs2: the transfer atom arrangement
-    :param key: manually entered key. Overrides key from HDF5 file.
-    :param manualThreshold: 
-    :param fitModule: a submodule from the fitters module for fitting.
-    :param window: (left, top, right bottom)? quick way of setting xmin/max and ymin/max.
-    :param xMin:   :param xMax:     :param yMin:     :param yMax:  see window
-    :param dataRange: which data points to use. 0-indexed. For example, use this to remove bad points to do a proper
-        fit with the remaining points.
-    :param histSecondPeakGuess:
-    :param keyOffset: added to all key values. e.g. for microwave, this can be set to ~6.34e9 to get the actual freqs
-        on the x-axis.
-    :param outputMma: an option used by tobias and Yiheng because they wanted to work in mathematica (for some reason).
-    :param dimSlice: for multidimensional scans.
-    :param varyingDim: for multidimensional scans.
-    :param subtractEdgeCounts: subtracts background from each picture individually. Background calculated as the average
-        from the edge of the picture.
-    :param loadPic: 0-indexed!
-    :param transferPic: 0-indexed!
-    :param picsPerRep: e.g. 1 for simple load, 2 for simple survival, 3 for rearrange-based things or probe images, etc.
-    :param postSelectionCondition: can be "which atoms of the atomLocs1 to require" or if an int, this is the # of
-        atomLocs required during the post-selection. e.g. "5" when atomLocs is 6 locs means 5/6 locations must have been
-        loaded.
-    :param rerng: if true, set loadPic=1, transferPic=2, picsPerRep=3. This is a simple shortcut.
-    :param groupData: collapses many variations into a single data point.
-    :param quiet: doesn't output text during analysis if true.
-    :param postSelectionConnected: requrie that a # of atoms required by the postSelectionCondition arg are
-        consecutive.
-    :param getGenerationStats: get "generation" events, where no atom was loaded but an atom appears in the second pic.
-    :param normalizeForLoadingRate: 
-    :param repRange: similar to data range but for the pictures before any grouping happens. Convenient e.g. if you are
-        only taking 1 data point and something happens midway through and you want to only use all the pics before the
-        event.
-    :return: a lot. (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate, loadPicData, keyName, key,
-            repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPics, otherDims, locationsList,
-            genAvgs, genErrs, threshFitVals, tt)
     """
     if tt is None:
         tt = TimeTracker()
     if rerng:
-        loadPic, transferPic, picsPerRep = 1, 2, 3
-    (rawData, groupedData, atomLocs1, atomLocs2, keyName, repetitions, 
-     key) = organizeTransferData(fileNumber, atomLocs1, atomLocs2,  picsPerRep=picsPerRep, varyingDim=varyingDim, 
-                                 **organizerArgs)
+        loadPic, transPic, picsPerRep = 1, 2, 3
+    ( rawData, groupedData, atomLocs1, atomLocs2, keyName, repetitions, 
+      key ) = organizeTransferData( fileNumber, atomLocs1, atomLocs2,  picsPerRep=picsPerRep, varyingDim=varyingDim, 
+                                    **organizerArgs )
     allPics = getAvgPics(groupedData)
-    avgPics = [allPics[loadPic], allPics[transferPic]]
+    avgPics = [allPics[loadPic], allPics[transPic]]
     
     (fullPixelCounts, thresholds, threshFids, threshFitVals, threshBins, threshBinData, rmsResiduals) = arr([[None] * len(atomLocs1)] * 7)
     for i, atomLoc in enumerate(atomLocs1):
         fullPixelCounts[i] = getAtomCountsData( rawData, picsPerRep, loadPic, atomLoc, subtractEdges=subtractEdgeCounts )
         res = getThresholds( fullPixelCounts[i], 5, manualThreshold, rigorous=rigorousThresholdFinding )
         thresholds[i], threshFids[i], threshFitVals[i], threshBins[i], threshBinData[i], rmsResiduals[i] = res
-    
-    (loadPicData, transPicData, atomCounts, bins, binnedData, survivalData, survivalErrs,
-     loadingRate, loadAtoms, transAtoms, genAvgs, genErrs) = arr([[None] * len(atomLocs1)] * 12)
+    # transAtomsVarAvg, transAtomsVarErrs: the given an atom and a variation, the mean of the 
+    # transfer events (mapped to a bernoili distribution), and the error on that mean.
+    # loadAtoms (transAtoms): a list of the atom events in the load (trans) picture, mapped to a bernoilli distribution
+    (loadPicCounts, transPicCounts, bins, binnedData, transAtomsVarAvg, transAtomsVarErrs,
+     loadingRate, loadAtoms, transAtoms, genAvgs, genErrs, transList) = arr([[None] * len(atomLocs1)] * 12)
     if subtractEdgeCounts:
         borders_load = getAvgBorderCount(groupedData, loadPic, picsPerRep)
-        borders_trans = getAvgBorderCount(groupedData, transferPic, picsPerRep)
+        borders_trans = getAvgBorderCount(groupedData, transPic, picsPerRep)
     else:
         borders_load = borders_trans = np.zeros(len(groupedData.shape[0]*groupedData.shape[1]))
     for i, (loc1, loc2) in enumerate(zip(atomLocs1, atomLocs2)):
-        loadPicData[i] = normalizeData(groupedData, loc1, loadPic, picsPerRep, borders_load)
-        transPicData[i] = normalizeData(groupedData, loc2, transferPic, picsPerRep, borders_trans)
-        atomCounts[i] = arr([a for a in arr(list(zip(loadPicData[i], transPicData[i]))).flatten()])
+        loadPicCounts[i]  = normalizeData(groupedData, loc1, loadPic, picsPerRep, borders_load)
+        transPicCounts[i] = normalizeData(groupedData, loc2, transPic, picsPerRep, borders_trans)
         loadAtoms[i], transAtoms[i] = [[] for _ in range(2)]
-        for point1, point2 in zip(loadPicData[i], transPicData[i]):
+        for point1, point2 in zip(loadPicCounts[i], transPicCounts[i]):
             loadAtoms[i].append(point1 > thresholds[i])
             transAtoms[i].append(point2 > thresholds[i])
     if postSelectionCondition is not None:
-        loadAtoms, transAtoms = postSelectOnAssembly(loadAtoms, transAtoms, postSelectionCondition,
-                                                    connected=postSelectionConnected)
+        loadAtoms, transAtoms = postSelectOnAssembly( loadAtoms, transAtoms, postSelectionCondition,
+                                                      connected=postSelectionConnected )
     for i in range(len(atomLocs1)):
-        survivalList = getSurvivalEvents(loadAtoms[i], transAtoms[i])
-        survivalData[i], survivalErrs[i], loadingRate[i] = getSurvivalData(survivalList, repetitions)
+        transList[i] = getTransferEvents(loadAtoms[i], transAtoms[i])
+        transAtomsVarAvg[i], transAtomsVarErrs[i], loadingRate[i] = getTransferStats(transList[i], repetitions)
         if getGenerationStats:
             genList = getGenerationEvents(loadAtoms[i], transAtoms[i])
             genAvgs[i], genErrs[i] = getGenStatistics(genList, repetitions)
         else:
             genAvgs[i], genErrs[i] = [None, None]
     # Positioning of this is very important.
-    #res = groupMultidimensionalData(key, varyingDim, atomLocs1, survivalData, survivalErrs, loadingRate)
-    res = (key, atomLocs1, survivalErrs, survivalData, loadingRate, [None for _ in range(len(key)*len(atomLocs1))])
-    (key, locationsList, survivalErrs, survivalData, loadingRate, otherDims) = res
+    #res = groupMultidimensionalData(key, varyingDim, atomLocs1, transferData, transAtomsVarErrs, loadingRate)
+    res = (key, atomLocs1, transAtomsVarErrs, transAtomsVarAvg, loadingRate, [None for _ in range(len(key)*len(atomLocs1))])
+    (key, locationsList, transAtomsVarErrs, transAtomsVarAvg, loadingRate, otherDims) = res
 
-    loadPicData = arr(loadPicData.tolist())
-    atomCounts = arr(atomCounts.tolist())
-    # calculate average values
-    avgSurvivalData, avgSurvivalErr, avgFit = [None]*3
+    loadPicCounts = arr(loadPicCounts.tolist())
+    
+    # an atom average. The answer to the question: if you picked a random atom for a given variation, 
+    # what's the mean [mean value] that you would find, and what is the error on that mean?
+    # transAtomVarAvg, transAtomVarErr
+    avgTransData, avgTransErr, avgFit = [None]*3
     # weight the sum with loading percentage
-    if normalizeForLoadingRate:
-        avgSurvivalData = sum(survivalData*loadingRate)/sum(loadingRate)
-    else:
-        avgSurvivalData = np.mean(survivalData)
-    avgSurvivalErr = np.sqrt(np.sum(survivalErrs**2))/len(atomLocs1)
+    avgTransData = np.mean(transAtomsVarAvg)
+    avgTransErr = np.sqrt(np.sum(transAtomsVarErrs**2)/len(atomLocs1))
+    ### ###
+    # averaged over all events for 
+    transVarAvg, transVarErr = [[],[]]
+    transVarList = [ah.groupEventsIntoVariations(atomsList, repetitions) for atomsList in transList]
+    print(len(transVarList[0]))
+    #print(transVarList.shape)
+    allAtomsListByVar = [[z for atomList in transVarList for z in atomList[i]] for i in range(len(transVarList[0]))]
+    #allAtomsListByVar = [sum(transVarList[:,i]) for i in range(len(transVarList[0]))]
+    for varData in allAtomsListByVar:
+        p = np.mean(varData)
+        transVarAvg.append(p)
+        transVarErr.append(np.sqrt(p*(1-p)/len(varData)))
+    
+    #avgTransData, avgTransErr, avgFit = [None]*3
+    # weight the sum with loading percentage
+    #if normalizeForLoadingRate:
+    #    avgTransData = sum(transAtomsVarAvg*loadingRate)/sum(loadingRate)
+    #else:
+    
     
     fits = [None] * len(locationsList)
     if fitModule is not None:
         for i, _ in enumerate(locationsList):
-            fits[i], _ = fitWithClass(fitModule, key, survivalData[i])
-        avgFit, _ = fitWithClass(fitModule, key, avgSurvivalData)
-    if outputMma:
-        outputDataToMmaNotebook(fileNumber, survivalData, survivalErrs, loadingRate, key)
-    return (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate, loadPicData, keyName, key,
-            repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPics, otherDims, locationsList,
-            genAvgs, genErrs, threshFitVals, tt, threshFids, rmsResiduals)
+            fits[i], _ = fitWithClass(fitModule, key, transAtomsVarAvg[i])
+        avgFit, _ = fitWithClass(fitModule, key, avgTransData)
+    return (atomLocs1, atomLocs2, transAtomsVarAvg, transAtomsVarErrs, loadingRate, loadPicCounts, keyName, key,
+            repetitions, thresholds, fits, avgTransData, avgTransErr, avgFit, avgPics, otherDims, locationsList,
+            genAvgs, genErrs, threshFitVals, tt, threshFids, rmsResiduals, transVarAvg, transVarErr)
 
 
 def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, analyzeTogether=False, 

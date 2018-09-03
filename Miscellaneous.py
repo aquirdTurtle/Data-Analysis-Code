@@ -180,7 +180,7 @@ def round_sig_str(x, sig=3):
         print(abs(x))
 
 
-def errString(val, err, precision=3):
+def errString(val, err, precision=None):
     """
     takes the input value and error and makes a nice error string. e.g.
     inputs of
@@ -192,10 +192,16 @@ def errString(val, err, precision=3):
     :return:
     """
     if err == 0:
+        if precision is None:
+            precision = 3
         return round_sig_str(val, precision) + '(0)'
     valE = getExp(val)
     # determine number of values of err to show.
     errE = getExp(err)
+    if precision is None:
+        # determine first significant digit of error and use that. 
+        precision = int(valE - errE + 1)
+        print(precision)
     if valE == float('Inf') or valE == float('-Inf'):
         return "?(?)"
     if errE == float('Inf') or errE == float('-Inf'):
@@ -214,3 +220,4 @@ def errString(val, err, precision=3):
     errNum = int(round(err*10**expFactor))
     result = round_sig_str(val, precision) + '(' + round_sig_str(errNum, num) + ')'
     return result
+

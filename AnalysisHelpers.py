@@ -34,19 +34,19 @@ from ExpFile import ExpFile, dataAddress
 from TimeTracker import TimeTracker
 
 def temperatureAnalysis( data, magnification, **standardImagesArgs ):
-    res = ma.standardImages(data, scanType="Time(ms)", majorData='fits', fitPics=True, manualAccumulation=True, **standardImagesArgs)
+    res = ma.standardImages(data, scanType="Time(ms)", majorData='fits', fitPics=True, manualAccumulation=True, quiet=True, **standardImagesArgs)
     (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, fitCov) = res
     # convert to meters
     waists = 2 * consts.baslerScoutPixelSize * np.sqrt((pictureFitParams[:, 3]**2+pictureFitParams[:, 4]**2)/2) * magnification
     # convert to s
     times = key / 1000
     temp, fitVals, fitCov = newCalcMotTemperature(times, waists / 2)
-    return temp, fitVals, fitCov, times, waists, rawData, pictureFitParams
+    return temp, fitVals, fitCov, times, waists, rawData, pictureFitParams, key
 
 
 def motFillAnalysis( dataSetNumber, motKey, exposureTime, window=(0,0,0,0), sidemotPower=2.05, diagonalPower=8, motRadius=8 * 8e-6,
-                     imagingLoss=0.8, detuning=10e6 ):
-    rawData = ma.standardImages(dataSetNumber, key=motKey, scanType="time (s)", window=window, quiet=True)[1]
+                     imagingLoss=0.8, detuning=10e6, **standardImagesArgs ):
+    rawData = ma.standardImages(dataSetNumber, key=motKey, scanType="time (s)", window=window, quiet=True, **standardImagesArgs)[1]
     intRawData = integrateData(rawData)
     try:
         fitParams, pcov = opt.curve_fit( exponential_saturation.f, motKey, intRawData,
@@ -650,7 +650,7 @@ def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1):
     return popt, np.sqrt(np.diag(pcov))
 
 
-def fitPictures(pictures, dataRange, guessSigma_x=1, guessSigma_y=1):
+def fitPictures(pictures, dataRange, guessSigma_x=1, guessSigma_y=1, quiet=False):
     """
 
     :param pictures:
@@ -663,9 +663,11 @@ def fitPictures(pictures, dataRange, guessSigma_x=1, guessSigma_y=1):
     fitErrors = []
     count = 0
     warningHasBeenThrown = False
-    print('fitting picture Number...')
+    if not quiet:
+        print('fitting picture Number...')
     for picInc, picture in enumerate(pictures):
-        print(picInc, ',', end='')
+        if not quiet:
+            print(picInc, ',', end='')
         if count not in dataRange:
             count += 1
             fitParameters.append(np.zeros(7))
@@ -1629,7 +1631,7 @@ def getGenerationEvents(loadAtoms, finAtomsAtoms):
             genData = np.append(genData, [0])
     return genData
 
-def getSurvivalEvents(pic1Atoms, pic2Atoms):
+def getTransferEvents(pic1Atoms, pic2Atoms):
     """
     It returns a raw array that includes every survival data point, including points where the the atom doesn't get
     loaded at all.
@@ -1638,21 +1640,21 @@ def getSurvivalEvents(pic1Atoms, pic2Atoms):
     pic1Atoms = arr(arr(pic1Atoms).tolist())
     pic2Atoms = arr(arr(pic2Atoms).tolist())
     # -1 = no atom in the first place.
-    survivalData = np.zeros(pic1Atoms.shape) - 1
+    transferData = np.zeros(pic1Atoms.shape) - 1
     # convert to 1 if atom and atom survived
-    survivalData += 2 * pic1Atoms * pic2Atoms
+    transferData += 2 * pic1Atoms * pic2Atoms
     # convert to 0 if atom and atom didn't survive. This and the above can't both evaluate to non-zero.
-    survivalData += pic1Atoms * (~pic2Atoms)
-    return survivalData.flatten()
+    transferData += pic1Atoms * (~pic2Atoms)
+    return transferData.flatten()
 
-def getSurvivalEvents_slow(pic1Atoms, pic2Atoms):
+def getTransferEvents_slow(pic1Atoms, pic2Atoms):
     """
     It returns a raw array that includes every survival data point, including points where the the atom doesn't get
     loaded at all.
     """
     # this will include entries for when there is no atom in the first picture.
-    survivalData = np.array([])
-    survivalData.astype(int)
+    transferData = np.array([])
+    transferData.astype(int)
     # flattens variations & locations?
     # if len(data.shape) == 4:
     #     data.reshape((data.shape[0] * data.shape[1], data.shape[2], data.shape[3]))
@@ -1661,63 +1663,72 @@ def getSurvivalEvents_slow(pic1Atoms, pic2Atoms):
     for atom1, atom2 in zip(pic1Atoms, pic2Atoms):
         if atom1 and atom2:
             # atom survived
-            survivalData = np.append(survivalData, [1])
+            transferData = np.append(transferData, [1])
         elif atom1 and not atom2:
             # atom didn't survive
-            survivalData = np.append(survivalData, [0])
+            transferData = np.append(transferData, [0])
         else:
             # no atom in the first place
-            survivalData = np.append(survivalData, [-1])
-    return survivalData
+            transferData = np.append(transferData, [-1])
+    return transferData
 
-def getSurvivalData(survivalData, repetitionsPerVariation):
+
+def getTransferStats(transList, repsPerVar):
     # Take the previous data, which includes entries when there was no atom in the first picture, and convert it to
     # an array of just loaded and survived or loaded and died.
-    survivalAverages = np.array([])
+    transferAverages = np.array([])
     loadingProbability = np.array([])
-    survivalErrors = np.array([])
-    if survivalData.size < repetitionsPerVariation:
-        repetitionsPerVariation = survivalData.size
-    for variationInc in range(0, int(survivalData.size / repetitionsPerVariation)):
-        survivalList = arr([x for x in survivalData[variationInc * repetitionsPerVariation:(variationInc+1) * repetitionsPerVariation] if x != -1])
-        if survivalList.size == 0:
+    transferErrors = np.array([])
+    if transList.size < repsPerVar:
+        # probably a single variation that has been sliced to cut out bad data.
+        repsPerVar = transList.size
+    for variationInc in range(0, int(transList.size / repsPerVar)):
+        transVarList = arr([x for x in transList[variationInc * repsPerVar:(variationInc+1) * repsPerVar] if x != -1])
+        if transVarList.size == 0:
             # catch the case where there's no relevant data, typically if laser becomes unlocked.
-            survivalErrors = np.append(survivalErrors, [0])
+            transferErrors = np.append(transferErrors, [0])
             loadingProbability = np.append(loadingProbability, [0])
-            survivalAverages = np.append(survivalAverages, [0])
+            transferAverages = np.append(transferAverages, [0])
         else:
             # normal case
-            survivalErrors = np.append(survivalErrors, np.std(survivalList)/np.sqrt(survivalList.size))
-            loadingProbability = np.append(loadingProbability, survivalList.size / repetitionsPerVariation)
-            survivalAverages = np.append(survivalAverages, np.average(survivalList))
-    
-    return survivalAverages, survivalErrors, loadingProbability
+            transferErrors = np.append(transferErrors, np.std(transVarList)/np.sqrt(transVarList.size))
+            loadingProbability = np.append(loadingProbability, transVarList.size / repsPerVar)
+            transferAverages = np.append(transferAverages, np.average(transVarList))    
+    return transferAverages, transferErrors, loadingProbability
 
-def getSurvivalData_fast(survivalData, repetitionsPerVariation):
+
+def groupEventsIntoVariations(bareList, repsPerVar):
+    varList = [None for _ in range(int(bareList.size / repsPerVar))]
+    for varInc in range(0, int(bareList.size / repsPerVar)):
+        varList[varInc] = arr([x for x in bareList[varInc * repsPerVar:(varInc+1) * repsPerVar] if x != -1])
+    return varList
+
+
+def getTransferStats_fast(transferData, repetitionsPerVariation):
     # Take the previous data, which includes entries when there was no atom in the first picture, and convert it to
     # an array of just loaded and survived or loaded and died.
-    survivalAverages = np.array([])
+    transferAverages = np.array([])
     loadingProbability = np.array([])
-    survivalErrors = np.array([])
-    if survivalData.size < repetitionsPerVariation:
-        repetitionsPerVariation = survivalData.size
-    for variationInc in range(0, int(survivalData.size / repetitionsPerVariation)):
-        survivalList = np.array([])
+    transferErrors = np.array([])
+    if transferData.size < repetitionsPerVariation:
+        repetitionsPerVariation = transferData.size
+    for variationInc in range(0, int(transferData.size / repetitionsPerVariation)):
+        transferList = np.array([])
         for repetitionInc in range(0, repetitionsPerVariation):
-            if survivalData[variationInc * repetitionsPerVariation + repetitionInc] != -1:
-                survivalList = np.append(survivalList,
-                                         survivalData[variationInc * repetitionsPerVariation + repetitionInc])
-        if survivalList.size == 0:
+            if transferData[variationInc * repetitionsPerVariation + repetitionInc] != -1:
+                transferList = np.append(transferList,
+                                         transferData[variationInc * repetitionsPerVariation + repetitionInc])
+        if transferList.size == 0:
             # catch the case where there's no relevant data, typically if laser becomes unlocked.
-            survivalErrors = np.append(survivalErrors, [0])
+            transferErrors = np.append(transferErrors, [0])
             loadingProbability = np.append(loadingProbability, [0])
-            survivalAverages = np.append(survivalAverages, [0])
+            transferAverages = np.append(transferAverages, [0])
         else:
             # normal case
-            survivalErrors = np.append(survivalErrors, np.std(survivalList)/np.sqrt(survivalList.size))
-            loadingProbability = np.append(loadingProbability, survivalList.size / repetitionsPerVariation)
-            survivalAverages = np.append(survivalAverages, np.average(survivalList))
-    return survivalAverages, survivalErrors, loadingProbability
+            transferErrors = np.append(transferErrors, np.std(transferList)/np.sqrt(transferList.size))
+            loadingProbability = np.append(loadingProbability, transferList.size / repetitionsPerVariation)
+            transferAverages = np.append(transferAverages, np.average(transferList))
+    return transferAverages, transferErrors, loadingProbability
 
 
 def getAvgPic(picSeries):

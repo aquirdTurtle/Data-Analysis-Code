@@ -9,12 +9,12 @@ from Miscellaneous import getColors, round_sig, round_sig_str, getMarkers, errSt
 import Miscellaneous as misc
 from matplotlib.pyplot import *
 import matplotlib as mpl
-from mpl_toolkits.axes_grid1 import make_axes_locatable
+import mpl_toolkits.axes_grid1 as axesTool
 
 
 from scipy.optimize import curve_fit as fit
 from AnalysisHelpers import (loadDataRay, loadCompoundBasler, processSingleImage, orderData,
-                             normalizeData, getBinData, getSurvivalData, getSurvivalEvents, fitDoubleGaussian,
+                             normalizeData, getBinData, getTransferStats, getTransferEvents, fitDoubleGaussian,
                              guessGaussianPeaks, calculateAtomThreshold, getAvgPic, getEnsembleHits,
                              getEnsembleStatistics, handleFitting, 
                              loadDetailedKey, processImageData,
@@ -90,7 +90,6 @@ def plotNiawg(fileIndicator, points=300, plotTogether=True, plotVolts=False):
     semilogy(fftc2['Freq'], abs(fftc2['Amp']) ** 2, 'o:', label='Horizontal Channel', markersize=4, linewidth=1)
     if not plotTogether:
         legend()
-    
     # this is half the niawg sample rate. output is mirrored around x=0.
     xlim(0, 160e6)
     show()
@@ -99,14 +98,14 @@ def plotNiawg(fileIndicator, points=300, plotTogether=True, plotVolts=False):
 def plotMotTemperature(data, key=None, magnification=3, **standardImagesArgs):
     """
     Calculate the mot temperature, and plot the data that led to this.
-
     :param data:
     :param standardImagesArgs: see the standardImages function to see the acceptable arguments here.
     :return:
     """
-    temp, fitVals, fitCov, times, waists, rawData, pictureFitParams = ah.temperatureAnalysis(data, magnification, key=key, **standardImagesArgs)
+    res = ah.temperatureAnalysis(data, magnification, key=key, loadType='basler',**standardImagesArgs)
+    temp, fitVals, fitCov, times, waists, rawData, pictureFitParams, key = res
     errs = np.sqrt(np.diag(fitCov))
-    f, ax = subplots()
+    f, ax = subplots(figsize=(20,3))
     ax.plot(times, waists, 'bo', label='Raw Data Waist')
     ax.plot(times, 2 * LargeBeamMotExpansion.f(times, *fitVals), 'c:', label='balistic MOT expansion Fit Waist')
     ax.yaxis.label.set_color('c')
@@ -124,13 +123,13 @@ def plotMotTemperature(data, key=None, magnification=3, **standardImagesArgs):
     print("\nTemperture in the Large Laser Beam Approximation:", misc.errString(temp * 1e6, errs[2]*1e6), 'uK')
     print('Fit-Parameters:', fitVals)
     return pictureFitParams,rawData
-
     
-def plotMotNumberAnalysis(dataSetNumber, motKey, exposureTime,  *fillAnalysisArgs):
+    
+def plotMotNumberAnalysis(data, motKey, exposureTime,  *fillAnalysisArgs):
     """
     Calculate the MOT number and plot the data that resulted in the #.
 
-    :param dataSetNumber: the number corresponding to the data set you want to analyze.
+    :param data: the number corresponding to the data set you want to analyze.
     :param motKey: the x-axis of the data. Should an array where each element corresponds to the time at which
         its corresponding picture was taken.
     :param exposureTime: the time the camera was exposed for to take the picture. Important in calculating the
@@ -147,17 +146,16 @@ def plotMotNumberAnalysis(dataSetNumber, motKey, exposureTime,  *fillAnalysisArg
     :param imagingLoss: the loss in the imaging path due to filtering, imperfect reflections, etc.
     :param detuning: detuning of the mot beams during the imaging.
     """
-    rawData, intRawData, motnumber, fitParams, fluorescence = ah.motFillAnalysis(dataSetNumber, motKey, exposureTime, *fillAnalysisArgs)
-    figure()
+    rawData, intRawData, motnumber, fitParams, fluorescence = ah.motFillAnalysis(data, motKey, exposureTime, loadType='basler', *fillAnalysisArgs)
+    figure(figsize=(20,3))
     plot(motKey, intRawData, 'bo', label='data', color='b')
     xfitPts = np.linspace(min(motKey), max(motKey), 1000)
     plot(xfitPts, exponential_saturation.f(xfitPts, *fitParams), 'b-', label='fit', color='r', linestyle=':')
     xlabel('loading time (s)')
     ylabel('integrated counts')
-    title('Mot Fill Curve')
+    title('Mot Fill Curve: MOT Number:' + str(motnumber))
     print("integrated saturated counts subtracting background =", -fitParams[0])
     print("loading time 1/e =", fitParams[1], "s")
-    print('MOT Number:', motnumber)
     print('Light Scattered off of full MOT:', fluorescence * consts.h * consts.Rb87_D2LineFrequency * 1e9, "nW")
     return motnumber
 
@@ -219,23 +217,28 @@ def Survival(fileNumber, atomLocs, **TransferArgs):
     return Transfer(fileNumber, atomLocs, atomLocs, **TransferArgs)
 
 
-def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingRate=False, legendOption=None,
-             fitModule=None, showFitDetails=False, showFitCenterPlot=False, showImagePlots=True, plotIndvHists=False, 
-             timeit=False, **standardTransferArgs):
+def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingRate=False, legendOption=None,
+              fitModule=None, showFitDetails=False, showFitCenterPlot=False, showImagePlots=None, plotIndvHists=False, 
+              timeit=False, **standardTransferArgs ):
     """
     Standard data analysis package for looking at survival rates throughout an experiment.
     :return key, transferData, survivalErrors
-    """
+    """    
     tt = TimeTracker()
     res = standardTransferAnalysis( fileNumber, atomLocs1_orig, atomLocs2_orig, fitModule=fitModule, tt=tt,
-                                    **standardTransferArgs )
+                                    **standardTransferArgs ) 
     tt.clock('After-Standard-Analysis')
-    (atomLocs1, atomLocs2, atomCounts, transferData, transferErrs, loadingRate, pic1Data, keyName, key,
+    (atomLocs1, atomLocs2, transferData, transferErrs, loadingRate, pic1Data, keyName, key,
      repetitions, thresholds, fits, avgTransferData, avgTransferErr, avgFit, avgPics, otherDimValues,
-     locsList, genAvgs, genErrs, gaussianFitVals, tt, threshFids, rmsResiduals) = res
+     locsList, genAvgs, genErrs, gaussianFitVals, tt, threshFids, rmsResiduals, transVarAvg, transVarErr) = res
     if not show:
         return (key, transferData, transferErrs, loadingRate, fits, avgFit, genAvgs, genErrs, pic1Data, 
             gaussianFitVals, [None], thresholds, [None])
+    
+    if len(atomLocs1) == 1 and showImagePlots is None:
+        showImagePlots = False
+    elif showImagePlots is None:
+        showImagePlots = True
     legendOption = True if legendOption is None and len(atomLocs1) < 50 else False
     # set locations of plots.
     f = figure()
@@ -276,7 +279,8 @@ def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingR
         keyName = keyn
     titletxt = keyName + " " + typeName + " Scan"
     if len(transferData[0]) == 1:
-        titletxt = keyName + " " + typeName + " Point.\n Avg " + typeName + "% = " + round_sig_str(np.mean(avgTransferData))        
+        titletxt = keyName + " " + typeName + " Point.\n Avg " + typeName + "% = " + misc.errString(np.mean(avgTransferData), 
+                                                                                                    np.sqrt(np.sum(avgTransferErr**2)/len(avgTransferErr)))
     mainPlot.set_title(titletxt, fontsize=30)
     mainPlot.set_ylabel("S %", fontsize=20)
     mainPlot.set_xlabel(keyName, fontsize=20)
@@ -421,7 +425,7 @@ def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingR
             ax.set_yticklabels([])
             ax.set_xticklabels([])
             ax.grid(False)
-            divider = make_axes_locatable(ax)
+            divider = axesTool.make_axes_locatable(ax)
             cax = divider.append_axes('right', size='5%', pad=0.05)
             cb = f.colorbar(im, cax, orientation='vertical')
             cb.ax.tick_params(labelsize=8) 
@@ -433,8 +437,8 @@ def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingR
         tt.display()
     avgPlt1.set_position([0.58,0,0.3,0.3])
     avgPlt2.set_position([0.73,0,0.3,0.3])
-    return (key, transferData, transferErrs, loadingRate, fits, avgFit, genAvgs, genErrs, pic1Data, 
-            gaussianFitVals, centers, thresholds, avgTransferPic)
+    return ( key, transferData, transferErrs, loadingRate, fits, avgFit, genAvgs, genErrs, pic1Data, 
+             gaussianFitVals, centers, thresholds, avgTransferPic, transVarAvg, transVarErr, avgTransferData, avgTransferErr )
 
 
 def Loading(fileNum, atomLocations, **PopulationArgs):
@@ -634,7 +638,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
             ax.set_yticklabels([])
             ax.set_xticklabels([])
             ax.grid(False)
-            divider = make_axes_locatable(ax)
+            divider = axesTool.make_axes_locatable(ax)
             cax = divider.append_axes('right', size='5%', pad=0.05)
             f.colorbar(im, cax, orientation='vertical')
     avgLoads = []
@@ -789,53 +793,49 @@ def showPics(data, key, fitParams=np.array([]), indvColorBars=False, colorMax=-1
     num = len(data)
     gridsize1, gridsize2 = (0, 0)
     for i in range(100):
-        if i*i >= num:
+        if i*(i-2) >= num:
             gridsize1 = i
-            gridsize2 = i-1 if i*(i-1) >= num else i
+            gridsize2 = i-2# if i*(i-1) >= num else i
             break
-    fig, plts = subplots(gridsize2, gridsize1, figsize=(15, 10))
-    fig2, plts2 = subplots(gridsize2, gridsize1, figsize=(15, 10))
+    fig = figure(figsize=(20,20))
+    grid = axesTool.AxesGrid( fig, 111, nrows_ncols=(2, num), axes_pad=0.0, share_all=True,
+                              label_mode="L", cbar_location="right", cbar_mode="single" )
     rowCount, picCount, count = 0,0,0
     maximum, minimum = sorted(data.flatten())[colorMax], min(data.flatten())
     # get picture fits & plots
-    for row in plts:
-        for _ in row:
-            plts[rowCount, picCount].grid(0)
-            if count >= len(data):
-                count += 1
-                picCount += 1
-                continue
-            pic = data[count]
-            if indvColorBars:
-                maximum, minimum = max(pic.flatten()), min(pic.flatten())
-            y, x = [np.linspace(1, pic.shape[i], pic.shape[i]) for i in range(2)]
-            x, y = np.meshgrid(x, y)
-            im = plts[rowCount, picCount].imshow( pic, origin='bottom', extent=(x.min(), x.max(), y.min(), y.max()),
-                                                  vmin=minimum, vmax=maximum )
-            plts[rowCount, picCount].axis('off')
-            plts[rowCount, picCount].set_title(str(round_sig(key[count], 4)), fontsize=8)
-            if fitParams.size != 0:
-                if (fitParams[count] != np.zeros(len(fitParams[count]))).all():
-                    try:
-                        ellipse = Ellipse(xy=(fitParams[count][1], fitParams[count][2]),
-                                          width=2*fitParams[count][3], height=2*fitParams[count][4],
-                                          angle=-fitParams[count][5]*180/np.pi, edgecolor='r', fc='None', lw=2, alpha=0.2)
-                        plts[rowCount, picCount].add_patch(ellipse)
-                    except ValueError:
-                        pass
-                plts2[rowCount,picCount].grid(0)
-                x, y = np.arange(0,len(pic[0])), np.arange(0,len(pic))
-                X, Y = np.meshgrid(x,y)
-                vals = np.reshape(gaussian_2d.f((X,Y), *fitParams[count]), pic.shape)
-                im2 = plts2[rowCount,picCount].imshow(pic-vals, vmin=-2, vmax=2, origin='bottom',
-                                                     extent=(x.min(), x.max(), y.min(), y.max()))
-                plts2[rowCount,picCount].axis('off')
-                plts2[rowCount,picCount].set_title(str(round_sig(key[count], 4)), fontsize=8)
+    for picNum in range(num):
+        pl = grid[count]
+        pl.grid(0)
+        if count >= len(data):
             count += 1
             picCount += 1
-        picCount = 0
-        rowCount += 1
-    # final touches
-    for f in [fig, fig2]:
-        cax = f.add_axes([0.95, 0.1, 0.03, 0.8])
-        f.colorbar(im, cax=cax)
+            continue
+        pic = data[count]
+        if indvColorBars:
+            maximum, minimum = max(pic.flatten()), min(pic.flatten())
+        y, x = [np.linspace(1, pic.shape[i], pic.shape[i]) for i in range(2)]
+        x, y = np.meshgrid(x, y)
+        im1 = pl.imshow( pic, origin='bottom', extent=(x.min(), x.max(), y.min(), y.max()),
+                                              vmin=minimum, vmax=maximum )
+        pl.axis('off')
+        pl.set_title(str(round_sig(key[count], 4)), fontsize=8)
+        if fitParams.size != 0:
+            if (fitParams[count] != np.zeros(len(fitParams[count]))).all():
+                try:
+                    ellipse = Ellipse(xy=(fitParams[count][1], fitParams[count][2]),
+                                      width=2*fitParams[count][3], height=2*fitParams[count][4],
+                                      angle=-fitParams[count][5]*180/np.pi, edgecolor='r', fc='None', lw=2, alpha=0.2)
+                    pl.add_patch(ellipse)
+                except ValueError:
+                    pass
+            pl2 = grid[count+num]
+            pl2.grid(0)
+            x, y = np.arange(0,len(pic[0])), np.arange(0,len(pic))
+            X, Y = np.meshgrid(x,y)
+            vals = np.reshape(gaussian_2d.f((X,Y), *fitParams[count]), pic.shape)
+            im2 = pl2.imshow(pic-vals, vmin=-2, vmax=2, origin='bottom',
+                                                 extent=(x.min(), x.max(), y.min(), y.max()))
+            pl2.axis('off')
+        count += 1
+        picCount += 1
+    grid.cbar_axes[0].colorbar(im1);
