@@ -412,7 +412,6 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoading
         if genAvgs is not None:
             if genAvgs[0] is not None:
                 genAtomAvgs = [np.mean(dp) for dp in genAvgs]
-                print('what',genAvgs)
                 genImage, _, vmax = genAvgDiscrepancyImage(genAtomAvgs, avgPics[0].shape, atomLocs1)
             else:
                 genAtomAvgs = [0]

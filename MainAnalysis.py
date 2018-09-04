@@ -374,7 +374,6 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
     # averaged over all events for 
     transVarAvg, transVarErr = [[],[]]
     transVarList = [ah.groupEventsIntoVariations(atomsList, repetitions) for atomsList in transList]
-    print(len(transVarList[0]))
     #print(transVarList.shape)
     allAtomsListByVar = [[z for atomList in transVarList for z in atomList[i]] for i in range(len(transVarList[0]))]
     #allAtomsListByVar = [sum(transVarList[:,i]) for i in range(len(transVarList[0]))]
@@ -388,7 +387,6 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
     #if normalizeForLoadingRate:
     #    avgTransData = sum(transAtomsVarAvg*loadingRate)/sum(loadingRate)
     #else:
-    
     
     fits = [None] * len(locationsList)
     if fitModule is not None:
