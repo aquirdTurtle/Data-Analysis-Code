@@ -108,6 +108,23 @@ def Rb87_D2_Excited_State_Shift(Fp):
         return Rb87_5P32_ToF0
     else:
         raise ValueError("Invalid argument for D2 excited state manifold.")
+        
+Rb87_5P12_ToF2 = 306.246e6
+Rb87_5P12_ToF2_Uncertainty = 11e3
+Rb87_5P12_ToF1 = -510.410e6
+Rb87_5P12_ToF1_Uncertainty = 19e3
+
+def Rb87_D1_Excited_State_Shift(Fp):
+    """
+    Shifts based on the excited state splittings
+    """
+    if Fp == 2:
+        return Rb87_5P12_ToF2
+    elif Fp == 1:
+        return Rb87_5P12_ToF1
+    else:
+        raise ValueError("Invalid argument for D1 excited state manifold. (Fp=1 or Fp=2).")
+
 # for far-detuned approximations only.
 # strictly, I should probably weight by Clebsch-Gordon coefficients or something to get
 # a better far-detuned approximation.
