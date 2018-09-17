@@ -199,8 +199,47 @@ def errString(val, err, precision=None):
     # determine number of values of err to show.
     errE = getExp(err)
     if precision is None:
-        # determine first significant digit of error and use that. 
-        precision = int(valE - errE + 1)
+        # determine first significant digit of error and use one more than that. 
+        precision = int(valE - errE + 2)
+    if valE == float('Inf') or valE == float('-Inf'):
+        return "?(?)"
+    if errE == float('Inf') or errE == float('-Inf'):
+        return  round_sig_str(val, precision) +'(?)'
+    try:
+        num = int(errE-valE+precision)
+        if num < 0:
+            num = 0
+        expFactor = -errE + num - 1
+    except ValueError:
+        print('bad number!')
+        num = 0
+        expFactor=0
+    if expFactor <= 0:
+        expFactor = 0
+    errNum = int(round(err*10**expFactor))
+    result = round_sig_str(val, precision) + '(' + round_sig_str(errNum, num) + ')'
+    return result
+
+def dblErrString(val, err1, err2, precision=None):
+    """
+    takes the input value and error and makes a nice error string. e.g.
+    inputs of
+    1.423, 0.086, 3 gives
+    1.42(9)
+    :return:
+    """
+    if err1 == 0 or err2 == 0:
+        if precision is None:
+            precision = 3
+        return round_sig_str(val, precision) + '(0)(0)'
+    valE = getExp(val)
+    # determine number of values of err to show.
+    errE1 = getExp(err1)
+    errE2 = getExp(err2)
+    errE = min([errE1, errE2])
+    if precision is None:
+        # determine first significant digit of error and use one more than that. 
+        precision = int(valE - errE + 2)
         print(precision)
     if valE == float('Inf') or valE == float('-Inf'):
         return "?(?)"
@@ -210,14 +249,15 @@ def errString(val, err, precision=None):
         num = int(errE-valE+precision)
         if num < 0:
             num = 0
-        expFactor = -getExp(err) + num - 1
+        expFactor = -errE + num - 1
     except ValueError:
         print('bad number!')
         num = 0
         expFactor=0
     if expFactor <= 0:
         expFactor = 0
-    errNum = int(round(err*10**expFactor))
-    result = round_sig_str(val, precision) + '(' + round_sig_str(errNum, num) + ')'
+    errNum1 = int(round(err1*10**expFactor))
+    errNum2 = int(round(err2*10**expFactor))
+    result = round_sig_str(val, precision) + '(' + round_sig_str(errNum1, num) + ')' + '(' + round_sig_str(errNum2, num) + ')'
     return result
 

@@ -146,7 +146,7 @@ def plotMotNumberAnalysis(data, motKey, exposureTime,  *fillAnalysisArgs):
     :param imagingLoss: the loss in the imaging path due to filtering, imperfect reflections, etc.
     :param detuning: detuning of the mot beams during the imaging.
     """
-    rawData, intRawData, motnumber, fitParams, fluorescence = ah.motFillAnalysis(data, motKey, exposureTime, loadType='basler', *fillAnalysisArgs)
+    rawData, intRawData, motnumber, fitParams, fluorescence, motKey = ah.motFillAnalysis(data, motKey, exposureTime, loadType='basler', *fillAnalysisArgs)
     figure(figsize=(20,3))
     plot(motKey, intRawData, 'bo', label='data', color='b')
     xfitPts = np.linspace(min(motKey), max(motKey), 1000)
@@ -230,7 +230,8 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoading
     tt.clock('After-Standard-Analysis')
     (atomLocs1, atomLocs2, transferData, transferErrs, loadingRate, pic1Data, keyName, key,
      repetitions, thresholds, fits, avgTransferData, avgTransferErr, avgFit, avgPics, otherDimValues,
-     locsList, genAvgs, genErrs, gaussianFitVals, tt, threshFids, rmsResiduals, transVarAvg, transVarErr) = res
+     locsList, genAvgs, genErrs, gaussianFitVals, tt, threshFids, rmsResiduals, transVarAvg, transVarErr,
+     loadAtomImages, transAtomImages, pic2Data) = res
     if not show:
         return (key, transferData, transferErrs, loadingRate, fits, avgFit, genAvgs, genErrs, pic1Data, 
             gaussianFitVals, [None], thresholds, [None])
@@ -242,7 +243,7 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoading
     legendOption = True if legendOption is None and len(atomLocs1) < 50 else False
     # set locations of plots.
     f = figure()
-    typeName = "S." if atomLocs1 == atomLocs2 else "T."
+    typeName = "Survival" if atomLocs1 == atomLocs2 else "Transfer"
     grid1 = mpl.gridspec.GridSpec(12, 16,left=0.05, right=0.95, wspace=1.2, hspace=1000)
     mainPlot = subplot(grid1[:, :11])
     loadingPlot = subplot(grid1[0:3, 11:16])
@@ -259,7 +260,7 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoading
     markers = getMarkers()
     # Main Plot
     for i, (atomLoc, fit) in enumerate(zip(atomLocs1, fits)):
-        leg = (r"[%d,%d] " % (atomLocs1[i][0], atomLocs1[i][1]) if typeName == "S" 
+        leg = (r"[%d,%d] " % (atomLocs1[i][0], atomLocs1[i][1]) if typeName == "Survival" 
                else r"[%d,%d]$\rightarrow$[%d,%d] " % (atomLocs1[i][0], atomLocs1[i][1], atomLocs2[i][0], atomLocs2[i][1]))
         if longLegend:
             leg += (typeName + " % = " + str(round_sig(transferData[i][0])) + "$\pm$ " + str(round_sig(transferErrs[i][0])))
@@ -277,12 +278,12 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoading
         for kn in keyName:
             keyn += kn + ', '
         keyName = keyn
-    titletxt = keyName + " " + typeName + " Scan"
-    if len(transferData[0]) == 1:
-        titletxt = keyName + " " + typeName + " Point.\n Avg " + typeName + "% = " + misc.errString(np.mean(avgTransferData), 
-                                                                                                    np.sqrt(np.sum(avgTransferErr**2)/len(avgTransferErr)))
+    #if len(transferData[0]) == 1:
+    titletxt = (keyName + " " + typeName + " Point.\n Avg " + typeName + "% = " 
+                + misc.dblErrString(np.mean(transVarAvg), np.sqrt(np.sum(arr(avgTransferErr)**2)/len(avgTransferErr)),
+                                    np.sqrt(np.sum(arr(transVarErr)**2)/len(transVarErr))))
     mainPlot.set_title(titletxt, fontsize=30)
-    mainPlot.set_ylabel("S %", fontsize=20)
+    mainPlot.set_ylabel(typeName + " %", fontsize=20)
     mainPlot.set_xlabel(keyName, fontsize=20)
     mainPlot.set_yticks(np.arange(0, 1, 0.1 ))
     mainPlot.set_yticks(np.arange(0, 1, 0.05), minor=True)
@@ -346,13 +347,18 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoading
         for loc, c in zip(locs, colors):
             circ = Circle((loc[1], loc[0]), 0.2, color=c)
             plt.add_artist(circ)
-    mainPlot.errorbar( key, avgTransferData, yerr=avgTransferErr, color="#FFFFFFFF", ls='',
-                       marker='o', capsize=6, elinewidth=3, label='Avg' )
+    (_, caps, _) = mainPlot.errorbar( key, avgTransferData, yerr=avgTransferErr, color="#BBBBBB", ls='',
+                       marker='o', capsize=12, elinewidth=5, label='Atom-Avg' )
+    for cap in caps:
+        cap.set_markeredgewidth(1.5)
+    (_, caps, _) = mainPlot.errorbar( key, transVarAvg, yerr=transVarErr, color='#FFFFFF', ls='',
+                       marker='o', capsize=12, elinewidth=5, label='Event-Avg')
+    for cap in caps:
+        cap.set_markeredgewidth(1.5)
     if fitModule is not None:
         mainPlot.plot(avgFit['x'], avgFit['nom'], color='#FFFFFFFF', ls=':')
         for label, fitVal, err in zip(fitModule.args(), avgFit['vals'], avgFit['errs']):
             print( label,':', errString(fitVal, err) )
-        print(avgFit['errs'])
         if showFitDetails:
             display(getFitsDataFrame(fits, fitModule, avgFit))
     if fitModule is not None and showFitCenterPlot:
@@ -436,8 +442,17 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoading
         tt.display()
     avgPlt1.set_position([0.58,0,0.3,0.3])
     avgPlt2.set_position([0.73,0,0.3,0.3])
+    # output thresholds
+    
+    thresholds = np.flip(np.reshape(thresholds, (10,10)),1)
+    with open('J:/Code-Files/T-File.txt','w') as f:
+        for row in thresholds:
+            for thresh in row:
+                f.write(str(thresh) + ' ')
+    
     return ( key, transferData, transferErrs, loadingRate, fits, avgFit, genAvgs, genErrs, pic1Data, 
-             gaussianFitVals, centers, thresholds, avgTransferPic, transVarAvg, transVarErr, avgTransferData, avgTransferErr )
+             gaussianFitVals, centers, thresholds, avgTransferPic, transVarAvg, transVarErr, avgTransferData, avgTransferErr,
+           loadAtomImages, transAtomImages, pic2Data)
 
 
 def Loading(fileNum, atomLocations, **PopulationArgs):
@@ -530,7 +545,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         titletxt = keyName + " Atom " + typeName + " Scan"
         if len(loadRate[0]) == 1:
             print(avgLoadErr)
-            titletxt = keyName + " Atom " + typeName + " Point.\n Avg " + typeName + "% = " + errString(totalAvg, totalErr ) 
+            titletxt = keyName + " Atom " + typeName + " Point.\n Avg " + typeName + "% = " + errString(totalAvg, totalErr) 
         mainPlot.set_title(titletxt, fontsize=30)
         mainPlot.set_ylabel("S %", fontsize=20)
         mainPlot.set_xlabel(keyName, fontsize=20)
@@ -613,7 +628,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         colorbar()
     if showImagePlots:
         ims = []
-        f, axs = subplots(1,4)
+        f, axs = subplots(1,5)
         
         ims.append(axs[0].imshow(avgPic, origin='lower'))
         axs[0].set_title('Avg 1st Pic')
@@ -633,6 +648,16 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         ims.append(axs[3].imshow(thresholdFidPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower'))
         axs[3].set_title('Thresholds Fidelities')
         
+        imagePeakDiff = []
+        for g in gaussFitVals:
+            if g is not None:
+                imagePeakDiff.append(abs(g[1] - g[4]))
+            else:
+                imagePeakDiff.append(0)
+        peakDiffImage, vmin, vmax = genAvgDiscrepancyImage(imagePeakDiff, avgPic.shape, atomLocations)
+        ims.append(axs[4].imshow(peakDiffImage, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower'))
+        axs[4].set_title('Imaging-Signal:' + str(misc.round_sig(np.mean(imagePeakDiff))), fontsize=12)
+
         for ax, im in zip(axs, ims):
             ax.set_yticklabels([])
             ax.set_xticklabels([])

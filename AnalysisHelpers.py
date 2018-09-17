@@ -46,7 +46,8 @@ def temperatureAnalysis( data, magnification, **standardImagesArgs ):
 
 def motFillAnalysis( dataSetNumber, motKey, exposureTime, window=(0,0,0,0), sidemotPower=2.05, diagonalPower=8, motRadius=8 * 8e-6,
                      imagingLoss=0.8, detuning=10e6, **standardImagesArgs ):
-    rawData = ma.standardImages(dataSetNumber, key=motKey, scanType="time (s)", window=window, quiet=True, **standardImagesArgs)[1]
+    res = ma.standardImages(dataSetNumber, key=motKey, scanType="time (s)", window=window, quiet=True, **standardImagesArgs)
+    motKey, rawData = res[0], res[1]
     intRawData = integrateData(rawData)
     try:
         fitParams, pcov = opt.curve_fit( exponential_saturation.f, motKey, intRawData,
@@ -57,7 +58,7 @@ def motFillAnalysis( dataSetNumber, motKey, exposureTime, window=(0,0,0,0), side
         popt = [np.min(intRawData) - np.max(intRawData), 1 / 2, np.max(intRawData)]
     motNum, fluorescence = computeMotNumber(sidemotPower, diagonalPower, motRadius, exposureTime, imagingLoss, -fitParams[0],
                               detuning=detuning)
-    return rawData, intRawData, motNum, fitParams, fluorescence
+    return rawData, intRawData, motNum, fitParams, fluorescence, motKey
 
 
 def getTodaysTemperatureData():
@@ -1371,6 +1372,12 @@ def getNormalizedRmsDeviationOfResiduals(xdata, ydata, function, fitVals):
     residuals = ydata - function(xdata, *fitVals)
     return np.sqrt(sum(residuals**2) / len(residuals)) / np.mean(ydata)
 
+def getSurvivalBoolData(loadCounts, transCounts, threshold):
+        loadAtoms, transAtoms = [[] for _ in range(2)]
+        for point1, point2 in zip(loadCounts, transCounts):
+            loadAtoms.append(point1 > threshold)
+            transAtoms.append(point2 > threshold)
+        return loadAtoms, transAtoms
 
 def getAtomBoolData(pic1Data, threshold):
     atomCount = 0
@@ -1385,7 +1392,7 @@ def getAtomBoolData(pic1Data, threshold):
 
 
 def getAtomCountsData( pics, picsPerRep, whichPic, loc, subtractEdges=True ):
-    borders = getAvgBorderCount(pics, whichPic, picsPerRep) if subtractEdges else np.zeros(len(picSeries))
+    borders = getAvgBorderCount(pics, whichPic, picsPerRep) if subtractEdges else np.zeros(int(len(pics)/picsPerRep))
     pic1Data = normalizeData(pics, loc, whichPic, picsPerRep, borders)
     return list(pic1Data)
 
