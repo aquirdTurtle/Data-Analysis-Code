@@ -23,12 +23,12 @@ import scipy.interpolate as interp
 import MarksConstants as consts
 from Miscellaneous import transpose, round_sig, round_sig_str
 import Miscellaneous as misc
-from copy import deepcopy
+from copy import copy, deepcopy
 from fitters import (double_gaussian, cython_poissonian as poissonian, 
                     FullBalisticMotExpansion, LargeBeamMotExpansion, gaussian_2d, exponential_saturation)
 
+import dataclasses as dc
 import MainAnalysis as ma
-#import MatplotlibPlotters as mp
 
 from ExpFile import ExpFile, dataAddress
 from TimeTracker import TimeTracker
@@ -413,7 +413,7 @@ def loadDataRay(fileID):
     return data.astype(float)
 
 
-def loadCompoundBasler(num, cameraName='ace'):
+def loadCompoundBasler(num, cameraName='ace', loud=False):
     if cameraName == 'ace':
         path = dataAddress + "AceData_" + str(num) + ".txt"
     elif cameraName == 'scout':
@@ -423,12 +423,20 @@ def loadCompoundBasler(num, cameraName='ace'):
     with open(path) as file:
         original = file.read()
         pics = original.split(";")
+        if loud:
+            print('Number of Pics:', len(pics))
         dummy = linesep.join([s for s in pics[0].splitlines() if s])
         dummy2 = dummy.split('\n')
         dummy2[0] = dummy2[0].replace(' \r', '')
         data = np.zeros((len(pics), len(dummy2), len(arr(dummy2[0].split(' ')))))
         picInc = 0
         for pic in pics:
+            if loud:
+                if picInc % 100 == 0:
+                    print('')
+                if picInc% 1000 == 0:
+                    print('')
+                print('.',end='')
             # remove extra empty lines
             pic = linesep.join([s for s in pic.splitlines() if s])
             lines = pic.split('\n')
@@ -1317,52 +1325,78 @@ def getFitsDataFrame(fits, fitModule, avgFit):
     return fitDataFrame
 
 
+@dc.dataclass
+class AtomThreshold:
+    """
+    A structure that holds all of the info relevant for determining thresholds.
+    """
+    # the actual threshold
+    t:float = 0
+    fidelity:float = 0
+    binCenters:tuple = ()
+    binHeights:tuple = ()
+    fitVals:tuple = ()
+    rmsResidual:float = 0
+    rawData:tuple = ()
+    def binWidth(self):
+        return self.binCenters[1] - self.binCenters[0]
+    def binEdges(self):
+        # for step style plotting
+        return arr([self.binCenters[0] - self.binWidth()] + list(self.binCenters) + [self.binCenters[-1] + self.binWidth()]) + self.binWidth()/2
+    def binEdgeHeights(self):
+        return arr([0] + list(self.binHeights) + [0])
+    def __copy__(self):
+        return type(self)(t=self.t, fidelity=self.fidelity, binCenters=self.binCenters, binHeights=self.binHeights, 
+                          fitVals=self.fitVals, rmsResidual=self.rmsResidual, rawData=self.rawData)
+
+    
 def getThresholds( picData, binWidth, manThreshold, rigorous=True ):
-    bins, binnedData = getBinData( binWidth, picData )
+    t = AtomThreshold()
+    t.rawData = picData
+    t.binCenters, t.binHeights = getBinData( binWidth, t.rawData )
     # inner outwards
-    binGuessIteration = [bins[(len(bins) + (~i, i)[i%2]) // 2] for i in range(len(bins))]
-    #binGuessIteration = list(reversed(bins[:len(bins)//2]))
-    #binGuessIteration = list(bins[len(bins)//2:])
+    binGuessIteration = [t.binCenters[(len(t.binCenters) + (~i, i)[i%2]) // 2] for i in range(len(t.binCenters))]
+    # binGuessIteration = list(reversed(bins[:len(bins)//2]))
+    # binGuessIteration = list(bins[len(bins)//2:])
     gWidth = 25
     ampFac = 0.35
     if manThreshold is None:
-        guess1, guess2 = guessGaussianPeaks( bins, binnedData )
-        guess = arr([max(binnedData), guess1, gWidth, max(binnedData)*ampFac, guess2, gWidth])
-        gaussianFitVals = fitDoubleGaussian(bins, binnedData, guess)
-        threshold, thresholdFid = calculateAtomThreshold(gaussianFitVals)
-        rmsResidual = getNormalizedRmsDeviationOfResiduals(bins, binnedData, double_gaussian.f, gaussianFitVals)
+        guess1, guess2 = guessGaussianPeaks( t.binCenters, t.binHeights )
+        guess = arr([max(t.binHeights), guess1, gWidth, max(t.binHeights)*ampFac, guess2, gWidth])
+        t.fitVals = fitDoubleGaussian(t.binCenters, t.binHeights, guess)
+        t.t, t.fidelity = calculateAtomThreshold(t.fitVals)
+        t.rmsResidual = getNormalizedRmsDeviationOfResiduals(t.binCenters, t.binHeights, double_gaussian.f, t.fitVals)
         if rigorous:
             for r in range(len(binGuessIteration)):
-                if thresholdFid - rmsResidual*0.05 > 0.98:
+                if  t.fidelity - t.rmsResidual*0.05 > 0.97:
                     break
                 g_r = binGuessIteration[r]
-                guess = arr([max(binnedData), guess1, gWidth, max(binnedData)*ampFac, g_r, gWidth])
-                gaussianFitVals2 = fitDoubleGaussian(bins, binnedData, guess)
-                threshold2, thresholdFid2 = calculateAtomThreshold(gaussianFitVals2)
-                rmsResidual2 = getNormalizedRmsDeviationOfResiduals(bins, binnedData, double_gaussian.f, gaussianFitVals2)
+                guess = arr([max(t.binHeights), guess1, gWidth, max(t.binHeights)*ampFac, g_r, gWidth])
+                t2 = copy(t)
+                t2.fitVals = fitDoubleGaussian(t2.binCenters, t2.binHeights, guess)
+                t2.t, t2.fidelity = calculateAtomThreshold(t2.fitVals)
+                t2.rmsResidual = getNormalizedRmsDeviationOfResiduals(t2.binCenters, t2.binHeights, double_gaussian.f, t2.fitVals)
                 
-                if thresholdFid2 - rmsResidual2 > thresholdFid - rmsResidual:
-                    threshold, gaussianFitVals, thresholdFid, rmsResidual = threshold2, gaussianFitVals2, thresholdFid2, rmsResidual2
-                    #print('!',end='')
+                if t2.fidelity - t2.rmsResidual > t.fidelity - t.rmsResidual:
+                    t.t, t.fitVals, t.fidelity, t.rmsResidual = t2.t, t2.fitVals, t2.fidelity, t2.rmsResidual
                 else:
                     pass
-                    #print('.',end='')
-        #print(r,'/',len(binGuessIteration))
     elif manThreshold=='auto':
-        gaussianFitVals = None
-        threshold, thresholdFid = ((max(picData) + min(picData))/2.0, 0) 
-        rmsResidual=0
+        t.fitVals = None
+        t.t, t.fidelity = ((max(t.rawData) + min(t.rawData))/2.0, 0) 
+        t.rmsResidual=0
     elif manThreshold=='auto_guess':
-        guess = arr([max(binnedData), (max(picData) + min(picData))/4.0, gWidth,
-                     max(binnedData)*0.5, 3*(max(picData) + min(picData))/4.0, gWidth])
-        gaussianFitVals = fitDoubleGaussian(bins, binnedData, guess)
-        threshold, thresholdFid = calculateAtomThreshold(gaussianFitVals)
-        rmsResidual2 = getNormalizedRmsDeviationOfResiduals(bins, binnedData, double_gaussian.f, gaussianFitVals)
+        guess = arr([max(t.binHeights), (max(t.rawData) + min(t.rawData))/4.0, gWidth,
+                     max(t.binHeights)*0.5, 3*(max(t.rawData) + min(t.rawData))/4.0, gWidth])
+        t.fitVals = fitDoubleGaussian(t.binCenters, t.binHeights, guess)
+        t.t, t.fidelity = calculateAtomThreshold(t.fitVals)
+        t.rmsResidual = getNormalizedRmsDeviationOfResiduals(t.binCenters, t.binHeights, double_gaussian.f, t.fitVals)
     else:
-        gaussianFitVals = None
-        threshold, thresholdFid = (manThreshold, 0)
-        rmsResidual=0
-    return threshold, thresholdFid, gaussianFitVals, bins, binnedData, rmsResidual
+        t.fitVals = None
+        t.t, t.fidelity = (manThreshold, 0)
+        t.rmsResidual=0
+    
+    return t
 
 
 def getNormalizedRmsDeviationOfResiduals(xdata, ydata, function, fitVals):
@@ -1372,13 +1406,15 @@ def getNormalizedRmsDeviationOfResiduals(xdata, ydata, function, fitVals):
     residuals = ydata - function(xdata, *fitVals)
     return np.sqrt(sum(residuals**2) / len(residuals)) / np.mean(ydata)
 
-def getSurvivalBoolData(loadCounts, transCounts, threshold):
+
+def getSurvivalBoolData(loadCounts, transCounts, loadThreshold, transThreshold):
         loadAtoms, transAtoms = [[] for _ in range(2)]
-        for point1, point2 in zip(loadCounts, transCounts):
-            loadAtoms.append(point1 > threshold)
-            transAtoms.append(point2 > threshold)
+        for loadPoint, transPoint in zip(loadCounts, transCounts):
+            loadAtoms.append(loadPoint > loadThreshold)
+            transAtoms.append(transPoint > transThreshold)
         return loadAtoms, transAtoms
 
+    
 def getAtomBoolData(pic1Data, threshold):
     atomCount = 0
     pic1Atom = []
