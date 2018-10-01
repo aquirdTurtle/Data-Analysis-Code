@@ -2,8 +2,9 @@ import h5py as h5
 from colorama import Fore, Style
 from numpy import array as arr
 import numpy as np
-
+import Miscellaneous as misc
 dataAddress = None
+
 
 def setPath(day, month, year, repoAddress="J:\\Data repository\\New Data Repository"):
     """
@@ -27,7 +28,7 @@ class ExpFile:
     """
     a wrapper around an hdf5 file for easier handling and management.
     """
-    def __init__(self, file_id=None):
+    def __init__(self, file_id=None, old=False):
         """
         if you give the constructor a file_id, it will automatically fill the relevant member variables.
         """
@@ -42,27 +43,43 @@ class ExpFile:
         self.data_addr = dataAddress
         if file_id is not None:
             self.f = self.open_hdf5(fileID=file_id)
-            self.key_name, self.key = self.get_key()
+            if old:
+                self.key_name, self.key = self.__get_old_key()
+            else:
+                self.key_name, self.key = self.get_key()
             self.pics = self.get_pics()
             self.reps = self.f['Master-Parameters']['Repetitions'][0]
             self.experiment_time, self.experiment_date = self.get_experiment_time_and_date()
     
+    
     def __enter__(self):
         return self
+
     
     def __exit__(self, exc_type, exc_value, traceback):
-        return self.f.close()
+        try:
+            return self.f.close()
+        except AttributeError:
+            return
             
-    def open_hdf5(self, fileID=None):
+    
+    def open_hdf5(self, fileID=None, useBase=False):
         
         if type(fileID) == int:
             path = self.data_addr + "data_" + str(fileID) + ".h5"
-        else:
+        elif useBase:
             # assume a file address itself
+            path = self.data_addr + fileID + ".h5"
+        else:
             path = fileID
         file = h5.File(path, 'r')
         self.f = file
         return file
+    
+    def get_reps(self):
+        self.reps = self.f['Master-Parameters']['Repetitions'][0]
+        return self.reps
+
     
     def get_key(self):
         """
@@ -79,14 +96,14 @@ class ExpFile:
                 keyValues.append(arr(self.f['Master-Parameters']['Seq #1 Variables'][var]))
         if foundOne:
             if len(keyNames) > 1:
-                return keyNames, arr(transpose(arr(keyValues)))
+                return keyNames, arr(misc.transpose(arr(keyValues)))
             else:
                 return keyNames[0], arr(keyValues[0])
         else:
             return 'No-Variation', arr([1])
     
     
-    def __get_old_key(self):
+    def get_old_key(self):
         """
         :param file:
         :return:
@@ -111,13 +128,40 @@ class ExpFile:
         p_t = arr(self.f['Andor']['Pictures'])
         pics = p_t.reshape((p_t.shape[0], p_t.shape[2], p_t.shape[1]))
         return pics
+    
+    
+    def get_basler_pics(self):
+        p_t = arr(self.f['Basler']['Pictures'])
+        pics = p_t.reshape((p_t.shape[0], p_t.shape[2], p_t.shape[1]))
+        return pics
         
+    def get_avg_pic(self):
+        pics = self.get_pics()
+        avg_pic = np.zeros(pics[0].shape)
+        for p in pics:
+            avg_pic += p
+        avg_pic /= len(pics)
+        return avg_pic
+
+    def get_avg_basler_pic(self):
+        pics = self.get_basler_pics()
+        avg_pic = np.zeros(pics[0].shape)
+        for p in pics:
+            avg_pic += p
+        avg_pic /= len(pics)
+        return avg_pic
+    
+    
     def print_all(self):
         self.__print_hdf5_obj(self.f,'')
     
     def print_all_groups(self):
         self.__print_groups(self.f,'')
 
+        
+    def print_parameters(self):
+        self.__print_hdf5_obj(self.f['Master-Parameters']['Seq #1 Variables'],'')
+        
     def __print_groups(self, obj, prefix):
         """
         Used recursively to print the structure of the file.
@@ -158,20 +202,26 @@ class ExpFile:
             else:
                 raise TypeError('???')
     
-    def print_functions(self, brief=True, prefix=''):
+    def print_functions(self, brief=True, prefix='', which=None):
         """
         print the list of all functions which were created at the time of the experiment.
         if not brief, print the contents of every function.
         """
         for func in self.f['Master-Parameters']['Functions']:
+            if which is not None:
+                if func != which:
+                    print(func)
+                    continue
             print(prefix,'-',func,end='')
             if not brief:
                 print(': \n---------------------------------------')
                 # I think it's a bug that this is nested like this.
                 for x in self.f['Master-Parameters']['Functions'][func]:
                     for y in self.f['Master-Parameters']['Functions'][func][x]:
-                        print(Style.DIM, y.decode('UTF-8'),end='')
-                print('\n---------------------------------------\n')
+                        # print(Style.DIM, y.decode('utf-8'), end='') for some reason the 
+                        # DIM isn't working at the moment on the data analysis comp...
+                        print(y.decode('utf-8'), end='')
+                print('\n---------------------------------------\ncount=')
             print('')
 
     def print_master_script(self):
