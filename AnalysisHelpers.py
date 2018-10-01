@@ -1,5 +1,6 @@
 __version__ = "1.4"
 
+import csv
 from os import linesep
 from pandas import read_csv as pd_read_csv
 import pandas as pd
@@ -400,9 +401,13 @@ def load_SSA_3021X(fn):
         cf = csv.reader(f)
         freqs = []
         pows = []
+        flag = False
         for i, row in enumerate(cf):
             # important: first 30 lines include information about scan settings, data is afterwards.
-            if i < 30:
+            if row[0] == 'Trace Data':
+                flag = True
+                continue
+            if not flag:
                 continue
             freqs.append(float(row[0]))
             pows.append(float(row[1]))
