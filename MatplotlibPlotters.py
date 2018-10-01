@@ -24,7 +24,7 @@ from fitters import gaussian_2d, LargeBeamMotExpansion
 
 
 def indvHists(dat, thresh, colors, extra=None):
-    f, axs = subplots(5,5)
+    f, axs = subplots(10,10)
     for i, (d,t,c) in enumerate(zip(dat, thresh, colors[1:])):
         ax = axs[len(axs[0]) - i%len(axs[0]) - 1][int(i/len(axs))]
         ax.hist(d, 100, color=c, histtype='stepfilled')
@@ -753,7 +753,7 @@ def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingR
     if fitModule is not None:
         mainPlot.plot(avgFit['x'], avgFit['nom'], color='#FFFFFFFF', ls=':')
         fits_df = getFitsDataFrame(fits, fitModule, avgFit)
-        display(fits_df)
+        #display(fits_df)
     if fitModule is not None and showFitCenterPlot:
         figure()
         fitCenterPic, vmin, vmax = genAvgDiscrepancyImage(centers, avgPics[0].shape, atomLocs1)
@@ -814,7 +814,7 @@ def Loading(fileNum, atomLocations, **PopulationArgs):
     """
     A small wrapper, partially for the extra defaults in this case partially for consistency with old function definitions.
     """
-    return Population(fileNum, atomLocations, 0, 1, **PopulationArgs)
+    return Population(fileNum, atomLocations, 0,1, **PopulationArgs)
 
 
 def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=True, plotCounts=False, legendOption=None, showImagePlots=True, 
@@ -999,7 +999,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         for row in thresholds:
             for thresh in row:
                 f.write(str(thresh) + ' ') """
-    return key, loadRate, loadRateErr, pic1Data, atomImages, thresholds, gaussFitVals, totalPic1AtomData
+    return key, loadRate, loadRateErr, pic1Data, atomImages, thresholds, gaussFitVals, totalPic1AtomData,avgPic
 
 
 def Assembly(fileNumber, atomLocs1, pic1Num, partialCredit=False, **standardAssemblyArgs):
