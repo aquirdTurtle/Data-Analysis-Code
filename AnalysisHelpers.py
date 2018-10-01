@@ -24,8 +24,8 @@ import MarksConstants as consts
 from Miscellaneous import transpose, round_sig, round_sig_str
 import Miscellaneous as misc
 from copy import copy, deepcopy
-from fitters import (double_gaussian, cython_poissonian as poissonian, 
-                    FullBalisticMotExpansion, LargeBeamMotExpansion, gaussian_2d, exponential_saturation)
+from fitters import ( double_gaussian, cython_poissonian as poissonian, 
+                      FullBalisticMotExpansion, LargeBeamMotExpansion, gaussian_2d, exponential_saturation )
 
 import dataclasses as dc
 import MainAnalysis as ma
@@ -394,6 +394,21 @@ def combineData(data, key):
 # ### Data-Loading Functions
 
 
+def load_SSA_3021X(fn):
+    # for our lab's siglent spectrum analyzer
+    with open(fn) as f:
+        cf = csv.reader(f)
+        freqs = []
+        pows = []
+        for i, row in enumerate(cf):
+            # important: first 30 lines include information about scan settings, data is afterwards.
+            if i < 30:
+                continue
+            freqs.append(float(row[0]))
+            pows.append(float(row[1]))
+    return freqs, pows
+
+
 def loadDataRay(fileID):
     """
 
@@ -413,13 +428,16 @@ def loadDataRay(fileID):
     return data.astype(float)
 
 
-def loadCompoundBasler(num, cameraName='ace', loud=False):
-    if cameraName == 'ace':
-        path = dataAddress + "AceData_" + str(num) + ".txt"
-    elif cameraName == 'scout':
-        path = dataAddress + "ScoutData" + str(num) + ".txt"
+def loadCompoundBasler(fid, cameraName='ace', loud=False):
+    if type(fid) == type('string'):
+        path = fid
     else:
-        raise ValueError('cameraName has a bad value for a Basler camera.')
+        if cameraName == 'ace':
+            path = dataAddress + "AceData_" + str(fid) + ".txt"
+        elif cameraName == 'scout':
+            path = dataAddress + "ScoutData" + str(fid) + ".txt"
+        else:
+            raise ValueError('cameraName has a bad value for a Basler camera.')
     with open(path) as file:
         original = file.read()
         pics = original.split(";")
