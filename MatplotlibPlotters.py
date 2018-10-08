@@ -509,7 +509,7 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoading
     
     return ( key, transferData, transferErrs, loadingRate, fits, avgFit, genAvgs, genErrs, pic1Data, 
              centers, avgTransferPic, transVarAvg, transVarErr, avgTransferData, avgTransferErr,
-             loadAtomImages, transAtomImages, pic2Data)
+             loadAtomImages, transAtomImages, pic2Data, loadThresholds, transThresholds)
 
 
 def Loading(fileNum, atomLocations, **PopulationArgs):
