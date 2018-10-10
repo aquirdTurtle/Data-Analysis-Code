@@ -1086,7 +1086,8 @@ def calcMotTemperature(times, sigmas):
     # guess = [0.001, 0.1]
     # in cm...?
     # sidemotWaist = .33 / (2*np.sqrt(2))
-    sidemotWaist = 8 / (2*np.sqrt(2))
+    # sidemotWaist = 8 / (2*np.sqrt(2))
+    sidemotWaist = 1000 / (2*np.sqrt(2))
     # sidemotWaist^2/2 = 2 sigma_sidemot^2
     # different gaussian definitions
     sigma_I = sidemotWaist / 2
