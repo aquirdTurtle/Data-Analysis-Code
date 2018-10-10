@@ -5,38 +5,122 @@ from pandas import DataFrame
 from MainAnalysis import standardPopulationAnalysis, analyzeNiawgWave, standardTransferAnalysis, standardAssemblyAnalysis, AnalyzeRearrangeMoves
 from numpy import array as arr
 from random import randint
-from Miscellaneous import getColors, round_sig, round_sig_str, getMarkers
+from Miscellaneous import getColors, round_sig, round_sig_str, getMarkers, errString
+import Miscellaneous as misc
 from matplotlib.pyplot import *
 import matplotlib as mpl
+import mpl_toolkits.axes_grid1 as axesTool
+
+
 from scipy.optimize import curve_fit as fit
 from AnalysisHelpers import (loadDataRay, loadCompoundBasler, processSingleImage, orderData,
-                             normalizeData, getBinData, getSurvivalData, getSurvivalEvents, fitDoubleGaussian,
+                             normalizeData, getBinData, getTransferStats, getTransferEvents, fitDoubleGaussian,
                              guessGaussianPeaks, calculateAtomThreshold, getAvgPic, getEnsembleHits,
-                             getEnsembleStatistics, handleFitting, getLoadingData, loadDetailedKey, processImageData,
+                             getEnsembleStatistics, handleFitting, 
+                             loadDetailedKey, processImageData,
                              fitPictures, fitGaussianBeamWaist, assemblePlotData, ballisticMotExpansion, simpleMotExpansion, 
                              calcMotTemperature,integrateData, computeMotNumber, getFitsDataFrame, genAvgDiscrepancyImage, 
-                             getGridDims)
-import MarksConstants as consts
-import FittingFunctions as fitFunc
-from mpl_toolkits.axes_grid1 import make_axes_locatable
+                             getGridDims, newCalcMotTemperature)
+import AnalysisHelpers as ah
+import MarksConstants as consts 
 from matplotlib.patches import Ellipse
 from TimeTracker import TimeTracker
-from fitters import gaussian_2d
+from fitters import gaussian_2d, LargeBeamMotExpansion, exponential_saturation, double_gaussian
 
 
-def indvHists(dat, thresh, colors, extra=None):
-    f, axs = subplots(10,10)
-    for i, (d,t,c) in enumerate(zip(dat, thresh, colors[1:])):
+def rotateTicks(plot):
+    ticks = plot.get_xticklabels()
+    for tickInc in range(len(ticks)):
+        ticks[tickInc].set_rotation(-45)
+        
+
+def makeThresholdStatsImages(ax, thresholds, locs, shape, ims, lims):
+    thresholdList = [thresh.t for thresh in thresholds]
+    thresholdPic, lims[0][0], lims[0][1] = genAvgDiscrepancyImage(thresholdList, shape, locs)
+    ims.append(ax[0].imshow(thresholdPic, cmap=cm.get_cmap('seismic_r'), vmin=lims[0][0], vmax=lims[0][1], origin='lower'))
+    ax[0].set_title('Thresholds:' + str(misc.round_sig(np.mean(thresholdList))), fontsize=12)
+    
+    fidList = [thresh.fidelity for thresh in thresholds]
+    thresholdFidPic, lims[1][0], lims[1][1] = genAvgDiscrepancyImage(fidList, shape, locs)
+    ims.append(ax[1].imshow(thresholdFidPic, cmap=cm.get_cmap('seismic_r'), vmin=lims[1][0], vmax=lims[1][1], origin='lower'))
+    ax[1].set_title('Threshold Fidelities:' + str(misc.round_sig(np.mean(fidList))), fontsize=12)
+        
+    imagePeakDiff = []
+    gaussFitList = [thresh.fitVals for thresh in thresholds]
+    for g in gaussFitList:
+        if g is not None:
+            imagePeakDiff.append(abs(g[1] - g[4]))
+        else:
+            imagePeakDiff.append(0)
+    peakDiffImage, lims[2][0], lims[2][1] = genAvgDiscrepancyImage(imagePeakDiff, shape, locs)
+    ims.append(ax[2].imshow(peakDiffImage, cmap=cm.get_cmap('seismic_r'), vmin=lims[2][0], vmax=lims[2][1], origin='lower'))
+    ax[2].set_title('Imaging-Signal:' + str(misc.round_sig(np.mean(imagePeakDiff))), fontsize=12)
+
+    residualList = [thresh.rmsResidual for thresh in thresholds]
+    residualImage, _, lims[3][1] = genAvgDiscrepancyImage(residualList, shape, locs)
+    lims[3][0] = 0
+    ims.append(ax[3].imshow(residualImage, cmap=cm.get_cmap('inferno'), vmin=lims[3][0], vmax=lims[3][1], origin='lower'))
+    ax[3].set_title('Fit Rms Residuals:' + str(misc.round_sig(np.mean(residualList))), fontsize=12)
+    
+    for i, a in enumerate(ax[4:]):
+        noData = np.zeros((25,23))
+        lims[4+i][0], lims[4+i][1] = [0, 0]
+        ims.append(a.imshow(noData, cmap=cm.get_cmap('Greys'), vmin=-1, vmax=0))
+        a.set_title('(Nothing)')
+    
+
+def plotThresholdHists(thresholds, colors, extra=None, extraname=None, thresholds_2=None):
+    f, axs = subplots(10,10, figsize=(34.0, 16.0))
+    if thresholds_2 is None:
+        thresholds_2 = [None for _ in thresholds]
+    for i, (t, t2, c) in enumerate(zip(thresholds, thresholds_2, colors[1:])):
         ax = axs[len(axs[0]) - i%len(axs[0]) - 1][int(i/len(axs))]
-        ax.hist(d, 50, color=c, histtype='stepfilled')
-        ax.axvline(t, color=c, ls=':')
+        ax.bar(t.binCenters, t.binHeights, align='center', width=t.binCenters[1] - t.binCenters[0], color=c)
+        ax.axvline(t.t, color='w', ls=':')
+        minx, maxx = min(t.binCenters), max(t.binCenters)
+        maxy = max(t.binHeights)
+        if t2 is not None:
+            ax.plot(t2.binEdges(), t2.binEdgeHeights(), color='r', ls='steps')
+            ax.axvline(t2.t, color='r', ls='-.')
+            minx, maxx = min(list(t2.binCenters) + [minx]), max(list(t2.binCenters) + [maxx])
+            maxy = max(list(t2.binHeights) + [maxy])
+            if t2.fitVals is not None:
+                xpts = np.linspace(min(t2.binCenters), max(t2.binCenters), 1000)
+                ax.plot(xpts, double_gaussian.f(xpts, *t2.fitVals), 'r', ls='-.')
+        if t.fitVals is not None:
+            xpts = np.linspace(min(t.binCenters), max(t.binCenters), 1000)
+            ax.plot(xpts, double_gaussian.f(xpts, *t.fitVals), 'w')
         ax.set_xticklabels([])
         ax.set_yticklabels([])
+        ax.set_xlim(minx, maxx)
+        ax.set_ylim(0, maxy)
         ax.grid(False)
         if extra is not None:
-            t = ax.text(0.25, 10, 'L%:' + round_sig_str(np.mean(extra[i])), fontsize=8)
-            t.set_bbox(dict(facecolor='k', alpha=0.5))
-
+            txt = extraname + round_sig_str( np.mean(extra[i])) if extraname is not None else round_sig_str(np.mean(extra[i]))
+            t = ax.text( (maxx + minx) / 2, maxy / 2, txt, fontsize=12 )
+            t.set_bbox(dict(facecolor='k', alpha=0.3))
+    f.subplots_adjust(wspace=0, hspace=0)
+    
+        
+def indvHists(dat, thresh, colors, extra=None, extraname=None, extra2=None, extra2Name=None, gaussianFitVals=None):
+    f, axs = subplots(10,10, figsize=(25,18))
+    for i, (d,t,c) in enumerate(zip(dat, thresh, colors[1:])):
+        ax = axs[len(axs[0]) - i%len(axs[0]) - 1][int(i/len(axs))]
+        heights, _, _ = ax.hist(d, 100, color=c, histtype='stepfilled')
+        ax.axvline(t, color='w', ls=':')
+        if gaussianFitVals is not None:
+            g = gaussianFitVals[i]
+            xpts = np.linspace(min(d), max(d), 1000)
+            ax.plot(xpts, double_gaussian.f(xpts, *g), 'w')
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
+        ax.set_xlim(min(dat.flatten()), max(dat.flatten()))
+        ax.set_ylim(0,max(heights))
+        ax.grid(False)
+        if extra is not None:
+            txt = extraname + round_sig_str( np.mean(extra[i])) if extraname is not None else round_sig_str(np.mean(extra[i]))
+            t = ax.text( 0.25, max(heights)-5, txt, fontsize=12 )
+            t.set_bbox(dict(facecolor='k', alpha=0.3))
     f.subplots_adjust(wspace=0, hspace=0)
 
 
@@ -74,286 +158,46 @@ def plotNiawg(fileIndicator, points=300, plotTogether=True, plotVolts=False):
     semilogy(fftc2['Freq'], abs(fftc2['Amp']) ** 2, 'o:', label='Horizontal Channel', markersize=4, linewidth=1)
     if not plotTogether:
         legend()
-    
     # this is half the niawg sample rate. output is mirrored around x=0.
     xlim(0, 160e6)
     show()
 
-
-def standardImages(data,
-                   # Cosmetic Parameters
-                   scanType="", xLabel="", plotTitle="", convertKey=False, showPictures=True, showPlot=True,
-                   allThePics=False, bigPics=False, colorMax=-1, individualColorBars=False, majorData='counts',
-                   # Global Data Manipulation Options
-                   loadType='andor', window=(0, 0, 0, 0), smartWindow=False, xMin=0, xMax=0, yMin=0, yMax=0,
-                   accumulations=1, key=arr([]), zeroCorners=False, dataRange=(0, 0), manualAccumulation=False,
-                   # Local Data Manipulation Options
-                   plottedData=None, bg=arr([0]), location=(-1, -1), fitBeamWaist=False, fitPics=False,
-                   cameraType='dataray', fitWidthGuess=80):
-    """
-    This function analyzes and plots fits pictures. It does not know anything about atoms,
-    it just looks at pixels or integrates regions of the picture. It is commonly used, to look at background noise
-    or the MOT.
-    :return key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams
-    ### Required parameters
-    :param data: the number of the fits file and (by default) the number of the key file. The function knows where to
-        look for the file with the corresponding name. Alternatively, an array of pictures to be used directly.
-    ### Cosmetic parameters
-    * Change the way the data is diplayed, but not how it is analyzed.
-    :param scanType: a string which characterizes what was scanned during the run. Depending on this string, axis names
-        are assigned to the axis of the plots produced by this function. This parameter, if it is to do
-        anything, must be one of a defined list of types, which can be looked up in the getLabels function.
-    :param xLabel: Specify the xlabel that appears on the plots. Will override an xlabel specified by the scan type,
-        but leave other scanType options un-marred.
-    :param plotTitle: Specify the title that appears on the plots. Will override a title specified by the scan type,
-        but leave other scanType options un-marred.
-    :param convertKey: For frequency scans. If this is true, use the dacToFrequency conversion constants declared in the
-        constants section of the base notebook to convert the key into frequency units instead of voltage
-        units. This should probably eventually be expanded to handle other conversions as well.
-    :param showPictures: if this is True, show all of the pictures taken during the experiment.
-    :param showPlot: if this is true, the function plots the integrated or point data. This would only be false if you
-        justwant the data arrays to do data visualization yourself.
-    :param allThePics: If this is true, then when the pictures are shown, the raw, -bg, and -avg pictures will all be
-        plotted side-by-side for comparison. showPictures must also be true.
-    :param bigPics: if this is true, then when the pictures are shown, instead of compressing the pictures to all fit
-        in a reasonably sized figure, each picture gets its own figure. allThePics must be false, showPictures must
-        be true.
-    :param colorMax: by default the colorbars in the displayed pictures are chosen to range from the minimum value in
-        the pic to the maximum value. If this is set, then instead you can specify an offset for the maximum (e.g. -5
-        for 5th highest value in the picture). This is usefull, e.g. if cosmic rays are messing with your pictures.
-    :param individualColorBars: by default, the pictures are all put on the same colorbar for comparison. If this is
-        true, each picture gets its own colorbar, which can make it easier to see features in each individual picture,
-        but generally makes comparison between pictures harder.
-    :param majorData: (expects one of 'counts', 'fits') Identifies the data to appear in the big plot, the other gets
-        shown in the small plot.
-    ### GLOBAL Data Manipulation Options
-    * these manipulate all the data that is analyzed and plotted.
-    :param manualAccumulation: manually add together "accumulations" pictures together to form accumulated pictures for
-        pictures for analysis.
-    :param cameraType: determines scaling of pixels
-    :param loadType: (expects one of 'fits', 'dataray', 'basler') determines the loading function used to load the image
-        data.
-    :param window: (expects format (xMin, xMax, yMin, xMax)). Specifies a window of the picture to be analyzed in lieu
-        of the entire picture. This command overrides the individual arguments (e.g. xMin) if both are present. The
-        rest of the picture is completely discarded and not used for any data analysis, e.g. fitting. This defaults to
-        cover the entire picture
-    :param xMin:
-    :param yMax:
-    :param yMin:
-    :param xMax: Specify a particular bound on the image to be analyzed; other parameters are left
-        untouched. See above description of the window parameter. These default to cover
-        the entire picture.
-    :param accumulations: If using accumulation mode on the Andor, set this parameter to the number of accumulations per
-        image so that the data can be properly normalized for comparison to other pictures, backgrounds, etc.
-        Defaults to 1.
-    :param key: give the function a custom key. By default, the function looks for a key in the raw data file, but
-        sometimes scans are done without the master code specifying the key.
-    :param zeroCorners: If this is true, average the four corners of the picture and subtract this average from every
-        picture. This applies to the raw, -bg, and -avg data. for the latter two, the average is calculated and
-        subtracted after the bg or avg is subtracted.
-    :param dataRange: Specify which key values to analyze. By default, analyze all of them. (0,-1) will drop the last
-        key value, etc.
-    :param smartWindow: Not properly implemented at the moment.
-    ### LOCAL Data Manipulation Parameters
-    * These add extra analysis or change certain parts of the data analysis while leaving other parts intact.
-    :param fitWidthGuess: a manual guess for the threshold fit.
-    :param plottedData: (can include "raw", "-bg", and or "-avg") An array of strings which tells the function which
-        data to plot. Can be used to plot multiple sets of data simultaneously, if needed. Defaults to raw. If only
-        a single set is plotted, then that set is also shown in the pictures. In the case that multiple are
-        shown, it's a bit funny right now.
-    :param bg: A background picture, or a constant value, which is subtracted from each picture.
-        defaults to subtracting nothing.
-    :param location: Specify a specific pixel to be analyzed instead of the whole picture.
-    :param fitPics: Attempt a 2D gaussian fit to each picture.
-    :param fitBeamWaist: Don't think this works yet. The idea is that if gaussianFitPics is also true, then you can
-    use this        to fit a gaussian beam profile to the expanding gaussian fits. This could be useful, e.g. when
-        calibrating the camera position.
-    """
-    if plottedData is None:
-        plottedData = ["raw"]
-    # Check for incompatible parameters.
-    if bigPics and allThePics:
-        raise ValueError("ERROR: can't use both bigPics and allThePics.")
-    if fitBeamWaist and not fitPics:
-        raise ValueError(
-            "ERROR: Can't use fitBeamWaist and not fitPics! The fitBeamWaist attempts to use the fit values "
-            "found by the gaussian fits.")
-    if bigPics and not showPictures:
-        raise ValueError("Can't show bigPics if not showPics!")
-    if allThePics and not showPictures:
-        raise ValueError("Can't show allThePics if not showPics!")
-    # the key
-    if key.size == 0:
-        origKey, keyName = loadDetailedKey(data)
-    else:
-        origKey = key
-    # this section could be expanded to handle different types of conversions.
-    if convertKey:
-        a = consts.opBeamDacToVoltageConversionConstants
-        key = [a[0] + x * a[1] + x ** 2 * a[2] + x ** 3 * a[3] for x in origKey]
-    else:
-        # both keys the same.
-        key = origKey
-    if len(key) == 0:
-        raise RuntimeError('key was empty!')
-
-    """ ### Handle data ### 
-    If the corresponding inputs are given, all data gets...
-    - normalized for accumulations
-    - normalized using the normData array
-    - like values in the key & data are averaged
-    - key and data is ordered in ascending order.
-    - windowed.
-    """
-    if type(data) == int or (type(data) == np.array and type(data[0]) == int):
-        if loadType == 'andor':
-            rawData, _, _, _ = loadHDF5(data)
-        elif loadType == 'scout' or  loadType == 'ace':
-            rawData = loadCompoundBasler(data, loadType)
-        elif loadType == 'dataray':
-            raise ValueError('Loadtype of "dataray" has become deprecated and needs to be reimplemented.')
-        else:
-            raise ValueError('Bad value for LoadType.')
-    else:
-        # assume the user inputted a picture or array of pictures.
-        print('Assuming input is a picture or array of pictures.')
-        rawData = data
-    print('Data Loaded.')
-    res = processImageData(key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulations, dataRange, zeroCorners,
-                                smartWindow, manuallyAccumulate=manualAccumulation)
-    key, rawData, dataMinusBg, dataMinusAvg, avgPic = res
     
-    if fitPics:
-        # should improve this to handle multiple sets.
-        if '-bg' in plottedData:
-            print('fitting background-subtracted data.')
-            pictureFitParams, pictureFitErrors = fitPictures(dataMinusBg, range(len(key)), guessSigma_x=fitWidthGuess,
-                                                             guessSigma_y=fitWidthGuess)
-        elif '-avg' in plottedData:
-            print('fitting average-subtracted data.')
-            pictureFitParams, pictureFitErrors = fitPictures(dataMinusAvg, range(len(key)), guessSigma_x=fitWidthGuess,
-                                                             guessSigma_y=fitWidthGuess)
-        else:
-            print('fitting raw data.')
-            pictureFitParams, pictureFitErrors = fitPictures(rawData, range(len(key)), guessSigma_x=fitWidthGuess,
-                                                             guessSigma_y=fitWidthGuess)
-    else:
-        pictureFitParams, pictureFitErrors = np.zeros((len(key), 7)), np.zeros((len(key), 7))
-
-    # convert to normal optics convention. the equation uses gaussian as exp(x^2/2sigma^2), I want the waist,
-    # which is defined as exp(2x^2/waist^2):
-    waists = 2 * abs(arr([pictureFitParams[:, 3], pictureFitParams[:, 4]]))
-    positions = arr([pictureFitParams[:, 1], pictureFitParams[:, 2]])
-    if cameraType == 'dataray':
-        pixelSize = consts.dataRayPixelSize
-    elif cameraType == 'andor':
-        pixelSize = consts.andorPixelSize
-    elif cameraType == 'ace':
-        pixelSize = consts.baslerAcePixelSize
-    elif cameraType == 'scout':
-        pixelSize = consts.baslerScoutPixelSize
-    else:
-        raise ValueError("Error: Bad Value for 'cameraType'.")
-    waists *= pixelSize
-    positions *= pixelSize
-    # average of the two dimensions
-    avgWaists = []
-    for pair in np.transpose(arr(waists)):
-        avgWaists.append((pair[0] + pair[1]) / 2)
-    if fitBeamWaist:
-        try:
-            waistFitParamsX, waistFitErrsX = fitGaussianBeamWaist(waists[0], key, 850e-9)
-            waistFitParamsY, waistFitErrsY = fitGaussianBeamWaist(waists[1], key, 850e-9)
-            waistFitParams = [waistFitParamsX, waistFitParamsY]
-            # assemble the data structures for plotting.
-            countData, fitData = assemblePlotData(rawData, dataMinusBg, dataMinusAvg, positions, waists,
-                                                  plottedData, scanType, xLabel, plotTitle, location,
-                                                  waistFits=waistFitParams, key=key)
-        except RuntimeError:
-            print('gaussian waist fit failed!')
-            # assemble the data structures for plotting.
-            countData, fitData = assemblePlotData(rawData, dataMinusBg, dataMinusAvg, positions, waists,
-                                                  plottedData, scanType, xLabel, plotTitle, location)
-    else:
-        # assemble the data structures for plotting.
-        countData, fitData = assemblePlotData(rawData, dataMinusBg, dataMinusAvg, positions, waists,
-                                              plottedData, scanType, xLabel, plotTitle, location)
-    if majorData == 'counts':
-        majorPlotData, minorPlotData = countData, fitData
-    elif majorData == 'fits':
-        minorPlotData, majorPlotData = countData, fitData
-    else:
-        raise ValueError("incorect 'majorData' argument")
-    if showPlot:
-        plotPoints(key, majorPlotData, minorPlot=minorPlotData, picture=avgPic, picTitle="Average Picture")
-    if showPlot and showPictures:
-        if allThePics:
-            data = []
-            for inc in range(len(rawData)):
-                data.append([rawData[inc], dataMinusBg[inc], dataMinusAvg[inc]])
-            showPicComparisons(arr(data), key, fitParameters=pictureFitParams)
-        else:
-            if "raw" in plottedData:
-                if bigPics:
-                    showBigPics(rawData, key, fitParameters=pictureFitParams, colorMax=colorMax,
-                                individualColorBars=individualColorBars)
-                else:
-                    showPics(rawData, key, fitParameters=pictureFitParams, colorMax=colorMax,
-                             individualColorBars=individualColorBars)
-            if "-bg" in plottedData:
-                if bigPics:
-                    showBigPics(dataMinusBg, key, fitParameters=pictureFitParams, colorMax=colorMax,
-                                individualColorBars=individualColorBars)
-                else:
-                    showPics(dataMinusBg, key, fitParameters=pictureFitParams, colorMax=colorMax,
-                             individualColorBars=individualColorBars)
-            if "-avg" in plottedData:
-                if bigPics:
-                    showBigPics(dataMinusAvg, key, fitParameters=pictureFitParams, colorMax=colorMax,
-                                individualColorBars=individualColorBars)
-                else:
-                    showPics(dataMinusAvg, key, fitParameters=pictureFitParams, colorMax=colorMax,
-                             individualColorBars=individualColorBars)
-    return key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams
-
-
-def plotMotTemperature(data, **standardImagesArgs):
+def plotMotTemperature(data, key=None, magnification=3, **standardImagesArgs):
     """
     Calculate the mot temperature, and plot the data that led to this.
-
     :param data:
     :param standardImagesArgs: see the standardImages function to see the acceptable arguments here.
     :return:
     """
-    res = standardImages(data, showPictures=False, showPlot=False, scanType="Time(ms)", majorData='fits', 
-                         loadType='scout', fitPics=True, manualAccumulation=True, **standardImagesArgs)
-    (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams) = res
-    # convert to meters
-    waists = 2 * consts.baslerScoutPixelSize * abs(pictureFitParams[:, 3])
-    # convert to s
-    times = key / 1000
-    temp, simpleTemp, fitVals, fitCov, simpleFitVals, simpleFitCov = calcMotTemperature(times, waists / 2)
-    figure()
-    plot(times, waists, 'o', label='Raw Data Waist')
-    plot(times, 2 * ballisticMotExpansion(times, *fitVals, 100), label='balistic MOT expansion Fit Waist')
-    plot(times, 2 * simpleMotExpansion(times, *simpleFitVals), label='simple MOT expansion Fit Waist ')
-    title('Measured atom cloud size over time')
-    xlabel('time (s)')
-    ylabel('gaussian fit waist (m)')
-    legend()
-    showPics(rawData, key, fitParameters=pictureFitParams)
-    print("PGC Temperture (full ballistic):", temp * 1e6, 'uK')
-    # the simple balistic fit doesn't appear to work...
-    print("MOT Temperature (simple (don't trust?)):", simpleTemp * 1e6, 'uK')
-
-
-def plotMotNumberAnalysis(dataSetNumber, motKey, exposureTime, window=(0, 0, 0, 0), cameraType='scout',
-                          showStandardImages=False, sidemotPower=2.05, diagonalPower=8, motRadius=8 * 8e-6,
-                          imagingLoss=0.8, detuning=10e6):
+    res = ah.temperatureAnalysis(data, magnification, key=key, loadType='basler',**standardImagesArgs)
+    temp, fitVals, fitCov, times, waists, rawData, pictureFitParams, key = res
+    errs = np.sqrt(np.diag(fitCov))
+    f, ax = subplots(figsize=(20,3))
+    ax.plot(times, waists, 'bo', label='Raw Data Waist')
+    ax.plot(times, 2 * LargeBeamMotExpansion.f(times, *fitVals), 'c:', label='balistic MOT expansion Fit Waist')
+    ax.yaxis.label.set_color('c')
+    ax.grid(True,color='b')
+    ax2 = ax.twinx()
+    ax2.plot(times, pictureFitParams[:, 0], 'ro:', marker='*', label='Fit Amplitude (counts)')
+    ax2.yaxis.label.set_color('r')
+    ax.set_title('Measured atom cloud size over time')
+    ax.set_xlabel('Time (s)')
+    ax.set_ylabel('Gaussian fit waist (m)')
+    ax.legend()
+    ax2.legend()
+    ax2.grid(True,color='r')
+    showPics(rawData, key, fitParams=pictureFitParams)
+    print("\nTemperture in the Large Laser Beam Approximation:", misc.errString(temp * 1e6, errs[2]*1e6), 'uK')
+    print('Fit-Parameters:', fitVals)
+    return pictureFitParams,rawData
+    
+    
+def plotMotNumberAnalysis(data, motKey, exposureTime,  *fillAnalysisArgs):
     """
     Calculate the MOT number and plot the data that resulted in the #.
 
-    :param dataSetNumber: the number corresponding to the data set you want to analyze.
+    :param data: the number corresponding to the data set you want to analyze.
     :param motKey: the x-axis of the data. Should an array where each element corresponds to the time at which
         its corresponding picture was taken.
     :param exposureTime: the time the camera was exposed for to take the picture. Important in calculating the
@@ -370,145 +214,24 @@ def plotMotNumberAnalysis(dataSetNumber, motKey, exposureTime, window=(0, 0, 0, 
     :param imagingLoss: the loss in the imaging path due to filtering, imperfect reflections, etc.
     :param detuning: detuning of the mot beams during the imaging.
     """
-    _, rawData, _, _, _, _ = standardImages(dataSetNumber, key=motKey, scanType="time (s)",
-                                            window=window, loadType=cameraType, showPlot=showStandardImages)
-    intRawData = integrateData(rawData)
-    try:
-        # its always an exponential saturation fit for this data.
-        popt, pcov = fit(fitFunc.exponentialSaturation, motKey, intRawData, p0=[np.min(intRawData) - np.max(intRawData),
-                                                                                1 / 2, np.max(intRawData)])
-    except RuntimeError:
-        print('MOT # Fit failed!')
-        # probably failed because of a bad guess. Show the user the guess fit to help them debug.
-        popt = [np.min(intRawData) - np.max(intRawData), 1 / 2, np.max(intRawData)]
-    figure()
+    rawData, intRawData, motnumber, fitParams, fluorescence, motKey = ah.motFillAnalysis(data, motKey, exposureTime, loadType='basler', *fillAnalysisArgs)
+    figure(figsize=(20,3))
     plot(motKey, intRawData, 'bo', label='data', color='b')
     xfitPts = np.linspace(min(motKey), max(motKey), 1000)
-    plot(xfitPts, fitFunc.exponentialSaturation(xfitPts, *popt), 'b-', label='fit', color='r', linestyle=':')
+    plot(xfitPts, exponential_saturation.f(xfitPts, *fitParams), 'b-', label='fit', color='r', linestyle=':')
     xlabel('loading time (s)')
     ylabel('integrated counts')
-    title('Mot Fill Curve')
-    print("integrated saturated counts subtracting background =", -popt[0])
-    print("loading time 1/e =", popt[1], "s")
-    motNum = computeMotNumber(sidemotPower, diagonalPower, motRadius, exposureTime, imagingLoss, -popt[0],
-                              detuning=detuning)
-    print('MOT Number:', motNum)
-    return motNum
-
-
-def atomHist(key, atomLocs, pic1Data, bins, binData, fitVals, thresholds, avgPic, atomCount, variationNumber):
-    """
-    Makes a standard atom histogram-centric plot.
-
-    :param key:
-    :param atomLocs: list of coordinate pairs where atoms are. element 0 is row#, element 1 is column#
-    :param pic1Data: list (for each location) of ordered lists of the counts on a pixel for each experiment
-    :param bins: list (for each location) of the centers of the bins used for the histrogram.
-    :param binData: list (for each location) of the accumulations each bin, whose center is stored in "bins" argument.
-    :param fitVals: the fitted values of the 2D Gaussian fit of the fit bins and data
-    :param thresholds: the found (or set) atom detection thresholds for each pixel.
-    :param avgPic: the average of all the pics in this series.
-    :param atomCount:
-    :param variationNumber:
-    """
-    # Make colormap. really only need len(locs) + 1 rgbs, but adding an extra makes the spacing of the colors
-    # on this colormap more sensible.
-    colors = getColors(len(atomLocs))
-    # Setup grid
-    figure()
-    grid1 = mpl.gridspec.GridSpec(12, 16)
-    grid1.update(left=0.05, right=0.95, wspace=1.2, hspace=1000)
-    gridLeft = mpl.gridspec.GridSpec(12, 16)
-    gridLeft.update(left=0.001, right=0.95, hspace=1000)
-    gridRight = mpl.gridspec.GridSpec(12, 16)
-    gridRight.update(left=0.2, right=0.946, wspace=0, hspace=1000)
-    # ### Main Plot
-    mainPlt = subplot(grid1[:, :12])
-    # plot the fit on top of the histogram
-    fineXData = np.linspace(min(list([item for sublist in pic1Data for item in sublist])),
-                            max(list([item for sublist in pic1Data for item in sublist])), 500)
-    alphaVal = 1.0 / np.sqrt(len(atomLocs))
-    for i, loc in enumerate(atomLocs):
-        legendEntry = (str(loc) + ' T=' + str(round_sig(thresholds[i])) + ', L = '
-                       + str(round_sig(atomCount[i] / len(pic1Data[0]))))
-        mainPlt.bar(bins[i], binData[i], 10, color=colors[i],
-                    label=legendEntry, alpha=alphaVal)
-        mainPlt.plot(fineXData, fitFunc.doubleGaussian(fineXData, *fitVals[i], 0), color=colors[i], linestyle=':',
-                     alpha=alphaVal)
-        mainPlt.axvline(thresholds[i], color=colors[i], alpha=alphaVal)
-    legend()
-    if key is None:
-        keyVal = 'Average'
-    else:
-        keyVal = str(key[variationNumber])
-    mainPlt.set_title("Key Value = " + keyVal + "\nAvg Loading =" + str(np.mean(atomCount / len(pic1Data[0]))))
-    mainPlt.set_ylabel("Occurrence Count")
-    mainPlt.set_xlabel("Pixel Counts")
-    # ### Pixel Count Data Over Time
-    countsPlt = subplot(grid1[0:6, 12:16])
-    for i in range(len(atomLocs)):
-        countsPlt.plot(pic1Data[i], ".", markersize=1, color=colors[i])
-        countsPlt.axhline(thresholds[i], color=colors[i])
-    countsPlt.set_title("Count Data")
-    countsPlt.set_ylabel("Counts on Pixel")
-    countsPlt.set_xlabel("Picture Number")
-    # ### Average Picture
-    avgPlt = subplot(gridRight[7:12, 12:16])
-    avgPlt.imshow(avgPic)
-    avgPlt.set_title("Average Image")
-    avgPlt.grid(False)
-    # draw circles designating the analyzed locations
-    for loc in atomLocs:
-        circ = Circle([loc[1], loc[0]], 0.2, color='r')
-        avgPlt.add_artist(circ)
+    title('Mot Fill Curve: MOT Number:' + str(motnumber))
+    print("integrated saturated counts subtracting background =", -fitParams[0])
+    print("loading time 1/e =", fitParams[1], "s")
+    print('Light Scattered off of full MOT:', fluorescence * consts.h * consts.Rb87_D2LineFrequency * 1e9, "nW")
+    return motnumber
 
 
 def singleImage(data, accumulations=1, loadType='andor', bg=arr([0]), title='Single Picture', window=(0, 0, 0, 0),
                 xMin=0, xMax=0, yMin=0, yMax=0, zeroCorners=False, smartWindow=False, findMax=False,
                 manualAccumulation=False, maxColor=None, key=arr([])):
     """
-    :return rawData, dataMinusBg
-
-    ################
-    ### Parameters:
-    ###
-    Required parameters
-    :param data: the number of the fits file and (by default) the number of the key file. The function knows where to
-        look for the file with the corresponding name. Alternatively, an array of pictures to be used directly.
-    ### Cosmetic parameters
-    :param title: The title of the image shown.
-    :param show: if false, no picture is shown. This can be used if, e.g. you just want to extract the rawData or
-        dataMinusBg data, or if you just want to see the coordinates of the maxima of the picture.
-    ### LOCAL Data Manipulation Options
-    these manipulate the data in just one part of the analysis. Oftentimes, they just add extra info on top of the
-    normal output.
-    :param findMax:=False
-    :param bg:
-    ### GLOBAL Data Manipulation Options
-    # these manipulate all the data that is analyzed and plotted.
-    :param loadType='andor'
-    :param zeroCorners=False
-    :param accumulations: the number of accumulated pictures in a given picture. The code normalizes the picture based
-        on this data so that the numbers reported are "per single picture". If manuallyAccumulate=True, then this number
-        is used to average pictures together.
-
-    :param window: (expects format (xMin, xMax, yMin, xMax)). Specifies a window of the picture to be analyzed in lieu
-        of the entire picture. This command overrides the individual arguments (e.g. xMin) if both are present. The rest
-        of the picture is completely discarded and not used for any data analysis, e.g. fitting. This defaults to cover
-        the entire picture
-
-    ::param xMin, xMax, yMin, and yMax: Specify a particular bound on the image to be analyzed; other parameters are
-        left untouched. See above description of the window parameter. These default to cover the entire picture.
-
-    :param smartWindow: not fully implemented yet. Supposed to automatically select a window based on where the maxima
-        of the picture is.
-
-    :param key give the function a custom key. By default, the function looks for a key in the raw data file, but
-        sometimes scans are done without the master code specifying the key.
-
-    :param manualAccumulation: if true, the code will average "accumulated" pictures together. The number to average is
-        the "accumulations" parameter.
-
     """
     # if integer or 1D array
     if type(data) == int or (type(data) == np.array and type(data[0]) == int):
@@ -528,10 +251,8 @@ def singleImage(data, accumulations=1, loadType='andor', bg=arr([0]), title='Sin
     else:
         rawData = data
 
-    rawData, dataMinusBg, xPts, yPts = processSingleImage(rawData, bg, window, xMin, xMax, yMin, yMax,
-                                                          accumulations, zeroCorners, smartWindow,
-                                                          manualAccumulation)
-
+    res = processSingleImage(rawData, bg, window, xMin, xMax, yMin, yMax, accumulations, zeroCorners, smartWindow, manualAccumulation)
+    rawData, dataMinusBg, xPts, yPts = res
     if not bg == arr(0):
         if findMax:
             coords = np.unravel_index(np.argmax(rawData), rawData.shape)
@@ -564,138 +285,127 @@ def Survival(fileNumber, atomLocs, **TransferArgs):
     return Transfer(fileNumber, atomLocs, atomLocs, **TransferArgs)
 
 
-def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingRate=False, legendOption=None,
-             fitModule=None, showFitDetails=False, showFitCenterPlot=False, showImagePlots=True, plotIndvHists=False, 
-             timeit=False, **standardTransferArgs):
+def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingRate=False, legendOption=None,
+              fitModule=None, showFitDetails=False, showFitCenterPlot=False, showImagePlots=None, plotIndvHists=False, 
+              timeit=False, transThresholdSame=False, outputThresholds=False, **standardTransferArgs ):
     """
     Standard data analysis package for looking at survival rates throughout an experiment.
-
-    :return key, survivalData, survivalErrors
+    :return key, transferData, survivalErrors
     """
     tt = TimeTracker()
-    res = standardTransferAnalysis(fileNumber, atomLocs1_orig, atomLocs2_orig, fitModule=fitModule, tt=tt,
-                                   **standardTransferArgs)
+    res = standardTransferAnalysis( fileNumber, atomLocs1_orig, atomLocs2_orig, fitModule=fitModule, tt=tt,
+                                    transThresholdSame=transThresholdSame, **standardTransferArgs )
     tt.clock('After-Standard-Analysis')
-    (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate, pic1Data, keyName, key,
-     repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPics, otherDimValues,
-     locsList, genAvgs, genErrs, gaussianFitVals, tt) = res
+    (atomLocs1, atomLocs2, transferData, transferErrs, loadingRate, pic1Data, keyName, key,
+     repetitions, loadThresholds, fits, avgTransferData, avgTransferErr, avgFit, avgPics, otherDimValues,
+     locsList, genAvgs, genErrs, tt, transVarAvg, transVarErr, loadAtomImages, transAtomImages,
+     pic2Data, transPixelCounts, transThresholds) = res
     if not show:
-        return key, survivalData, survivalErrs, loadingRate
-    if legendOption is None and len(atomLocs1) < 50:
-        legendOption = True
-    else:
-        legendOption = False
-    # get the colors for the plot.
-    colors, colors2 = getColors(len(atomLocs1) + 1)
-    f = figure()
-    # Setup grid
-    grid1 = mpl.gridspec.GridSpec(12, 16)
-    grid1.update(left=0.05, right=0.95, wspace=1.2, hspace=1000)
-    gridLeft = mpl.gridspec.GridSpec(12, 16)
-    gridLeft.update(left=0.001, right=0.95, hspace=1000)
-    gridRight = mpl.gridspec.GridSpec(12, 16)
-    gridRight.update(left=0.1, right=0.95, wspace=0, hspace=1000)
-    # Main Plot
-    if atomLocs1 == atomLocs2:
-        typeName = "S"
-    else:
-        typeName = "T"
+        return (key, transferData, transferErrs, loadingRate, fits, avgFit, genAvgs, genErrs, pic1Data, 
+            gaussianFitVals, [None], loadThresholds, [None])
+    
+    if len(atomLocs1) == 1 and showImagePlots is None:
+        showImagePlots = False
+    elif showImagePlots is None:
+        showImagePlots = True
+    legendOption = True if legendOption is None and len(atomLocs1) < 50 else False
+    # set locations of plots.
+    f = figure(figsize=(25.0, 8.0))
+    typeName = "Survival" if atomLocs1 == atomLocs2 else "Transfer"
+    grid1 = mpl.gridspec.GridSpec(12, 16,left=0.05, right=0.95, wspace=1.2, hspace=1000)
     mainPlot = subplot(grid1[:, :11])
+    loadingPlot = subplot(grid1[0:3, 11:16])
+    grid1.update( left=0.1, right=0.95, wspace=0, hspace=1000 )
+    countPlot = subplot(grid1[4:8, 11:15])    
+    grid1.update( left=0.001, right=0.95, hspace=1000 )
+    countHist = subplot(grid1[4:8, 15:16], sharey=countPlot)
+    avgPlt1 = subplot(grid1[8:12, 11:13])
+    avgPlt2 = subplot(grid1[8:12, 13:15])
+
     centers = []
-    longLegend = len(survivalData[0]) == 1
+    colors, colors2 = getColors(len(atomLocs1) + 1)
+    longLegend = len(transferData[0]) == 1
     markers = getMarkers()
+    # Main Plot
     for i, (atomLoc, fit) in enumerate(zip(atomLocs1, fits)):
-        if typeName == "S":
-            leg = r"[%d,%d] " % (atomLocs1[i][0], atomLocs1[i][1])
-        else:
-            leg = r"[%d,%d]$\rightarrow$[%d,%d] " % (atomLocs1[i][0], atomLocs1[i][1],
-                                                     atomLocs2[i][0], atomLocs2[i][1])
+        leg = (r"[%d,%d] " % (atomLocs1[i][0], atomLocs1[i][1]) if typeName == "Survival" 
+               else r"[%d,%d]$\rightarrow$[%d,%d] " % (atomLocs1[i][0], atomLocs1[i][1], atomLocs2[i][0], atomLocs2[i][1]))
         if longLegend:
-            leg += (typeName + " % = " + str(round_sig(survivalData[i][0])) + "$\pm$ "
-                    + str(round_sig(survivalErrs[i][0])))
-        mainPlot.errorbar(key, survivalData[i], yerr=survivalErrs[i], color=colors[i], ls='',
+            leg += (typeName + " % = " + str(round_sig(transferData[i][0])) + "$\pm$ " + str(round_sig(transferErrs[i][0])))
+        mainPlot.errorbar(key, transferData[i], yerr=transferErrs[i], color=colors[i], ls='',
                           capsize=6, elinewidth=3, label=leg, alpha=0.3, marker=markers[i%len(markers)])
         if fitModule is not None and showFitDetails:
             if fit['vals'] is None:
                 print(loc, 'Fit Failed!')
                 continue
-            centerIndex = fitModule.center()
-            if centerIndex is not None:
-                centers.append(fit['vals'][centerIndex])
-            mainPlot.plot(fit['x'], fit['nom'], color=colors[i], alpha = 0.5)
-    mainPlot.set_ylim({-0.02, 1.01})
-    if not min(key) == max(key):
-        r = max(key) - min(key)
-        mainPlot.set_xlim(left=min(key) - r / len(key), right=max(key)+ r / len(key))
-    mainPlot.set_xticks(key)
-    rotateTicks(mainPlot)
-
-    titletxt = keyName + " " + typeName + " Scan"
-    if len(survivalData[0]) == 1:
-        titletxt = keyName + " " + typeName + " Point.\n Avg " + typeName + "% = " + round_sig_str(np.mean(avgSurvivalData))        
-
+            if fitModule.center() is not None:
+                centers.append(fit['vals'][fitModule.center()])
+            mainPlot.plot(fit['x'], fit['nom'], color=colors[i], alpha=0.5)
+    if type(keyName) is not type("a string"):
+        keyn = ''
+        for kn in keyName:
+            keyn += kn + ', '
+        keyName = keyn
+    titletxt = (keyName + " " + typeName + " Point.\n Avg " + typeName + "% = " 
+                + misc.dblErrString(np.mean(transVarAvg), np.sqrt(np.sum(arr(avgTransferErr)**2)/len(avgTransferErr)),
+                                    np.sqrt(np.sum(arr(transVarErr)**2)/len(transVarErr))))
     mainPlot.set_title(titletxt, fontsize=30)
-    mainPlot.set_ylabel("S %", fontsize=20)
+    mainPlot.set_ylabel(typeName + " %", fontsize=20)
     mainPlot.set_xlabel(keyName, fontsize=20)
+    mainPlot.set_yticks(np.arange(0, 1, 0.1 ))
+    mainPlot.set_yticks(np.arange(0, 1, 0.05), minor=True)
     mainPlot.xaxis.set_label_coords(0.95, -0.1)
     cols = 4 if longLegend else 10
     if legendOption:
         mainPlot.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), fancybox=True, ncol=cols, prop={'size': 12})
     # Loading Plot
-    loadingPlot = subplot(grid1[0:3, 11:16])
     for i, loc in enumerate(atomLocs1):
         loadingPlot.plot(key, loadingRate[i], ls='', marker='o', color=colors[i], alpha=0.3)
         loadingPlot.axhline(np.mean(loadingRate[i]), color=colors[i], alpha=0.3)
-    loadingPlot.set_ylim({0, 1})
-    if not min(key) == max(key):
-        loadingPlot.set_xlim(left=min(key) - (max(key) - min(key)) / len(key), right=max(key) 
-                             + (max(key) - min(key)) / len(key))
-    loadingPlot.set_xlabel("Key Values")
+    loadingPlot.set_xlabel(keyName)
     loadingPlot.set_ylabel("Loading %")
-    loadingPlot.set_xticks(key[0:-1:2])
-    rotateTicks(loadingPlot)
+    loadingPlot.set_yticks(np.arange(0,1,0.2))
+    loadingPlot.set_yticks(np.arange(0,1,0.1), minor=True)
 
     loadingPlot.set_title("Loading: Avg$ = " + str(round_sig(np.mean(arr(loadingRate.tolist())))) + '$')
     for item in ([loadingPlot.title, loadingPlot.xaxis.label, loadingPlot.yaxis.label] +
                      loadingPlot.get_xticklabels() + loadingPlot.get_yticklabels()):
         item.set_fontsize(10)
-    
+    # shared
+    for plot in [mainPlot, loadingPlot]:
+        if not min(key) == max(key):
+            r = max(key) - min(key)
+            plot.set_xlim(left=min(key) - r / len(key), right=max(key)+ r / len(key))
+        plot.grid(True, color='#AAAAAA', which='Major')
+        plot.grid(True, color='#090909', which='Minor')
+        plot.set_ylim({0, 1})
+        rotateTicks(plot)
+        plot.set_xticks(key)
     # ### Count Series Plot
-    countPlot = subplot(gridRight[4:8, 11:15])    
     for i, loc in enumerate(atomLocs1):
         countPlot.plot(pic1Data[i], color=colors[i], ls='', marker='.', markersize=1, alpha=0.3)
-        countPlot.axhline(thresholds[i], color=colors[i], alpha=0.3)
-
+        countPlot.axhline(loadThresholds[i].t, color=colors[i], alpha=0.3)
     countPlot.set_xlabel("Picture #")
     countPlot.set_ylabel("Camera Signal")
-    countPlot.set_title("Thresh.=" + str(round_sig(thresholds[i])), fontsize=10)
-    
+    countPlot.set_title("Thresh.=" + str(round_sig(loadThresholds[i].t)), fontsize=10)
     ticksForVis = countPlot.xaxis.get_major_ticks()
     ticksForVis[-1].label1.set_visible(False)
     for item in ([countPlot.title, countPlot.xaxis.label, countPlot.yaxis.label] +
-                     countPlot.get_xticklabels() + countPlot.get_yticklabels()):
+                  countPlot.get_xticklabels() + countPlot.get_yticklabels()):
         item.set_fontsize(10)
     countPlot.set_xlim((0, len(pic1Data[0])))
-    tickVals = np.linspace(0, len(pic1Data[0]), len(key) + 1)
-    countPlot.set_xticks(tickVals[0:-1:2])
     rotateTicks(countPlot)
-    
     # Count Histogram Plot
-    countHist = subplot(gridLeft[4:8, 15:16], sharey=countPlot)
     for i, atomLoc in enumerate(atomLocs1):
         countHist.hist(pic1Data[i], 50, color=colors[i], orientation='horizontal', alpha=0.3, histtype='stepfilled')
-        countHist.axhline(thresholds[i], color=colors[i], alpha=0.3)
-    for item in ([countHist.title, countHist.xaxis.label, countHist.yaxis.label] +
-                     countHist.get_xticklabels() + countHist.get_yticklabels()):
+        countHist.axhline(loadThresholds[i].t, color=colors[i], alpha=0.3)
+    for item in ([countHist.title, countHist.xaxis.label, countHist.yaxis.label] + 
+                 countHist.get_xticklabels() + countHist.get_yticklabels()):
         item.set_fontsize(10)
     rotateTicks(countHist)
-
     setp(countHist.get_yticklabels(), visible=False)
     
     # average image
-    avgPlt1 = subplot(gridRight[8:12, 11:13])
-    
-    avgPlt2 = subplot(gridRight[8:12, 13:15])
     for plt, dat, locs in zip([avgPlt1, avgPlt2], avgPics, [atomLocs1, atomLocs2]):
         plt.imshow(dat, origin='lower', cmap='Greys_r');
         plt.set_xticks([])
@@ -704,66 +414,102 @@ def Transfer(fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingR
         for loc, c in zip(locs, colors):
             circ = Circle((loc[1], loc[0]), 0.2, color=c)
             plt.add_artist(circ)
-    mainPlot.errorbar(key, avgSurvivalData, yerr=avgSurvivalErr, color="#FFFFFFFF", ls='',
-             marker='o', capsize=6, elinewidth=3, label='Avg')
+    (_, caps, _) = mainPlot.errorbar( key, avgTransferData, yerr=avgTransferErr, color="#BBBBBB", ls='',
+                       marker='o', capsize=12, elinewidth=5, label='Atom-Avg' )
+    for cap in caps:
+        cap.set_markeredgewidth(1.5)
+    (_, caps, _) = mainPlot.errorbar( key, transVarAvg, yerr=transVarErr, color='#FFFFFF', ls='',
+                       marker='o', capsize=12, elinewidth=5, label='Event-Avg')
+    for cap in caps:
+        cap.set_markeredgewidth(1.5)
     if fitModule is not None:
         mainPlot.plot(avgFit['x'], avgFit['nom'], color='#FFFFFFFF', ls=':')
-        fits_df = getFitsDataFrame(fits, fitModule, avgFit)
-        display(fits_df)
+        for label, fitVal, err in zip(fitModule.args(), avgFit['vals'], avgFit['errs']):
+            print( label,':', errString(fitVal, err) )
+        if showFitDetails:
+            display(getFitsDataFrame(fits, fitModule, avgFit))
     if fitModule is not None and showFitCenterPlot:
         figure()
         fitCenterPic, vmin, vmax = genAvgDiscrepancyImage(centers, avgPics[0].shape, atomLocs1)
-        imshow(fitCenterPic, cmap=cm.get_cmap('RdBu'), vmin=vmin, vmax=vmax, origin='lower')
+        imshow(fitCenterPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower')
         title('Fit-Centers (white is average)')
         colorbar()
     tt.clock('After-Main-Plots')
+    avgTransferPic = None
     if showImagePlots:
         ims = []
-        f, axs = subplots(1,4)
+        lims = [[None, None] for _ in range(10 if transThresholdSame else 15)]
+        f, axs = subplots(2 if transThresholdSame else 3, 5, figsize=(36.0, 16.0))
 
-        ims.append(axs[0].imshow(avgPics[0], origin='lower'))
-        axs[0].set_title('Avg 1st Pic')
-
-        ims.append(axs[1].imshow(avgPics[1],origin='lower'))
-        axs[1].set_title('Avg 2nd Pic')
+        ims.append(axs[0,0].imshow(avgPics[0], origin='lower'))
+        lims[0] = [min(avgPics[0].flatten()), max(avgPics[0].flatten())]
+        axs[0,0].set_title('Avg 1st Pic')
         
-        avgSurvivals = []
-        for s in survivalData:
-            avgSurvivals.append(np.mean(s))
-        avgSurvivalPic, vmin, vmax = genAvgDiscrepancyImage(avgSurvivals, avgPics[0].shape, atomLocs1)
-        ims.append(axs[2].imshow(avgSurvivalPic, cmap=cm.get_cmap('RdBu'), vmin=vmin, vmax=vmax, origin='lower'))
-        axs[2].set_title('Avg Surv')
+        ims.append(axs[0,1].imshow(avgPics[1], origin='lower'))
+        lims[1] = [min(avgPics[1].flatten()), max(avgPics[1].flatten())]
+        axs[0,1].set_title('Avg 2nd Pic')
+        
+        avgTransfers = []
+        for s in transferData:
+            avgTransfers.append(np.mean(s))
+        avgTransferPic, lims[2][0], lims[2][1] = genAvgDiscrepancyImage(avgTransfers, avgPics[0].shape, atomLocs1)
+        ims.append(axs[0,2].imshow(avgTransferPic, cmap=cm.get_cmap('seismic_r'), vmin=lims[2][0], vmax=lims[2][1], origin='lower'))
+        
+        axs[0,2].set_title('Avg Trans:' + str(misc.round_sig(np.mean(avgTransfers))), fontsize=12)
         
         avgLoads = []
         for l in loadingRate:
             avgLoads.append(np.mean(l))
-        avgLoadPic, vmin, vmax = genAvgDiscrepancyImage(avgLoads, avgPics[0].shape, atomLocs1)
-        ims.append(axs[3].imshow(avgLoadPic, cmap=cm.get_cmap('RdBu'), vmin=vmin, vmax=vmax, origin='lower'))
-        axs[3].set_title('Avg Load')
-        
-        for ax, im in zip(axs, ims):
+        avgLoadPic, lims[3][0], lims[3][1] = genAvgDiscrepancyImage(avgLoads, avgPics[0].shape, atomLocs1)
+        ims.append(axs[0,3].imshow(avgLoadPic, cmap=cm.get_cmap('seismic_r'), vmin=lims[3][0], vmax=lims[3][1], origin='lower'))
+        axs[0,3].set_title('Avg Load:' + str(misc.round_sig(np.mean(avgLoads))), fontsize=12)
+        if genAvgs is not None:
+            if genAvgs[0] is not None:
+                genAtomAvgs = [np.mean(dp) for dp in genAvgs]
+                genImage, _, lims[4][1] = genAvgDiscrepancyImage(genAtomAvgs, avgPics[0].shape, atomLocs1)
+            else:
+                genAtomAvgs = [0]
+                genImage = np.zeros(avgPics[0].shape)
+                lims[4][1]=1
+        lims[4][0] = 0
+        ims.append(axs[0,4].imshow(genImage, cmap=cm.get_cmap('inferno'), vmin=lims[4][0], vmax=lims[4][1], origin='lower'))
+        axs[0,4].set_title('Atom-Generation: ' + str(misc.round_sig(np.mean(genAtomAvgs))), fontsize=12)
+
+        makeThresholdStatsImages(axs[1,:], loadThresholds, atomLocs1, avgPics[0].shape, ims, lims[5:10])
+        if not transThresholdSame:
+            makeThresholdStatsImages(axs[2,:], transThresholds, atomLocs2, avgPics[0].shape, ims, lims[10:15])
+        for ax, im, lim in zip(axs.flatten(), ims, lims):
             ax.set_yticklabels([])
             ax.set_xticklabels([])
             ax.grid(False)
-            divider = make_axes_locatable(ax)
+            divider = axesTool.make_axes_locatable(ax)
             cax = divider.append_axes('right', size='5%', pad=0.05)
-            f.colorbar(im, cax, orientation='vertical')
+            cb = f.colorbar(im, cax, orientation='vertical')
+            cb.ax.tick_params(labelsize=8)
+            for d in  im.get_array().flatten():
+                p = (d - lim[0]) / (lim[1] - lim[0])
+                cb.ax.plot( [0, 0.25], [p, p], color='w' )
+            cb.outline.set_visible(False)
         tt.clock('After-Image-Plots')
     if plotIndvHists:
-        indvHists(pic1Data, thresholds, colors, extra=avgSurvivals)
+        plotThresholdHists(loadThresholds, colors, extra=avgTransfers, extraname=r"$\rightarrow$:", thresholds_2=transThresholds)
         tt.clock('After-Indv-Hists')
     if timeit:
         tt.display()
     avgPlt1.set_position([0.58,0,0.3,0.3])
     avgPlt2.set_position([0.73,0,0.3,0.3])
-    return (key, survivalData, survivalErrs, loadingRate, fits, avgFit, genAvgs, genErrs, pic1Data, 
-            gaussianFitVals, centers, thresholds, avgSurvivalPic)
-
-
-def rotateTicks(plot):
-    ticks = plot.get_xticklabels()
-    for tickInc in range(len(ticks)):
-        ticks[tickInc].set_rotation(-45)
+    # output thresholds
+    
+    if outputThresholds:
+        thresholdList = np.flip(np.reshape([t.t for t in loadThresholds], (10,10)),1)
+        with open('J:/Code-Files/T-File.txt','w') as f:
+            for row in thresholdList:
+                for thresh in row:
+                    f.write(str(thresh) + ' ')
+    
+    return ( key, transferData, transferErrs, loadingRate, fits, avgFit, genAvgs, genErrs, pic1Data, 
+             centers, avgTransferPic, transVarAvg, transVarErr, avgTransferData, avgTransferErr,
+             loadAtomImages, transAtomImages, pic2Data)
 
 
 def Loading(fileNum, atomLocations, **PopulationArgs):
@@ -773,8 +519,9 @@ def Loading(fileNum, atomLocations, **PopulationArgs):
     return Population(fileNum, atomLocations, 0, 1, **PopulationArgs)
 
 
-def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=True, plotCounts=False, legendOption=None, showImagePlots=True, 
-               plotIndvHists=False, showFitDetails=False, showFitCenterPlot=True, show=True, **StandardArgs):
+def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=True, plotCounts=False, legendOption=None,
+               showImagePlots=True, plotIndvHists=False, showFitDetails=False, showFitCenterPlot=True, show=True, histMain=False,
+               mainAlpha=0.2, avgColor='w', **StandardArgs):
     """
     Standard data analysis package for looking at population %s throughout an experiment.
 
@@ -783,12 +530,13 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     This routine is designed for analyzing experiments with only one picture per cycle. Typically
     These are loading exeriments, for example. There's no survival calculation.
     """
-    (pic1Data, thresholds, avgPic, key, loadRateErr, loadRate, avgLoadRate, avgLoadErr, fits,
-     fitModule, keyName, totalPic1AtomData, rawData, atomLocations, 
-     avgFits, atomImages) = standardPopulationAnalysis(fileNum, atomLocations, whichPic, picsPerRep, **StandardArgs)
+    res = standardPopulationAnalysis(fileNum, atomLocations, whichPic, picsPerRep, **StandardArgs)
+    (locCounts, thresholds, avgPic, key, loadRateErr, loadRate, avgLoadRate, avgLoadErr, fits,
+     fitModule, keyName, atomData, rawData, atomLocations, avgFits, atomImages,
+     totalAvg, totalErr) = res
     colors, _ = getColors(len(atomLocations) + 1)
     if not show:
-        return key, loadRate, loadRateErr, pic1Data, atomImages, thresholds
+        return key, loadRate, loadRateErr, locCounts, atomImages, thresholds, avgLoadRate
     if legendOption is None and len(atomLocations) < 50:
         legendOption = True
     else:
@@ -805,49 +553,63 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     gridRight.update(left=0.2, right=0.946, wspace=0, hspace=1000)
     # Main Plot
     typeName = "L"
-    mainPlot = subplot(grid1[:, :12])
+    loadingPlot = subplot(grid1[0:3, 12:16])
+    countPlot = subplot(gridRight[4:8, 12:15])    
+    if not histMain:
+        mainPlot = subplot(grid1[:, :12])
+        countHist = subplot(gridLeft[4:8, 15:16], sharey=countPlot)
+    else:
+        countHist = subplot(grid1[:, :12])
+        mainPlot = subplot(gridLeft[4:8, 15:16], sharey=countPlot)
     centers = []
     longLegend = len(loadRate[0]) == 1
-    for i, (atomLoc, fit) in enumerate(zip(atomLocations, fits)):
-        leg = r"[%d,%d] " % (atomLoc[0], atomLoc[1])
-        if longLegend:
-            leg += (typeName + " % = " + str(round_sig(loadRate[i][0])) + "$\pm$ "
-                    + str(round_sig(loadRateErr[i][0])))
-        mainPlot.errorbar(key, loadRate[i], yerr=loadRateErr[i], color=colors[i], ls='',
-                          capsize=6, elinewidth=3, label=leg, alpha=0.2, marker=markers[i%len(markers)])
+    if len(arr(key).shape) == 2:
+        # 2d scan: no normal plot possible, so make colormap plot of avg
+        key1, key2 = key[:,0], key[:,1]
+        key1 = np.sort(key1)
+        key2 = np.sort(key2)
+    else:
+        for i, (atomLoc, fit) in enumerate(zip(atomLocations, fits)):
+            leg = r"[%d,%d] " % (atomLoc[0], atomLoc[1])
+            if longLegend:
+                leg += (typeName + " % = " + str(round_sig(loadRate[i][0])) + "$\pm$ "
+                        + str(round_sig(loadRateErr[i][0])))
+            mainPlot.errorbar(key, loadRate[i], yerr=loadRateErr[i], color=colors[i], ls='',
+                              capsize=6, elinewidth=3, label=leg, alpha=mainAlpha, marker=markers[i%len(markers)])
+            if fitModule is not None:
+                if fit == [] or fit['vals'] is None:
+                    continue
+                centerIndex = fitModule.center()
+                if centerIndex is not None:
+                    centers.append(fit['vals'][centerIndex])
+                mainPlot.plot(fit['x'], fit['nom'], color=colors[i], alpha = 0.5)
         if fitModule is not None:
-            if fit == [] or fit['vals'] is None:
-                continue
-            centerIndex = fitModule.center()
-            if centerIndex is not None:
-                centers.append(fit['vals'][centerIndex])
-            mainPlot.plot(fit['x'], fit['nom'], color=colors[i], alpha = 0.5)
-    if fitModule is not None:
-        if avgFits['vals'] is None:
-            print('Avg Fit Failed!')
-        else:
-            centerIndex = fitModule.center()
-            mainPlot.plot(avgFits['x'], avgFits['nom'], color='w', alpha = 1)
-
-    mainPlot.set_ylim({-0.02, 1.01})
-    if not min(key) == max(key):
-        mainPlot.set_xlim(left=min(key) - (max(key) - min(key)) / len(key), right=max(key)
-                          + (max(key) - min(key)) / len(key))
-    mainPlot.set_xticks(key)
-    rotateTicks(mainPlot)
-
-    titletxt = keyName + " Atom " + typeName + " Scan"
-    if len(loadRate[0]) == 1:
-        titletxt = keyName + " Atom " + typeName + " Point.\n Avg " + typeName + "% = " + round_sig_str(np.mean(avgLoadRate))
-    
-    mainPlot.set_title(titletxt, fontsize=30)
-    mainPlot.set_ylabel("S %", fontsize=20)
-    mainPlot.set_xlabel(keyName, fontsize=20)
-    if legendOption == True:
-        cols = 4 if longLegend else 10
-        mainPlot.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), fancybox=True, ncol=cols, prop={'size': 12})
+            if avgFits['vals'] is None:
+                print('Avg Fit Failed!')
+            else:
+                centerIndex = fitModule.center()
+                mainPlot.plot(avgFits['x'], avgFits['nom'], color=avgColor, alpha = 1)
+        mainPlot.grid(True, color='#AAAAAA', which='Major')
+        mainPlot.grid(True, color='#090909', which='Minor')
+        mainPlot.set_yticks(np.arange(0,1,0.1))
+        mainPlot.set_yticks(np.arange(0,1,0.05), minor=True)
+        mainPlot.set_ylim({-0.02, 1.01})
+        if not min(key) == max(key):
+            mainPlot.set_xlim(left=min(key) - (max(key) - min(key)) / len(key), right=max(key)
+                              + (max(key) - min(key)) / len(key))
+        mainPlot.set_xticks(key)
+        rotateTicks(mainPlot)
+        titletxt = keyName + " Atom " + typeName + " Scan"
+        if len(loadRate[0]) == 1:
+            print(avgLoadErr)
+            titletxt = keyName + " Atom " + typeName + " Point.\n Avg " + typeName + "% = " + errString(totalAvg, totalErr) 
+        mainPlot.set_title(titletxt, fontsize=30)
+        mainPlot.set_ylabel("S %", fontsize=20)
+        mainPlot.set_xlabel(keyName, fontsize=20)
+        if legendOption == True:
+            cols = 4 if longLegend else 10
+            mainPlot.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), fancybox=True, ncol=cols, prop={'size': 12})
     # Loading Plot
-    loadingPlot = subplot(grid1[0:3, 12:16])
     for i, loc in enumerate(atomLocations):
         loadingPlot.plot(key, loadRate[i], ls='', marker='o', color=colors[i], alpha=0.3)
         loadingPlot.axhline(np.mean(loadRate[i]), color=colors[i], alpha=0.3)
@@ -858,35 +620,40 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     loadingPlot.set_xlabel("Key Values")
     loadingPlot.set_ylabel("Loading %")
     loadingPlot.set_xticks(key)
-    loadingPlot.set_title("Loading: Avg$ = " + str(round_sig(np.mean(arr(loadRate)))) + '$')
+    loadingPlot.set_yticks(np.arange(0,1,0.1), minor=True)
+    loadingPlot.set_yticks(np.arange(0,1,0.2))
+    loadingPlot.grid(True, color='#AAAAAA', which='Major')
+    loadingPlot.grid(True, color='#090909', which='Minor')
+    loadingPlot.set_title("Loading: Avg$ = " +  str(round_sig(np.mean(arr(loadRate)))) + '$')
     for item in ([loadingPlot.title, loadingPlot.xaxis.label, loadingPlot.yaxis.label] +
                      loadingPlot.get_xticklabels() + loadingPlot.get_yticklabels()):
         item.set_fontsize(10)
-        # ### Count Series Plot
-    countPlot = subplot(gridRight[4:8, 12:15])    
+    # ### Count Series Plot
     for i, loc in enumerate(atomLocations):
-        countPlot.plot(pic1Data[i], color=colors[i], ls='', marker='.', markersize=1, alpha=0.3)
-        # countPlot.plot(pic2Data[i], color=colors2[i], ls='', marker='.', markersize=1, alpha=0.8)
-        countPlot.axhline(thresholds[i], color=colors[i], alpha=0.3)
+        countPlot.plot(locCounts[i], color=colors[i], ls='', marker='.', markersize=1, alpha=0.3)
+        countPlot.axhline(thresholds[i].t, color=colors[i], alpha=0.3)
 
 
     countPlot.set_xlabel("Picture #")
     countPlot.set_ylabel("Camera Signal")
-    countPlot.set_title("Thresh.=" + str(round_sig(thresholds[i])), fontsize=10) #", Fid.="
+    countPlot.set_title("Thresh.=" + str(round_sig(thresholds[i].t)), fontsize=10) #", Fid.="
                         # + str(round_sig(thresholdFid)), )
     ticksForVis = countPlot.xaxis.get_major_ticks()
     ticksForVis[-1].label1.set_visible(False)
     for item in ([countPlot.title, countPlot.xaxis.label, countPlot.yaxis.label] +
                      countPlot.get_xticklabels() + countPlot.get_yticklabels()):
         item.set_fontsize(10)
-    countPlot.set_xlim((0, len(pic1Data[0])))
-    tickVals = np.linspace(0, len(pic1Data[0]), len(key) + 1)
+    countPlot.set_xlim((0, len(locCounts[0])))
+    tickVals = np.linspace(0, len(locCounts[0]), len(key) + 1)
     countPlot.set_xticks(tickVals[0:-1:2])
     # Count Histogram Plot
-    countHist = subplot(gridLeft[4:8, 15:16], sharey=countPlot)
     for i, atomLoc in enumerate(atomLocations):
-        countHist.hist(pic1Data[i], 50, color=colors[i], orientation='horizontal', alpha=0.3, histtype='stepfilled')
-        countHist.axhline(thresholds[i], color=colors[i], alpha=0.3)
+        if histMain:
+            countHist.hist(locCounts[i], 50, color=colors[i], orientation='vertical', alpha=0.3, histtype='stepfilled')
+            countHist.axvline(thresholds[i].t, color=colors[i], alpha=0.3)            
+        else:
+            countHist.hist(locCounts[i], 50, color=colors[i], orientation='horizontal', alpha=0.3, histtype='stepfilled')
+            countHist.axhline(thresholds[i].t, color=colors[i], alpha=0.3)
     for item in ([countHist.title, countHist.xaxis.label, countHist.yaxis.label] +
                      countHist.get_xticklabels() + countHist.get_yticklabels()):
         item.set_fontsize(10)
@@ -895,16 +662,16 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     # average image
     avgPlt = subplot(gridRight[8:12, 12:15])
     avgPlt.imshow(avgPic, origin='lower');
-    avgPlt.set_xticks([])
+    avgPlt.set_xticks([]) 
     avgPlt.set_yticks([])
     avgPlt.grid(False)
     for loc in atomLocations:
         circ = Circle((loc[1], loc[0]), 0.2, color='r')
         avgPlt.add_artist(circ)
-    mainPlot.errorbar(key, avgLoadRate, yerr=avgLoadErr, color="#FFFFFFFF", ls='',
+    mainPlot.errorbar(key, avgLoadRate, yerr=avgLoadErr, color=avgColor, ls='',
              marker='o', capsize=6, elinewidth=3, label='Avg')
     if fitModule is not None and showFitDetails:
-        mainPlot.plot(avgFit['x'], avgFit['nom'], color='#FFFFFFFF', ls=':')
+        mainPlot.plot(avgFit['x'], avgFit['nom'], color=avgColor, ls=':')
         fits_df = getFitsDataFrame(fits, fitModule, avgFit)
         display(fits_df)
     elif fitModule is not None:
@@ -913,13 +680,14 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     if fitModule is not None and showFitCenterPlot and fits[0] != []:
         figure()
         fitCenterPic, vmin, vmax = genAvgDiscrepancyImage(centers, avgPic.shape, atomLocations)
-        imshow(fitCenterPic, cmap=cm.get_cmap('RdBu'), vmin=vmin, vmax=vmax, origin='lower')
+        imshow(fitCenterPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower')
         title('Fit-Centers (white is average)')
         colorbar()
     if showImagePlots:
         ims = []
-        f, axs = subplots(1,2)
-
+        lims = [[0,0] for _ in range(5)]
+        f, axs = subplots(1,6)
+        
         ims.append(axs[0].imshow(avgPic, origin='lower'))
         axs[0].set_title('Avg 1st Pic')
 
@@ -927,25 +695,33 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         for l in loadRate:
             avgLoads.append(np.mean(l))
         avgLoadPic, vmin, vmax = genAvgDiscrepancyImage(avgLoads, avgPic.shape, atomLocations)
-        ims.append(axs[1].imshow(avgLoadPic, cmap=cm.get_cmap('RdBu'), vmin=vmin, vmax=vmax, origin='lower'))
+        ims.append(axs[1].imshow(avgLoadPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower'))
         axs[1].set_title('Avg Load')
+        
+        makeThresholdStatsImages(axs[2:], thresholds, atomLocations, avgPic.shape, ims, lims)
 
         for ax, im in zip(axs, ims):
             ax.set_yticklabels([])
             ax.set_xticklabels([])
             ax.grid(False)
-            divider = make_axes_locatable(ax)
+            divider = axesTool.make_axes_locatable(ax)
             cax = divider.append_axes('right', size='5%', pad=0.05)
             f.colorbar(im, cax, orientation='vertical')
+    avgLoads = []
+    for s in loadRate:
+        avgLoads.append(np.mean(s))
     if plotIndvHists:
-        indvHists(pic1Data, thresholds, colors, extra=thresholds)
+        plotThresholdHists(thresholds, colors, extra=avgLoads, extraname="L:")
+    """
     # output thresholds
-    """    thresholds = np.flip(np.reshape(thresholds, (10,10)),1)
+    thresholds = np.flip(np.reshape(thresholds, (10,10)),1)
     with open('J:/Code-Files/T-File.txt','w') as f:
         for row in thresholds:
             for thresh in row:
-                f.write(str(thresh) + ' ') """
-    return key, loadRate, loadRateErr, pic1Data, atomImages, thresholds
+                f.write(str(thresh) + ' ') 
+    """
+    return {'Key': key, 'Loading': loadRate, 'Loading_Error': loadRateErr, 'Pixel_Counts':locCounts, 'Atom_Images':atomImages, 
+            'Thresholds':thresholds, 'Atom_Data':atomData, 'Raw_Data':rawData}
 
 
 def Assembly(fileNumber, atomLocs1, pic1Num, partialCredit=False, **standardAssemblyArgs):
@@ -953,15 +729,12 @@ def Assembly(fileNumber, atomLocs1, pic1Num, partialCredit=False, **standardAsse
     This function checks the efficiency of generating a picture
     I.e. finding atoms at multiple locations at the same time.
     """
+    res = standardAssemblyAnalysis(fileNumber, atomLocs1, pic1Num, partialCredit=partialCredit, **standardAssemblyArgs)
     (atomLocs1, atomLocs2, key, thresholds, pic1Data, pic2Data, fit, ensembleStats, avgPic, atomCounts, keyName,
-     indvStatistics, lossAvg, lossErr, fitModule,
-     enhancementStats) = standardAssemblyAnalysis(fileNumber, atomLocs1, pic1Num, partialCredit=partialCredit, **standardAssemblyArgs)
+     indvStatistics, lossAvg, lossErr, fitModule, enhancementStats) = res
 
     if not show:
         return key, survivalData, survivalErrs
-
-    # #########################################
-    #      Plotting
     colors, colors2 = getColors(len(atomLocs1)+1)
     f = figure()
     # Setup grid
@@ -976,7 +749,6 @@ def Assembly(fileNumber, atomLocs1, pic1Num, partialCredit=False, **standardAsse
     for stats, label, c in zip((ensembleStats, enhancementStats), ('Assembly', 'Enhancement'), colors):
         mainPlot.errorbar(key, stats['avg'], yerr=stats['err'], color=c, ls='',
                           marker='o', capsize=6, elinewidth=3, label=label)
-    
     if partialCredit:
         mainPlot.set_ylim({-0.02, len(atomLocs1)+0.01})
     else:
@@ -1054,156 +826,13 @@ def Assembly(fileNumber, atomLocs1, pic1Num, partialCredit=False, **standardAsse
         avgPlt.add_artist(circ)
     avgPlt.set_xticks([])
     avgPlt.set_yticks([])
-
+    
     f.subplots_adjust(bottom=0, top=1, hspace=0)
-    return key
-
-
-def plotPoints(key, majorPlot, minorPlot=None, circleLoc=(-1, -1), picture=arr([[]]), picTitle=""):
-    """
-    This plotter plots a scatter plot on the main axis from majorPlot,
-    a scatter on the minor axis using minorPlot, and a picture using picture.
-    :param picture:
-    :param circleLoc:
-    :param picTitle: optional title to display above plot.
-    :param key: this is used for the x values of both the major plot and the minor plot.
-    :param majorPlot: a dictionary with the following elements containing info for the main plot of the figure (REQUIRED):
-        - "ax1": A dictionary containing info for plotting on the first axis (main axis)
-            with the following elements (REQUIRED):
-            - "data": a 1 or 2-dimensional array with data to be plotted with key (REQUIRED)
-            - "ylabel": label for axis 1 (on the left)
-            - "legendLabels": an array with labels for each data set
-        - "ax2": An optional dictionary containing info for plotting on the second axis, elements similar to ax1
-        - "xlabel": label for the x axis
-        - "title": title
-        - "altKey": another key to plot on the other x-axis (above the plot).
-    :param minorPlot: a dictionary with info for the minor plot. Same structure as majorPlotData, but optional.
-    """
-    if minorPlot is None:
-        minorPlot = {}
-    # Setup grid
-    figure()
-    grid1 = GridSpec(12, 16)
-    grid1.update(left=0.05, right=0.95, wspace=1.2, hspace=1000)
-    # ### Main Plot
-    fillPlotDataDefaults(majorPlot)
-    majorAx1 = subplot(grid1[:, :11])
-    pltColors = ['r', 'c', 'g', '#FFFFFF', 'y', 'm', 'b']
-    majorLineCount = 0
-    lines = []
-    if majorPlot['ax1']['data'].ndim == 1:
-        lines += majorAx1.plot(key, majorPlot['ax1']['data'], 'o', label=majorPlot['ax1']['legendLabels'],
-                               color=pltColors[majorLineCount])
-        majorLineCount += 1
-    else:
-        for data in majorPlot['ax1']['data']:
-            lines += majorAx1.plot(key, data, 'o', label=majorPlot['ax1']['legendLabels'][majorLineCount],
-                                   color=pltColors[majorLineCount])
-            majorLineCount += 1
-    if 'fitYData' in majorPlot['ax1']:
-        for fitCount in range(len(majorPlot['ax1']['fitYData'])):
-            lines += majorAx1.plot(majorPlot['ax1']['fitXData'][fitCount], majorPlot['ax1']['fitYData'][fitCount],
-                                   label=majorPlot['ax1']['legendLabels'][majorLineCount], color=pltColors[fitCount])
-            majorLineCount += 1
-
-    majorAx1.set_ylabel(majorPlot['ax1']['ylabel'])
-    majorAx1.grid(which='both', color='#FFFFFF')
-
-    if 'ax2' in majorPlot:
-        majorAx2 = majorAx1.twinx()
-        if majorPlot['ax1']['data'].ndim == 1:
-            lines += majorAx2.plot(key, majorPlot['ax2']['data'], 'o', label=majorPlot['ax2']['legendLabels'],
-                                   color=pltColors[majorLineCount])
-            majorLineCount += 1
-        else:
-            count = 0
-            for data in majorPlot['ax2']['data']:
-                lines += majorAx2.plot(key, data, 'o', label=majorPlot['ax2']['legendLabels'][count],
-                                       color=pltColors[majorLineCount])
-                count += 1
-                majorLineCount += 1
-        majorAx2.set_ylabel(majorPlot['ax2']['ylabel'])
-        majorAx2.spines['right'].set_color('m')
-        majorAx2.spines['top'].set_color('m')
-        majorAx2.yaxis.label.set_color('m')
-        majorAx2.tick_params(axis='y', colors='m')
-        majorAx2.grid(which='both', color='m')
-
-    majorAx1.legend(lines, [l.get_label() for l in lines], loc='best', fancybox=True, framealpha=0.4)
-    majorAx1.set_xlabel(majorPlot['xlabel'])
-    majorAx1.set_title(majorPlot['title'])
-    # todo, maybe modify this if I want to use it in the future.
-    if 'majorAltKey' in majorPlot:
-        ax2 = majorAx1.twiny()
-        ax2.plot(majorPlot['majorAltKey'], majorPlot['ax1']['data'], 'o')
-        ax2.grid(color='c')
-        ax2.spines['top'].set_color('c')
-        ax2.xaxis.label.set_color('c')
-        ax2.tick_params(axis='x', colors='c')
-        ax2.set_xlabel("DAC Values")
-        ax2.set_xlim(reversed(ax2.get_xlim()))
-    # Minor Data Plot
-    lines = []
-    if 'ax1' in minorPlot:
-        fillPlotDataDefaults(minorPlot)
-        minorAx1 = subplot(grid1[0:6, 12:16])
-        minorLineCount = 0
-        if minorPlot['ax1']['data'].ndim == 1:
-            lines += minorAx1.plot(key, minorPlot['ax1']['data'], 'o', label=minorPlot['ax1']['legendLabels'],
-                                   color=pltColors[minorLineCount])
-            minorLineCount += 1
-        else:
-            count = 0
-            for data in minorPlot['ax1']['data']:
-                lines += minorAx1.plot(key, data, 'o', label=minorPlot['ax1']['legendLabels'][count],
-                                       color=pltColors[minorLineCount])
-                count += 1
-                minorLineCount += 1
-        minorAx1.set_ylabel(minorPlot['ax1']['ylabel'])
-
-        if 'ax2' in minorPlot:
-            minorAx2 = twinx(minorAx1)
-            if minorPlot['ax1']['data'].ndim == 1:
-                lines += minorAx2.plot(key, minorPlot['ax2']['data'], 'o', label=minorPlot['ax2']['legendLabels'],
-                                       color=pltColors[minorLineCount])
-                minorLineCount += 1
-            else:
-                count = 0
-                for data in minorPlot['ax2']['data']:
-                    lines += minorAx2.plot(key, data, 'o', label=minorPlot['ax2']['legendLabels'][count],
-                                           color=pltColors[minorLineCount], alpha=0.4)
-                    count += 1
-                    minorLineCount += 1
-            minorAx2.set_ylabel(minorPlot['ax2']['ylabel'])
-            minorAx2.spines['right'].set_color('m')
-            minorAx2.spines['top'].set_color('m')
-            minorAx2.yaxis.label.set_color('m')
-            minorAx2.tick_params(axis='y', colors='m')
-            minorAx2.grid(color='m')
-        minorAx1.legend(lines, [l.get_label() for l in lines], loc='best', fancybox=True, framealpha=0.4)
-        minorAx1.set_xlabel(minorPlot['xlabel'])
-        minorAx1.set_title(minorPlot['title'])
-    # Image
-    if picture.size != 0:
-        image = subplot(grid1[7:12, 12:16])
-        im = image.pcolormesh(picture)
-        image.grid(0)
-        image.axis(False)
-        image.set_title(picTitle)
-        colorbar(im, ax=image)
-        if circleLoc != (-1, -1):
-            circ = Circle(circleLoc, 0.2, color='r')
-            image.add_artist(circ)
+    return key, survivalData, survivalErrs
 
 
 def Rearrange(rerngInfoAddress, fileNumber, locations,splitByNumberOfMoves=False, **rearrangeArgs):
     """
-
-    :param rerngInfoAddress:
-    :param fileNumber:
-    :param locations:
-    :param rearrangeArgs:
-    :return:
     """
     res = AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, splitByNumberOfMoves=splitByNumberOfMoves, **rearrangeArgs)
     allData, fits, pics, moves = res
@@ -1224,168 +853,55 @@ def Rearrange(rerngInfoAddress, fileNumber, locations,splitByNumberOfMoves=False
     ax.set_title('Rearranging Individual Move Fidelity Analysis')
     rotateTicks(ax)
     return allData, pics, moves
-            
-    
-    
+        
 
-
-def showPicComparisons(data, key, fitParameters=np.array([])):
-    """
-    formerly the "individualPics" option.
-    expects structure:
-    data[key value number][raw, -background, -average][2d pic]
-
-    :param data:
-    :param key:
-    :param fitParameters:
-    :return:
-    """
-    if data.ndim != 4:
-        raise ValueError("Incorrect dimensions for data input to show pics if you want individual pics.")
-    titles = ['Raw Picture', 'Background Subtracted', 'Average Subtracted']
-    for inc in range(len(data)):
-        figure()
-        fig, plts = subplots(1, len(data[inc]), figsize=(15, 6))
-        count = 0
-        for pic in data[inc]:
-            x = np.linspace(1, pic.shape[1], pic.shape[1])
-            y = np.linspace(1, pic.shape[0], pic.shape[0])
-            x, y = np.meshgrid(x, y)
-            im = plts[count].pcolormesh(pic, extent=(x.min(), x.max(), y.min(), y.max()))
-            fig.colorbar(im, ax=plts[count], fraction=0.046, pad=0.04)
-            plts[count].set_title(titles[count])
-            plts[count].axis('off')
-            if fitParameters.size != 0:
-                if (fitParameters[count] != np.zeros(len(fitParameters[count]))).all():
-                    data_fitted = fitFunc.gaussian_2D((x, y), *fitParameters[count])
-                    try:
-                        # used to be "picture" which was unresolved, assuming should have been pic, as I've changed
-                        # below.
-                        plts[count].contour(x, y, data_fitted.reshape(pic.shape[0], pic.shape[1]), 2, colors='w',
-                                            alpha=0.35, linestyles="dashed")
-                    except ValueError:
-                        pass
-            count += 1
-        fig.suptitle(str(key[inc]))
-
-
-def showBigPics(data, key, fitParameters=np.array([]), individualColorBars=False, colorMax=-1):
-    """
-    formerly the "bigPictures" option.
-
-    :param data:
-    :param key:
-    :param fitParameters:
-    :param individualColorBars:
-    :param colorMax:
-    :return:
-    """
-    if data.ndim != 3:
-        raise ValueError("Incorrect dimensions for data input showBigPics.")
-    count = 0
-    maximum = sorted(data.flatten())[colorMax]
-    minimum = min(data.flatten())
-    # get picture fits & plots
-    for picture in data:
-        fig = figure()
-        grid(0)
-        if individualColorBars:
-            maximum = max(picture.flatten())
-            minimum = min(picture.flatten())
-        x = np.linspace(1, picture.shape[1], picture.shape[1])
-        y = np.linspace(1, picture.shape[0], picture.shape[0])
-        x, y = np.meshgrid(x, y)
-        im = pcolormesh(picture, vmin=minimum, vmax=maximum)
-        axis('off')
-        title(str(round_sig(key[count], 4)), fontsize=8)
-        if fitParameters.size != 0:
-            if (fitParameters[count] != np.zeros(len(fitParameters[count]))).all():
-                data_fitted = fitFunc.gaussian_2D((x, y), *fitParameters[count])
-                try:
-                    contour(x, y, data_fitted.reshape(picture.shape[0], picture.shape[1]), 2, colors='w', alpha=0.35,
-                            linestyles="dashed")
-                except ValueError:
-                    pass
-        count += 1
-        # final touches
-        cax = fig.add_axes([0.95, 0.1, 0.03, 0.8])
-        fig.colorbar(im, cax=cax)
-
-
-def showPics(data, key, fitParameters=np.array([]), individualColorBars=False, colorMax=-1):
-    """
-    formerly the default option.
-
-    :param data:
-    :param key:
-    :param fitParameters:
-    :param individualColorBars:
-    :param colorMax:
-    :return:
-    """
-    # if data.ndim != 3:
-    #    raise ValueError("Incorrect dimensions for data input to show pics if you don't want individual pics.")
+def showPics(data, key, fitParams=np.array([]), indvColorBars=False, colorMax=-1):
     num = len(data)
     gridsize1, gridsize2 = (0, 0)
     for i in range(100):
-        if i*i >= num:
+        if i*(i-2) >= num:
             gridsize1 = i
-            if i*(i-1) >= num:
-                gridsize2 = i-1
-            else:
-                gridsize2 = i
+            gridsize2 = i-2# if i*(i-1) >= num else i
             break
-    fig, plts = subplots(gridsize2, gridsize1, figsize=(15, 10))
-    fig2, plts2 = subplots(gridsize2, gridsize1, figsize=(15, 10))
-    count = 0
-    rowCount = 0
-    picCount = 0
-    maximum = sorted(data.flatten())[colorMax]
-    minimum = min(data.flatten())
+    fig = figure(figsize=(20,20))
+    grid = axesTool.AxesGrid( fig, 111, nrows_ncols=(2, num), axes_pad=0.0, share_all=True,
+                              label_mode="L", cbar_location="right", cbar_mode="single" )
+    rowCount, picCount, count = 0,0,0
+    maximum, minimum = sorted(data.flatten())[colorMax], min(data.flatten())
     # get picture fits & plots
-    for row in plts:
-        for _ in row:
-            plts[rowCount, picCount].grid(0)
-            if count >= len(data):
-                count += 1
-                picCount += 1
-                continue
-            picture = data[count]
-            if individualColorBars:
-                maximum = max(picture.flatten())
-                minimum = min(picture.flatten())
-            x = np.linspace(1, picture.shape[1], picture.shape[1])
-            y = np.linspace(1, picture.shape[0], picture.shape[0])
-            x, y = np.meshgrid(x, y)
-            im = plts[rowCount, picCount].imshow( picture, origin='bottom', extent=(x.min(), x.max(), y.min(), y.max()),
-                                                  vmin=minimum, vmax=maximum )
-            plts[rowCount, picCount].axis('off')
-            plts[rowCount, picCount].set_title(str(round_sig(key[count], 4)), fontsize=8)
-            if fitParameters.size != 0:
-                if (fitParameters[count] != np.zeros(len(fitParameters[count]))).all():
-                    # data_fitted = gaussian_2D((x, y), *fitParameters[count])
-                    try:
-                        ellipse = Ellipse(xy=(fitParameters[count][1], fitParameters[count][2]),
-                                          width=2*fitParameters[count][3], height=2*fitParameters[count][4],
-                                          angle=fitParameters[count][5], edgecolor='r', fc='None', lw=2, alpha=0.2)
-                        plts[rowCount, picCount].add_patch(ellipse)
-                    except ValueError:
-                        pass
-                plts2[rowCount,picCount].grid(0)
-                x, y = np.arange(0,len(picture[0])), np.arange(0,len(picture))
-                X, Y = np.meshgrid(x,y)
-                vals = gaussian_2d.f((X,Y), *fitParameters[count])
-                vals = np.reshape(vals, picture.shape)
-                im2 = plts2[rowCount,picCount].imshow(picture-vals, vmin=-10, vmax=10, origin='bottom',
-                                                     extent=(x.min(), x.max(), y.min(), y.max()))
-                plts2[rowCount,picCount].axis('off')
-                plts2[rowCount,picCount].set_title(str(round_sig(key[count], 4)), fontsize=8)
+    for picNum in range(num):
+        pl = grid[count]
+        pl.grid(0)
+        if count >= len(data):
             count += 1
             picCount += 1
-        picCount = 0
-        rowCount += 1
-    # final touches
-    cax = fig.add_axes([0.95, 0.1, 0.03, 0.8])
-    fig.colorbar(im, cax=cax)
-    cax = fig2.add_axes([0.95, 0.1, 0.03, 0.8])
-    fig2.colorbar(im2, cax=cax)
+            continue
+        pic = data[count]
+        if indvColorBars:
+            maximum, minimum = max(pic.flatten()), min(pic.flatten())
+        y, x = [np.linspace(1, pic.shape[i], pic.shape[i]) for i in range(2)]
+        x, y = np.meshgrid(x, y)
+        im1 = pl.imshow( pic, origin='bottom', extent=(x.min(), x.max(), y.min(), y.max()),
+                                              vmin=minimum, vmax=maximum )
+        pl.axis('off')
+        pl.set_title(str(round_sig(key[count], 4)), fontsize=8)
+        if fitParams.size != 0:
+            if (fitParams[count] != np.zeros(len(fitParams[count]))).all():
+                try:
+                    ellipse = Ellipse(xy=(fitParams[count][1], fitParams[count][2]),
+                                      width=2*fitParams[count][3], height=2*fitParams[count][4],
+                                      angle=-fitParams[count][5]*180/np.pi, edgecolor='r', fc='None', lw=2, alpha=0.2)
+                    pl.add_patch(ellipse)
+                except ValueError:
+                    pass
+            pl2 = grid[count+num]
+            pl2.grid(0)
+            x, y = np.arange(0,len(pic[0])), np.arange(0,len(pic))
+            X, Y = np.meshgrid(x,y)
+            vals = np.reshape(gaussian_2d.f((X,Y), *fitParams[count]), pic.shape)
+            im2 = pl2.imshow(pic-vals, vmin=-2, vmax=2, origin='bottom',
+                                                 extent=(x.min(), x.max(), y.min(), y.max()))
+            pl2.axis('off')
+        count += 1
+        picCount += 1
+    grid.cbar_axes[0].colorbar(im1);

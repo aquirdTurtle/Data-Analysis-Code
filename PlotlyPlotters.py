@@ -18,6 +18,7 @@ from pandas import DataFrame
 from fitters import linear
 from AnalysisHelpers import getFitsDataFrame
 
+
 def ScatterData(fileNumber, atomLocs1, plotfit=True, **scatterOptions):
     (key, psSurvivals, psErrors, fitData, fitFin, survivalData, survivalErrs,
      survivalFits, atomLocs1) = analyzeScatterData(fileNumber, atomLocs1, **scatterOptions)
@@ -81,28 +82,31 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModule=None, showCo
     """
     res = standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, fitModule=fitModule,
                                    **standardTransferArgs)
+    #(atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate, pic1Data, keyName, key,
+    # repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPics, otherDims, locationsList,
+    # genAvgs, genErrs, gaussianFitVals) = res
     (atomLocs1, atomLocs2, atomCounts, survivalData, survivalErrs, loadingRate, pic1Data, keyName, key,
-     repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPics, otherDims, locationsList,
-     genAvgs, genErrs, gaussianFitVals) = res
+     repetitions, thresholds, fits, avgSurvivalData, avgSurvivalErr, avgFit, avgPics, otherDimValues,
+     locsList, genAvgs, genErrs, gaussianFitVals, tt) = res
     if not show:
         return key, survivalData, survivalErrs, loadingRate
 
     # get the colors for the plots.
-    pltColors, pltColors2 = getColors(len(locationsList) + 1)
+    pltColors, pltColors2 = getColors(len(locsList) + 1)
     scanType = "S." if atomLocs1 == atomLocs2 else "T."
     if scanType == "S.":
         legends = [r"%d,%d " % (loc1[0], loc1[1]) + (scanType + "% = " + str(errString(d[0], e[0])) if len(d) == 1
-                   else "") for loc1, d, e in zip(locationsList, survivalData, survivalErrs)]
+                   else "") for loc1, d, e in zip(locsList, survivalData, survivalErrs)]
 
     elif otherDimValues[0] is not None:
         legends = [r"%d,%d>%d,%d @%d " % (loc1[0], loc1[1], loc2[0], loc2[1], other) +
                    (scanType + "%=" + str(errString(d[0]), e[0]) if len(d) == 1 else "")
-                   for loc1, loc2, d, e, other in zip(locationsList, locationsList, survivalData, survivalErrs,
+                   for loc1, loc2, d, e, other in zip(locsList, locsList, survivalData, survivalErrs,
                                                       otherDimValues)]
     else:
         legends = [r"%d,%d>%d,%d " % (loc1[0], loc1[1], loc2[0], loc2[1]) +
                    (scanType + "%=" + errString(d[0], e[0]) if len(d) == 1 else "")
-                   for loc1, loc2, d, e in zip(locationsList, locationsList, survivalData, survivalErrs)]
+                   for loc1, loc2, d, e in zip(locsList, locsList, survivalData, survivalErrs)]
     survivalErrs = list(survivalErrs)
     # Make the plots
     alphaVal = 0.5
@@ -115,7 +119,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModule=None, showCo
     if fitModule is not None:
         display(getFitsDataFrame(fits, fitModule, avgFit))
 
-    for data, err, loc, color, legend, fitData, gen, genErr in zip(survivalData, survivalErrs, locationsList, pltColors,
+    for data, err, loc, color, legend, fitData, gen, genErr in zip(survivalData, survivalErrs, locsList, pltColors,
                                                       legends, fits, genAvgs, genErrs):
         mainPlot.append(go.Scatter(x=key, y=data, opacity=alphaVal, mode="markers", name=legend,
                                    error_y={"type": 'data', "array": err, 'color': color},
@@ -141,7 +145,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModule=None, showCo
                                            opacity=alphaVal / 2, line={'color': color},
                                            legendgroup=legend, fill='tonexty', showlegend=False,
                                            hoverinfo='none', fillcolor='rgba(7, 164, 181, ' + str(alphaVal/2) + ')'))
-
+    print('0.')
     if fitModule is not None and fitModule.center() is not None:
         print('Fit Centers:')
         transferPic = np.zeros(avgPics[0].shape)
@@ -154,7 +158,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModule=None, showCo
         fitCenterFig = [go.Heatmap(z=fitCenterPic, colorscale='Viridis', colorbar=go.ColorBar(x=1, y=0.15, len=0.3))]
         layout = go.Layout(title='Fit-Center Pic')
         iplot(go.Figure(data=fitCenterFig, layout=layout))
-
+    print('1.')
     # countsFig.append(go.Scatter(y=atomCounts, mode='markers', opacity=0.1, marker={'color':color, 'size':1},
     #            legendgroup='avg', showlegend=False))
     # countsHist.append(go.Histogram(y=atomCounts, nbinsy=100, legendgroup='avg', showlegend=False, opacity=0.1,
@@ -176,6 +180,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModule=None, showCo
                                  showlegend=False, legendgroup=legend, marker={'size': 2, 'color': '#FF0000'}))
         avgFigs[1].append(go.Scatter(x=[loc2[1]], y=[loc2[0]], mode='markers', hoverinfo='none',
                                  showlegend=False, legendgroup=legend, marker={'size': 2, 'color': '#FF0000'}))
+    print('2.')
     # average stuff
     mainPlot.append(go.Scatter(x=key, y=avgSurvivalData, mode="markers", name='avg',
                                error_y={"type": 'data', "array": avgSurvivalErr, 'color': '#000000'},
@@ -270,7 +275,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModule=None, showCo
 
 
 def Loading(fileNum, atomLocations, showLoadingRate=True, showLoadingPic=False, plotCounts=False, countsMain=False,
-            indvHist=True, histMain=False, simplePlot=False, showTotalHist=False, histBins=100, **StandardArgs):
+            indvHist=True, histMain=False, simplePlot=False, showTotalHist=False, histBins=100, picsPerRep=1, whichPic=0, **StandardArgs):
     """
     Standard data analysis package for looking at loading rates throughout an experiment.
     return key, loadingRateList, loadingRateErr
@@ -291,9 +296,9 @@ def Loading(fileNum, atomLocations, showLoadingRate=True, showLoadingPic=False, 
     :return:
     """
 
+    res = standardPopulationAnalysis(fileNum, atomLocations, whichPic, picsPerRep, **StandardArgs)
     (pic1Data, thresholds, avgPic, key, loadingRateErr, loadingRateList, allLoadingRate, allLoadingErr, loadFits,
-     loadingFitType, keyName, totalPic1AtomData, rawData, atomLocations,
-     avgFits) = standardLoadingAnalysis(fileNum, atomLocations, **StandardArgs)
+            fitModule, keyName, totalPic1AtomData, rawData, atomLocations, avgFits, atomImages, fitVals) = res 
     maxHeight = np.max(arr([np.histogram(data.flatten(), bins=histBins)[0] for data in pic1Data]).flatten())
 
     totalHist = []
@@ -341,7 +346,7 @@ def Loading(fileNum, atomLocations, showLoadingRate=True, showLoadingPic=False, 
                                        marker={'color': color}, opacity=alphaVal))
             avgFig.append(go.Scatter(x=[loc[1]], y=[loc[0]], mode='markers', hoverinfo='none',
                               showlegend=False, legendgroup=str(loc), marker={'size': 2, 'color': '#FF0000'}))
-            if loadingFitType is not None:
+            if fitModule is not None:
                 print(loc, errString(fitData['vals'][1], fitData['errs'][1], 4))
                 mainPlot.append(go.Scatter(x=fitData['x'], y=fitData['nom'], line={'color': color},
                                            legendgroup=str(loc), showlegend=False, opacity=alphaVal))
@@ -356,7 +361,7 @@ def Loading(fileNum, atomLocations, showLoadingRate=True, showLoadingPic=False, 
         mainPlot.append(go.Scatter(x=key, y=allLoadingRate, marker={'color': '#000000'},
                                    error_y={'type': 'data', 'array': allLoadingErr, 'color': "#000000"},
                                    mode='markers', name='avg', legendgroup='avg'))
-        if loadingFitType is not None:
+        if fitModule is not None:
             print('avg fit:', errString(avgFits['vals'][1], avgFits['errs'][1], 4))
             mainPlot.append(go.Scatter(x=avgFits['x'], y=avgFits['nom'], line={'color': '#000000'},
                                        legendgroup='avg', showlegend=False, opacity=alphaVal))
