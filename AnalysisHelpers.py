@@ -1,7 +1,7 @@
 __version__ = "1.4"
 
+import csv
 from os import linesep
-from pandas import read_csv as pd_read_csv
 import pandas as pd
 
 from astropy.io import fits
@@ -23,8 +23,8 @@ import MarksConstants as consts
 from Miscellaneous import transpose, round_sig, round_sig_str
 import Miscellaneous as misc
 from copy import copy, deepcopy
-from fitters import (double_gaussian, cython_poissonian as poissonian, 
-                    FullBalisticMotExpansion, LargeBeamMotExpansion, gaussian_2d, exponential_saturation)
+from fitters import ( double_gaussian, cython_poissonian as poissonian, 
+                      FullBalisticMotExpansion, LargeBeamMotExpansion, gaussian_2d, exponential_saturation )
 
 import dataclasses as dc
 import MainAnalysis as ma
@@ -388,200 +388,6 @@ def combineData(data, key):
             newItem /= len(indexes)
             newData.append(newItem)
     return arr(newData), arr(newKey)
-
-# ##############
-# ### Data-Loading Functions
-
-
-def loadDataRay(fileID):
-    """
-
-    :param num:
-    :return:
-    """
-    if type(num) == int:
-        fileName = dataAddress + "dataRay_" + str(fileID) + ".wct"
-    else:
-        fileName = fileID
-    file = pd_read_csv(fileName, header=None, skiprows=[0, 1, 2, 3, 4])
-    data = file.as_matrix()
-    for i, row in enumerate(data):
-        data[i][-1] = float(row[-1][:-2])
-        for j, elem in enumerate(data[i]):
-            data[i][j] = float(elem)
-    return data.astype(float)
-
-
-def loadCompoundBasler(num, cameraName='ace', loud=False):
-    if cameraName == 'ace':
-        path = dataAddress + "AceData_" + str(num) + ".txt"
-    elif cameraName == 'scout':
-        path = dataAddress + "ScoutData" + str(num) + ".txt"
-    else:
-        raise ValueError('cameraName has a bad value for a Basler camera.')
-    with open(path) as file:
-        original = file.read()
-        pics = original.split(";")
-        if loud:
-            print('Number of Pics:', len(pics))
-        dummy = linesep.join([s for s in pics[0].splitlines() if s])
-        dummy2 = dummy.split('\n')
-        dummy2[0] = dummy2[0].replace(' \r', '')
-        data = np.zeros((len(pics), len(dummy2), len(arr(dummy2[0].split(' ')))))
-        picInc = 0
-        for pic in pics:
-            if loud:
-                if picInc % 100 == 0:
-                    print('')
-                if picInc% 1000 == 0:
-                    print('')
-                print('.',end='')
-            # remove extra empty lines
-            pic = linesep.join([s for s in pic.splitlines() if s])
-            lines = pic.split('\n')
-            lineInc = 0
-            for line in lines:
-                line = line.replace(' \r', '')
-                picLine = arr(line.split(' '))
-                picLine = arr(list(filter(None, picLine)))
-                data[picInc][lineInc] = picLine
-                lineInc += 1
-            picInc += 1
-    return data
-
-
-def loadFits(num):
-    """
-    Legacy. We don't use fits files anymore.
-
-    :param num:
-    :return:
-    """
-    # Get the array from the fits file. That's all I care about.
-    path = dataAddress + "data_" + str(num) + ".fits"
-    with fits.open(path, "append") as fitsFile:
-        try:
-            rawData = arr(fitsFile[0].data, dtype=float)
-            return rawData
-        except IndexError:
-            fitsFile.info()
-            raise RuntimeError("Fits file was empty!")
-
-
-def loadKey(num):
-    """
-    Legacy. We don't use dedicated key files anymore, but rather it gets loaded into the hdf5 file.
-
-    :param num:
-    :return:
-    """
-    key = np.array([])
-    path = dataAddress + "key_" + str(num) + ".txt"
-    with open(path) as keyFile:
-        for line in keyFile:
-            key = np.append(key, [float(line.strip('\n'))])
-        keyFile.close()
-    return key
-
-
-def loadDetailedKey(num):
-    """
-    Legacy. We don't use dedicated key files anymore, rather it gets loaded from the hdf5 file.
-
-    :param num:
-    :return:
-    """
-    key = np.array([])
-    varName = 'None-Variation'
-    path = dataAddress + "key_" + str(num) + ".txt"
-    with open(path) as keyFile:
-        # for simple runs should only be one line.
-        count = 0
-        for line in keyFile:
-            if count == 1:
-                print("ERROR! Multiple lines in detailed key file not yet supported.")
-            keyline = line.split()
-            varName = keyline[0]
-            key = arr(keyline[1:], dtype=float)
-            count += 1
-        keyFile.close()
-    return key, varName
-
-
-def browseh5(runNum=None, printOption=None, fileopen=None, filepath=None):
-    """
-    input format of a tuple with various depth
-
-        examples of use:
-    fileopenloc=h5.File('J:\\Data Repository\\New Data Repository\\2017\\September\\September 13\\Raw Data\\data_1.h5')
-    browseh5(fileloc)
-    or
-    filepathloc='J:\\Data Repository\\New Data Repository\\2017\\September\\September 13\\Raw Data\\data_111.h5'
-    browseh5(filepath=filepathloc)
-    or
-    browseh5(runNum=111) # for the data of the same date
-    then it displays a list of possible catagories, for example 'Master-Parameters'
-    then input browseh5(file,'Master-Parameters')
-    further displays master-scripts
-    then input browseh5(file,('Master-Parameters','master-scripts') to see the script. need to input in tuples
-    for more than one inputs
-    :param runNum:
-    :param printOption:
-    :param fileopen:
-    :param filepath:
-    :return
-    """
-    if fileopen is None:
-        if filepath is None:
-            if runNum is not None:
-                path = dataAddress + "data_" + str(runNum) + ".h5"
-                filenametmp = h5.File(path)
-            else:
-                print('error for input parameters')
-                return
-        else:
-            path = filepath
-            filenametmp = h5.File(path)
-    else:
-        filenametmp = fileopen
-
-    evalstr = 'filenametmp'
-    printAll = True  # see if it already output things with strings, otherwise print as normal as True
-    if filenametmp is None:
-        print("input file is empty")
-    elif printOption:
-        for m in filenametmp:
-            print(m)
-            for n in filenametmp[m]:
-                print('-', n)
-                if type(filenametmp[m][n]) == h5._hl.dataset.Dataset:
-                    if type(filenametmp[m][n][0]) == np.bytes_:
-                        x = [z.decode('UTF-8') for z in filenametmp[m][n]]
-                        print(''.join(x))
-    elif printOption is None:
-        for m in filenametmp:
-            print(m)
-    else:
-        if type(printOption) == str:
-            printOption = (printOption, '')  # convert to a tuple to access strings individually
-        for i in printOption:
-            if i != '':
-                evalstr += '[\'' + i + '\']'
-    if evalstr:
-        evalstr1 = eval(evalstr)
-        try:
-            if type(evalstr1[0]) == np.bytes_:
-                x = [z.decode('UTF-8') for z in evalstr1]
-                print(''.join(x))
-                printAll = False
-            else:
-                for m in evalstr1:
-                    print(m)
-        except:
-            pass
-        if printAll:
-            for m in evalstr1:
-                print(m)
 
 
 def ballisticMotExpansion(t, sigma_y0, sigma_vy, sigma_I):

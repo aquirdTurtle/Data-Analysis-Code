@@ -51,6 +51,7 @@ class ExpFile:
             self.reps = self.f['Master-Parameters']['Repetitions'][0]
             self.experiment_time, self.experiment_date = self.get_experiment_time_and_date()
     
+    
     def __enter__(self):
         return self
 
@@ -75,6 +76,11 @@ class ExpFile:
         self.f = file
         return file
     
+    def get_reps(self):
+        self.reps = self.f['Master-Parameters']['Repetitions'][0]
+        return self.reps
+
+    
     def get_key(self):
         """
         :param file:
@@ -97,7 +103,7 @@ class ExpFile:
             return 'No-Variation', arr([1])
     
     
-    def __get_old_key(self):
+    def get_old_key(self):
         """
         :param file:
         :return:

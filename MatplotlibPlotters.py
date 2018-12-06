@@ -13,11 +13,11 @@ import mpl_toolkits.axes_grid1 as axesTool
 
 
 from scipy.optimize import curve_fit as fit
-from AnalysisHelpers import (loadDataRay, loadCompoundBasler, processSingleImage, orderData,
+from LoadingFunctions import loadDataRay, loadCompoundBasler, loadDetailedKey
+from AnalysisHelpers import (processSingleImage, orderData,
                              normalizeData, getBinData, getTransferStats, getTransferEvents, fitDoubleGaussian,
                              guessGaussianPeaks, calculateAtomThreshold, getAvgPic, getEnsembleHits,
-                             getEnsembleStatistics, handleFitting, 
-                             loadDetailedKey, processImageData,
+                             getEnsembleStatistics, handleFitting, processImageData,
                              fitPictures, fitGaussianBeamWaist, assemblePlotData, ballisticMotExpansion, simpleMotExpansion, 
                              calcMotTemperature,integrateData, computeMotNumber, getFitsDataFrame, genAvgDiscrepancyImage, 
                              getGridDims, newCalcMotTemperature)
@@ -509,7 +509,7 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoading
     
     return ( key, transferData, transferErrs, loadingRate, fits, avgFit, genAvgs, genErrs, pic1Data, 
              centers, avgTransferPic, transVarAvg, transVarErr, avgTransferData, avgTransferErr,
-             loadAtomImages, transAtomImages, pic2Data)
+             loadAtomImages, transAtomImages, pic2Data, loadThresholds, transThresholds)
 
 
 def Loading(fileNum, atomLocations, **PopulationArgs):
