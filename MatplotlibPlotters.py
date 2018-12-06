@@ -13,11 +13,11 @@ import mpl_toolkits.axes_grid1 as axesTool
 
 
 from scipy.optimize import curve_fit as fit
-from AnalysisHelpers import (loadDataRay, loadCompoundBasler, processSingleImage, orderData,
+from LoadingFunctions import loadDataRay, loadCompoundBasler, loadDetailedKey
+from AnalysisHelpers import (processSingleImage, orderData,
                              normalizeData, getBinData, getTransferStats, getTransferEvents, fitDoubleGaussian,
                              guessGaussianPeaks, calculateAtomThreshold, getAvgPic, getEnsembleHits,
-                             getEnsembleStatistics, handleFitting, 
-                             loadDetailedKey, processImageData,
+                             getEnsembleStatistics, handleFitting, processImageData,
                              fitPictures, fitGaussianBeamWaist, assemblePlotData, ballisticMotExpansion, simpleMotExpansion, 
                              calcMotTemperature,integrateData, computeMotNumber, getFitsDataFrame, genAvgDiscrepancyImage, 
                              getGridDims, newCalcMotTemperature)

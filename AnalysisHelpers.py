@@ -2,7 +2,6 @@ __version__ = "1.4"
 
 import csv
 from os import linesep
-from pandas import read_csv as pd_read_csv
 import pandas as pd
 
 from astropy.io import fits
@@ -391,146 +390,6 @@ def combineData(data, key):
             newData.append(newItem)
     return arr(newData), arr(newKey)
 
-# ##############
-# ### Data-Loading Functions
-
-
-def load_SSA_3021X(fn):
-    # for our lab's siglent spectrum analyzer
-    with open(fn) as f:
-        cf = csv.reader(f)
-        freqs = []
-        pows = []
-        flag = False
-        for i, row in enumerate(cf):
-            # important: first 30 lines include information about scan settings, data is afterwards.
-            if row[0] == 'Trace Data':
-                flag = True
-                continue
-            if not flag:
-                continue
-            freqs.append(float(row[0]))
-            pows.append(float(row[1]))
-    return freqs, pows
-
-
-def loadDataRay(fileID):
-    """
-
-    :param num:
-    :return:
-    """
-    if type(num) == int:
-        fileName = dataAddress + "dataRay_" + str(fileID) + ".wct"
-    else:
-        fileName = fileID
-    file = pd_read_csv(fileName, header=None, skiprows=[0, 1, 2, 3, 4])
-    data = file.as_matrix()
-    for i, row in enumerate(data):
-        data[i][-1] = float(row[-1][:-2])
-        for j, elem in enumerate(data[i]):
-            data[i][j] = float(elem)
-    return data.astype(float)
-
-
-def loadCompoundBasler(fid, cameraName='ace', loud=False):
-    if type(fid) == type('string'):
-        path = fid
-    else:
-        if cameraName == 'ace':
-            path = dataAddress + "AceData_" + str(fid) + ".txt"
-        elif cameraName == 'scout':
-            path = dataAddress + "ScoutData" + str(fid) + ".txt"
-        else:
-            raise ValueError('cameraName has a bad value for a Basler camera.')
-    with open(path) as file:
-        original = file.read()
-        pics = original.split(";")
-        if loud:
-            print('Number of Pics:', len(pics))
-        dummy = linesep.join([s for s in pics[0].splitlines() if s])
-        dummy2 = dummy.split('\n')
-        dummy2[0] = dummy2[0].replace(' \r', '')
-        data = np.zeros((len(pics), len(dummy2), len(arr(dummy2[0].split(' ')))))
-        picInc = 0
-        for pic in pics:
-            if loud:
-                if picInc % 100 == 0:
-                    print('')
-                if picInc% 1000 == 0:
-                    print('')
-                print('.',end='')
-            # remove extra empty lines
-            pic = linesep.join([s for s in pic.splitlines() if s])
-            lines = pic.split('\n')
-            lineInc = 0
-            for line in lines:
-                line = line.replace(' \r', '')
-                picLine = arr(line.split(' '))
-                picLine = arr(list(filter(None, picLine)))
-                data[picInc][lineInc] = picLine
-                lineInc += 1
-            picInc += 1
-    return data
-
-
-def loadFits(num):
-    """
-    Legacy. We don't use fits files anymore.
-
-    :param num:
-    :return:
-    """
-    # Get the array from the fits file. That's all I care about.
-    path = dataAddress + "data_" + str(num) + ".fits"
-    with fits.open(path, "append") as fitsFile:
-        try:
-            rawData = arr(fitsFile[0].data, dtype=float)
-            return rawData
-        except IndexError:
-            fitsFile.info()
-            raise RuntimeError("Fits file was empty!")
-
-
-def loadKey(num):
-    """
-    Legacy. We don't use dedicated key files anymore, but rather it gets loaded into the hdf5 file.
-
-    :param num:
-    :return:
-    """
-    key = np.array([])
-    path = dataAddress + "key_" + str(num) + ".txt"
-    with open(path) as keyFile:
-        for line in keyFile:
-            key = np.append(key, [float(line.strip('\n'))])
-        keyFile.close()
-    return key
-
-
-def loadDetailedKey(num):
-    """
-    Legacy. We don't use dedicated key files anymore, rather it gets loaded from the hdf5 file.
-
-    :param num:
-    :return:
-    """
-    key = np.array([])
-    varName = 'None-Variation'
-    path = dataAddress + "key_" + str(num) + ".txt"
-    with open(path) as keyFile:
-        # for simple runs should only be one line.
-        count = 0
-        for line in keyFile:
-            if count == 1:
-                print("ERROR! Multiple lines in detailed key file not yet supported.")
-            keyline = line.split()
-            varName = keyline[0]
-            key = arr(keyline[1:], dtype=float)
-            count += 1
-        keyFile.close()
-    return key, varName
-
 
 def ballisticMotExpansion(t, sigma_y0, sigma_vy, sigma_I):
     """
@@ -824,7 +683,7 @@ def maximizeAomPerformance(horCenterFreq, vertCenterFreq, spacing, numTweezersHo
     else:
         xGuess = arr([0 for _ in range(numTweezersHor-1)])
     minimizer_kwargs = dict(method="L-BFGS-B", bounds=xBounds)
-    xPhases = basinhopping(getXMetric, xGuess, minimizer_kwargs=minimizer_kwargs, niter=iterations, stepsize=0.2)
+    xPhases = opt.basinhopping(getXMetric, xGuess, minimizer_kwargs=minimizer_kwargs, niter=iterations, stepsize=0.2)
     xPhases = list(xPhases.x) + [0]
     print('horFreqs', horFreqs)
     print('horAmps', horAmps)
@@ -836,7 +695,7 @@ def maximizeAomPerformance(horCenterFreq, vertCenterFreq, spacing, numTweezersHo
         yGuess = arr([0 for _ in range(numTweezersVert-1)])
     yBounds = [(0, 2 * consts.pi) for _ in range(numTweezersVert-1)]
     minimizer_kwargs = dict(method="L-BFGS-B", bounds=yBounds)
-    yPhases = basinhopping(getYMetric, yGuess, minimizer_kwargs=minimizer_kwargs, niter=iterations, stepsize=0.2)
+    yPhases = opt.basinhopping(getYMetric, yGuess, minimizer_kwargs=minimizer_kwargs, niter=iterations, stepsize=0.2)
     yPhases = list(yPhases.x) + [0]
     for i, xp in enumerate(yPhases):
         yPhases[i] = round_sig(xp, 10)
