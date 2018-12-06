@@ -31,6 +31,9 @@ def f_raw(coordinate, offset, *params):
     gaussParams = np.reshape(params, (int(len(params)/5), 5))
     res = 0
     for p in gaussParams:
+        if p[-1] > 1.6 or p[-2] > 1.6:
+            res += 1e6
+    for p in gaussParams:
         res += gaussian_2d.f_noravel(coordinate, *p, 0, 0)
     res += offset
     return res
@@ -54,7 +57,6 @@ def f_unc(coordinate, gaussParams):
     :return:
     """
     pass
-    #return g.ravel()
 
 
 def guess(key, values):

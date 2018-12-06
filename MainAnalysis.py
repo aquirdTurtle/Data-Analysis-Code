@@ -322,6 +322,7 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
       key ) = organizeTransferData( fileNumber, atomLocs1, atomLocs2,  picsPerRep=picsPerRep, varyingDim=varyingDim, 
                                     **organizerArgs )
     numOfPictures = rawData.shape[0]
+    print('numpics:',numOfPictures)
     allPics = getAvgPics(groupedData, picsPerRep=picsPerRep)
     avgPics = [allPics[loadPic], allPics[transPic]]
     

@@ -16,7 +16,6 @@ from warnings import warn
 from matplotlib.pyplot import *
 
 import scipy.optimize as opt
-#from scipy.optimize import minimize, basinhopping, curve_fit
 import scipy.special as special
 import scipy.interpolate as interp
 
@@ -877,7 +876,7 @@ def maximizeAomPerformance(horCenterFreq, vertCenterFreq, spacing, numTweezersHo
     else:
         xGuess = arr([0 for _ in range(numTweezersHor-1)])
     minimizer_kwargs = dict(method="L-BFGS-B", bounds=xBounds)
-    xPhases = basinhopping(getXMetric, xGuess, minimizer_kwargs=minimizer_kwargs, niter=iterations, stepsize=0.2)
+    xPhases = opt.basinhopping(getXMetric, xGuess, minimizer_kwargs=minimizer_kwargs, niter=iterations, stepsize=0.2)
     xPhases = list(xPhases.x) + [0]
     print('horFreqs', horFreqs)
     print('horAmps', horAmps)
@@ -889,7 +888,7 @@ def maximizeAomPerformance(horCenterFreq, vertCenterFreq, spacing, numTweezersHo
         yGuess = arr([0 for _ in range(numTweezersVert-1)])
     yBounds = [(0, 2 * consts.pi) for _ in range(numTweezersVert-1)]
     minimizer_kwargs = dict(method="L-BFGS-B", bounds=yBounds)
-    yPhases = basinhopping(getYMetric, yGuess, minimizer_kwargs=minimizer_kwargs, niter=iterations, stepsize=0.2)
+    yPhases = opt.basinhopping(getYMetric, yGuess, minimizer_kwargs=minimizer_kwargs, niter=iterations, stepsize=0.2)
     yPhases = list(yPhases.x) + [0]
     for i, xp in enumerate(yPhases):
         yPhases[i] = round_sig(xp, 10)
