@@ -1,10 +1,11 @@
 import numpy as np
 import uncertainties.unumpy as unp
+# based on gaussian
+from fitters import gaussian
 
 
 def center():
     return 1
-
 
 def args():
     return 'Amp', 'Center', r'$\sigma$', 'offset'
@@ -12,30 +13,21 @@ def args():
 
 def f(x, A1, x01, sig1, offset):
     """
-    The normal function call for this function. Performs checks on valid arguments, then calls the "raw" function.
+    The normal function call for this function. Performs checks on valid arguments.
     :return:
     """
     if offset < 0:
         return np.ones(len(x))*10**10
     if A1 < 0:
         return np.ones(len(x)) * 10 ** 10
-    return f_raw(x, A1, x01, sig1, offset)
-
-
-def f_raw(x, A1, x01, sig1, offset):
-    """
-    The raw function call, performs no checks on valid parameters..
-    :return: offset + A1 * np.exp(-(x - x01) ** 2 / (2 * sig1 ** 2))
-    """
-    return offset - A1 * np.exp(-(x - x01) ** 2 / (2 * sig1 ** 2))
-
+    return gaussian.f(x, A1, x01, sig1, offset)
 
 def f_unc(x, A1, x01, sig1, offset):
     """
     similar to the raw function call, but uses unp instead of np for uncertainties calculations.
     :return:
     """
-    return offset - A1 * unp.exp(-(x - x01) ** 2 / (2 * sig1 ** 2))
+    return gaussian.f_unc(x,A1,x01,sig1,offset)
 
 
 def guess(key, values):
