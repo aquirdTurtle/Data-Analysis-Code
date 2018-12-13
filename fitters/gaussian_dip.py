@@ -5,6 +5,8 @@ import uncertainties.unumpy as unp
 def center():
     return 1
 
+def getCenter(args):
+    return args[center()]
 
 def args():
     return 'Amp', 'Center', r'$\sigma$', 'offset'
@@ -46,4 +48,5 @@ def guess(key, values):
     :param values:
     :return:
     """
-    return [max(values) - min(values), key[np.argmin(values)], (max(key)-min(key))/4, max(values)]
+    return [max(values) - min(values), key[np.argmin(values)], (max(key)-min(key))/8, max(values)]
+    #return [max(values) - min(values), 0.8, (max(key)-min(key))/4, max(values)]

@@ -1,7 +1,12 @@
 # ##############
 # ### Data-Loading Functions
 
+
+from os import linesep
 from pandas import read_csv
+import csv
+import numpy as np
+from numpy import array as arr
 
 def read_Tektronics_DPO_3034(fn):
     # for our nicer Oscilloscope
@@ -19,7 +24,10 @@ def read_Tektronics_DPO_3034(fn):
 
 
 def load_Siglet_SSA_3021X(fn):
-    # for our lab's siglent spectrum analyzer
+    """
+    for our lab's siglent spectrum analyzer. 
+    Returns (freqs, powers)
+    """
     with open(fn) as f:
         cf = csv.reader(f)
         freqs = []

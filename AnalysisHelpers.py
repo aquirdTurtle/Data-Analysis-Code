@@ -251,7 +251,7 @@ def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias, sign=1, hFreqs=None, vF
         raise ValueError('Lengths of horizontal data dont match')
     if not (len(new_V_Bias) == len(vFreqs) == len(vPhases)):
         raise ValueError('Lengths of vertical data dont match')
-    with open('J:/Code-Files/New-Depth-Evening-Config.txt','w') as file:
+    with open('J:/Code_Files/New-Depth-Evening-Config.txt','w') as file:
         file.write('HORIZONTAL:\n')
         for f, b, p in zip(hFreqs, new_H_Bias, hPhases):
             file.write(str(f) + '\t' + str(b) + '\t' + str(p) + '\n')
@@ -270,7 +270,7 @@ def extrapolateEveningBiases(hBiasIn, vBiasIn, depthIn, sign=1):
     vBiasIn /= np.sum(vBiasIn)
     guess = np.concatenate((hBiasIn, vBiasIn))
     f = lambda g: modFitFunc(sign, hBiasIn, vBiasIn, depthIn, *g, )
-    result = minimize(f, guess)
+    result = opt.minimize(f, guess)
     return result, extrapolateModDepth(sign, hBiasIn, vBiasIn, depthIn, result['x'])
 
 
@@ -342,11 +342,11 @@ def fitWithClass(fitClass, key, vals, errs=None):
         if len(key) < len(signature(fitClass.f).parameters) - 1:
             print('Not enough data points to constrain a fit!')
             raise RuntimeError()
-        if errs is not None:
-            fitValues, fitCovs = opt.curve_fit(fitClass.f, key, vals, p0=[fitClass.guess(key, vals)], sigma=errs,
-                                     absolute_sigma=True)
-        else:
-            fitValues, fitCovs = opt.curve_fit(fitClass.f, key, vals, p0=[fitClass.guess(key, vals)])
+        #if errs is not None:
+        #    fitValues, fitCovs = opt.curve_fit(fitClass.f, key, vals, p0=[fitClass.guess(key, vals)], sigma=errs,
+        #                             absolute_sigma=True)
+        #else:
+        fitValues, fitCovs = opt.curve_fit(fitClass.f, key, vals, p0=[fitClass.guess(key, vals)])
         fitErrs = np.sqrt(np.diag(fitCovs))
         corr_vals = unc.correlated_values(fitValues, fitCovs)
         fitUncObject = fitClass.f_unc(xFit, *corr_vals)
@@ -453,15 +453,14 @@ def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1):
         popt = np.zeros(len(initial_guess))
         pcov = np.zeros((len(initial_guess), len(initial_guess)))
         warn('Fit Pic Failed!')
-        
     if showFit:
         data_fitted = gaussian_2d.f((x, y), *popt)
         fig, ax = subplots(1, 1)
-        grid('off')
-        im = ax.pcolormesh(picture, extent=(x.min(), x.max(), y.min(), y.max()))
+        grid(False)
+        im = ax.pcolormesh(picture)#, extent=(x.min(), x.max(), y.min(), y.max()))
         ax.contour(x, y, data_fitted.reshape(picture.shape[0],picture.shape[1]), 4, colors='w', alpha=0.2)
         fig.colorbar(im)
-    return popt, np.sqrt(np.diag(pcov))
+    return initial_guess, popt, np.sqrt(np.diag(pcov))
 
 
 def fitPictures(pictures, dataRange, guessSigma_x=1, guessSigma_y=1, quiet=False):
@@ -487,7 +486,7 @@ def fitPictures(pictures, dataRange, guessSigma_x=1, guessSigma_y=1, quiet=False
             fitParameters.append(np.zeros(7))
             fitErrors.append(np.zeros(7))
         try:
-            parameters, errors = fitPic(picture, showFit=False, guessSigma_x=guessSigma_x, guessSigma_y=guessSigma_y)
+            _, parameters, errors = fitPic(picture, showFit=False, guessSigma_x=guessSigma_x, guessSigma_y=guessSigma_y)
         except RuntimeError:
             if not warningHasBeenThrown:
                 print("Warning! Not all picture fits were able to fit the picture signal to a 2D Gaussian.\n"
@@ -1094,40 +1093,50 @@ def groupMultidimensionalData(key, varyingDim, atomLocations, survivalData, surv
             arr(otherDimsList))
 
 
-def getFitsDataFrame(fits, fitModule, avgFit):
-    fitDataFrame = pd.DataFrame()
-    for argnum, arg in enumerate(fitModule.args()):
-        vals = []
-        for fitData in fits:
-            vals.append(fitData['vals'][argnum])
-        errs = []
-        for fitData in fits:
-            if fitData['errs'] is not None:
-                errs.append(fitData['errs'][argnum])
-            else:
-                errs.append(0)
-        meanVal = np.mean(vals)
-        stdVal = np.std(vals)
-        vals.append(meanVal)
-        vals.append(stdVal)
-        vals.append(avgFit['vals'][argnum])
-
-        meanErr = np.mean(errs)
-        stdErr = np.std(errs)
-        errs.append(meanErr)
-        errs.append(stdErr)
-        if avgFit['errs'] is not None:
-            errs.append(avgFit['errs'][argnum])
-        else:
-            errs.append(0)
-        fitDataFrame[arg] = vals
-        fitDataFrame[arg + '-Err'] = errs
-        indexStr = ['fit ' + str(i) for i in range(len(fits))]
-        indexStr.append('Avg Val')
-        indexStr.append('Std Val')
-        indexStr.append('Fit of Avg')
-        fitDataFrame.index = indexStr
-    return fitDataFrame
+def getFitsDataFrame(fits, fitModules, avgFit):
+    uniqueModules = set(fitModules)
+    fitDataFrames = [pd.DataFrame() for _ in uniqueModules]
+    for moduleNum, fitModule in enumerate(uniqueModules):
+        for argnum, arg in enumerate(fitModule.args()):
+            vals = []
+            for fitData, mod in zip(fits, fitModules):
+                if mod is fitModule:
+                    vals.append(fitData['vals'][argnum])
+            errs = []
+            for fitData, mod in zip(fits, fitModules):
+                if mod is fitModule:
+                    if fitData['errs'] is not None:
+                        errs.append(fitData['errs'][argnum])
+                    else:
+                        errs.append(0)
+            meanVal = np.mean(vals)
+            stdVal = np.std(vals)
+            vals.append(meanVal)
+            vals.append(stdVal)
+            if fitModule == fitModules[-1]:
+                vals.append(avgFit['vals'][argnum])
+            meanErr = np.mean(errs)
+            stdErr = np.std(errs)
+            errs.append(meanErr)
+            errs.append(stdErr)
+            if fitModule == fitModules[-1]:
+                if avgFit['errs'] is not None:
+                    errs.append(avgFit['errs'][argnum])
+                else:
+                    errs.append(0)
+            fitDataFrames[moduleNum][arg] = vals
+            fitDataFrames[moduleNum][arg + '-Err'] = errs
+            indexStr = []
+            for i in range(len(fits)):
+                if fitModules[i] is fitModule:
+                    indexStr.append('fit ' +str(i))
+                    #= ['fit ' + str(i) if fitModules[i] is fitModule for i in range(len(fits))]
+            indexStr.append('Avg Val')
+            indexStr.append('Std Val')
+            if fitModule == fitModules[-1]:
+                indexStr.append('Fit of Avg')
+            fitDataFrames[moduleNum].index = indexStr
+    return fitDataFrames
 
 
 @dc.dataclass

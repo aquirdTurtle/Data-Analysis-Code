@@ -69,8 +69,8 @@ def makeThresholdStatsImages(ax, thresholds, locs, shape, ims, lims):
         a.set_title('(Nothing)')
     
 
-def plotThresholdHists(thresholds, colors, extra=None, extraname=None, thresholds_2=None):
-    f, axs = subplots(10,10, figsize=(34.0, 16.0))
+def plotThresholdHists(thresholds, colors, extra=None, extraname=None, thresholds_2=None, shape=(10,10)):
+    f, axs = subplots(shape[0], shape[1], figsize=(34.0, 16.0))
     if thresholds_2 is None:
         thresholds_2 = [None for _ in thresholds]
     for i, (t, t2, c) in enumerate(zip(thresholds, thresholds_2, colors[1:])):
@@ -492,7 +492,12 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoading
             cb.outline.set_visible(False)
         tt.clock('After-Image-Plots')
     if plotIndvHists:
-        plotThresholdHists(loadThresholds, colors, extra=avgTransfers, extraname=r"$\rightarrow$:", thresholds_2=transThresholds)
+        if type(atomLocs1_orig[-1]) == int:
+            shape = (atomLocs1_orig[-1], atomLocs1_orig[-2])
+        else:
+            shape = (10,10)
+        print('hi',shape, atomLocs1_orig)
+        plotThresholdHists(loadThresholds, colors, extra=avgTransfers, extraname=r"$\rightarrow$:", thresholds_2=transThresholds, shape=shape)
         tt.clock('After-Indv-Hists')
     if timeit:
         tt.display()
@@ -711,7 +716,11 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     for s in loadRate:
         avgLoads.append(np.mean(s))
     if plotIndvHists:
-        plotThresholdHists(thresholds, colors, extra=avgLoads, extraname="L:")
+        if type(atomLocations[-1]) == int:
+            shape = (atomLocations[-1], atomLocations[-2])
+        else:
+            shape = (10,10)
+        plotThresholdHists(thresholds, colors, extra=avgLoads, extraname="L:", shape=shape)
     """
     # output thresholds
     thresholds = np.flip(np.reshape(thresholds, (10,10)),1)

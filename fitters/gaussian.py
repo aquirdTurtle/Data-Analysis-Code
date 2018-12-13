@@ -5,6 +5,8 @@ import uncertainties.unumpy as unp
 def center():
     return 1
 
+def getCenter(args):
+    return args[center()]
 
 def args():
     return 'Amp', 'Center', r'$\sigma$', 'offset'

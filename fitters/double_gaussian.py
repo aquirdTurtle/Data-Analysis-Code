@@ -6,6 +6,10 @@ def center():
     return None  # or the arg-number of the center.
 
 
+def getCenter(args):
+    # return the average
+    return (args[1] + args[4])/2
+
 def args():
     return ('Amp1', 'Center1', 'Sigma1', 'Amp2', 'Center2', 'Sigma2', 'Offset')
 
@@ -14,6 +18,7 @@ def f(x, A1, x01, sig1, A2, x02, sig2, offset):
     """
     The normal function call for this function. Performs checks on valid arguments, then calls the "raw" function.
     :return:
+    """
     """
     penalty = 10**10 * np.ones(len(x))
     if A1 < 0 or A2 < 0:
@@ -27,6 +32,7 @@ def f(x, A1, x01, sig1, A2, x02, sig2, offset):
     # assume that there's at least a little peak
     if A1 < 1 or A2 < 1:
         return penalty
+    """
     # sometimes if low signal or lossy, the second peak can be very spread out. 
     # The fitting of the second gaussian then sometimes assumes it's even broader than it is to make it an effective offset.
     r = max(x) - min(x)
