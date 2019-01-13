@@ -145,7 +145,6 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModule=None, showCo
                                            opacity=alphaVal / 2, line={'color': color},
                                            legendgroup=legend, fill='tonexty', showlegend=False,
                                            hoverinfo='none', fillcolor='rgba(7, 164, 181, ' + str(alphaVal/2) + ')'))
-    print('0.')
     if fitModule is not None and fitModule.center() is not None:
         print('Fit Centers:')
         transferPic = np.zeros(avgPics[0].shape)
@@ -158,7 +157,6 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModule=None, showCo
         fitCenterFig = [go.Heatmap(z=fitCenterPic, colorscale='Viridis', colorbar=go.ColorBar(x=1, y=0.15, len=0.3))]
         layout = go.Layout(title='Fit-Center Pic')
         iplot(go.Figure(data=fitCenterFig, layout=layout))
-    print('1.')
     # countsFig.append(go.Scatter(y=atomCounts, mode='markers', opacity=0.1, marker={'color':color, 'size':1},
     #            legendgroup='avg', showlegend=False))
     # countsHist.append(go.Histogram(y=atomCounts, nbinsy=100, legendgroup='avg', showlegend=False, opacity=0.1,
@@ -180,7 +178,6 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModule=None, showCo
                                  showlegend=False, legendgroup=legend, marker={'size': 2, 'color': '#FF0000'}))
         avgFigs[1].append(go.Scatter(x=[loc2[1]], y=[loc2[0]], mode='markers', hoverinfo='none',
                                  showlegend=False, legendgroup=legend, marker={'size': 2, 'color': '#FF0000'}))
-    print('2.')
     # average stuff
     mainPlot.append(go.Scatter(x=key, y=avgSurvivalData, mode="markers", name='avg',
                                error_y={"type": 'data', "array": avgSurvivalErr, 'color': '#000000'},
