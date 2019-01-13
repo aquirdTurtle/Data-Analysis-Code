@@ -191,7 +191,7 @@ def errString(val, err, precision=None):
     :param precision:
     :return:
     """
-    if np.isinf(err):
+    if np.isinf(err) or np.isnan(err):
         err = 0
     if np.isinf(val) or np.isnan(val):
         return "?(?)"

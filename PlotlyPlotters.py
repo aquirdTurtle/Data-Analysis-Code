@@ -74,7 +74,7 @@ def Survival(fileNumber, atomLocs, **TransferArgs):
     return Transfer(fileNumber, atomLocs, atomLocs, **TransferArgs)
 
 
-def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=None, showCounts=False, showGenerationData=False,
+def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=[None], showCounts=False, showGenerationData=False,
              histBins=150, **standardTransferArgs):
     """
     Standard data analysis package for looking at survival rates throughout an experiment.
@@ -115,7 +115,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=None, showC
     avgFigs[1].append(go.Heatmap(z=avgPics[1], colorscale='Viridis',yaxis={'autorange':'reversed'}))
     centers = []
     
-    if fitModules is not None:
+    if fitModules[0] is not None:
         frames = getFitsDataFrame(fits, fitModules, avgFit)
         for frame in frames:
             display(frame)
@@ -129,7 +129,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=None, showC
             mainPlot.append(go.Scatter(x=key, y=gen, opacity=alphaVal, mode="markers", name=legend,
                                        error_y={"type": 'data', "array": genErr, 'color': color},
                                        marker={'color': color, 'symbol': 'star'}, legendgroup=legend, showlegend=False))
-        if fitModules is not None:
+        if fitModules[0] is not None:
             if fitData['vals'] is None:
                 print(loc, 'Fit Failed!')
                 continue
@@ -144,7 +144,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=None, showC
                                            opacity=alphaVal / 2, line={'color': color},
                                            legendgroup=legend, fill='tonexty', showlegend=False,
                                            hoverinfo='none', fillcolor='rgba(7, 164, 181, ' + str(alphaVal/2) + ')'))
-    if fitModules is not None:
+    if fitModules[0] is not None:
         print('Fit Centers:')
         transferPic = np.zeros(avgPics[0].shape)
         for i, loc in enumerate(atomLocs1):
@@ -177,7 +177,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=None, showC
     mainPlot.append(go.Scatter(x=key, y=avgTransferData, mode="markers", name='avg',
                                error_y={"type": 'data', "array": avgTransferErr, 'color': '#000000'},
                                marker={'color': '#000000'}, legendgroup='avg'))
-    if fitModules is not None:
+    if fitModules[0] is not None:
         mainPlot.append(go.Scatter(x=avgFit['x'], y=avgFit['nom'], line={'color': '#000000'},
                                    legendgroup='avg', showlegend=False, opacity=alphaVal))
         if avgFit['std'] is not None:
