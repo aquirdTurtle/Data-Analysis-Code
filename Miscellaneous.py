@@ -191,6 +191,10 @@ def errString(val, err, precision=None):
     :param precision:
     :return:
     """
+    if np.isinf(err) or np.isnan(err):
+        err = 0
+    if np.isinf(val) or np.isnan(val):
+        return "?(?)"
     if err == 0:
         if precision is None:
             precision = 3
@@ -198,13 +202,14 @@ def errString(val, err, precision=None):
     valE = getExp(val)
     # determine number of values of err to show.
     errE = getExp(err)
+    if np.isinf(errE):
+        errE = 0;
+        #return  round_sig_str(val, precision) +'(?)'
     if precision is None:
         # determine first significant digit of error and use one more than that. 
         precision = int(valE - errE + 2)
-    if valE == float('Inf') or valE == float('-Inf'):
+    if np.isinf(valE):
         return "?(?)"
-    if errE == float('Inf') or errE == float('-Inf'):
-        return  round_sig_str(val, precision) +'(?)'
     try:
         num = int(errE-valE+precision)
         if num < 0:
@@ -220,6 +225,7 @@ def errString(val, err, precision=None):
     result = round_sig_str(val, precision) + '(' + round_sig_str(errNum, num) + ')'
     return result
 
+
 def dblErrString(val, err1, err2, precision=None):
     """
     takes the input value and error and makes a nice error string. e.g.
@@ -228,6 +234,8 @@ def dblErrString(val, err1, err2, precision=None):
     1.42(9)
     :return:
     """
+    if np.isinf(val) or np.isnan(val):
+        return "?(?)"
     if err1 == 0 or err2 == 0:
         if precision is None:
             precision = 3
@@ -236,20 +244,21 @@ def dblErrString(val, err1, err2, precision=None):
     # determine number of values of err to show.
     errE1 = getExp(err1)
     errE2 = getExp(err2)
-    errE = min([errE1, errE2])
+    errE_m = max((abs(errE1), abs(errE2)))
+    if errE_m == float("NaN"):
+        errE_m = 0
+    if valE == float('Inf') or valE == float('-Inf') or np.isnan(valE):
+        return "?(?)"
     if precision is None:
         # determine first significant digit of error and use one more than that. 
-        precision = int(valE - errE + 2)
-        print(precision)
-    if valE == float('Inf') or valE == float('-Inf'):
-        return "?(?)"
-    if errE == float('Inf') or errE == float('-Inf'):
+        precision = int(valE - errE_m + 2)
+    if np.isinf(errE_m):
         return  round_sig_str(val, precision) +'(?)'
     try:
-        num = int(errE-valE+precision)
+        num = int(errE_m-valE+precision)
         if num < 0:
             num = 0
-        expFactor = -errE + num - 1
+        expFactor = -errE_m + num - 1
     except ValueError:
         print('bad number!')
         num = 0

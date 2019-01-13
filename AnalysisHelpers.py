@@ -16,7 +16,6 @@ from warnings import warn
 from matplotlib.pyplot import *
 
 import scipy.optimize as opt
-#from scipy.optimize import minimize, basinhopping, curve_fit
 import scipy.special as special
 import scipy.interpolate as interp
 
@@ -24,14 +23,69 @@ import MarksConstants as consts
 from Miscellaneous import transpose, round_sig, round_sig_str
 import Miscellaneous as misc
 from copy import copy, deepcopy
-from fitters import ( double_gaussian, cython_poissonian as poissonian, 
-                      FullBalisticMotExpansion, LargeBeamMotExpansion, gaussian_2d, exponential_saturation )
+from fitters import ( cython_poissonian as poissonian, 
+                      FullBalisticMotExpansion, LargeBeamMotExpansion, exponential_saturation )
+from fitters.Gaussian import double as double_gaussian, gaussian_2d, arb_2d_sum
 
 import dataclasses as dc
 import MainAnalysis as ma
 
 from ExpFile import ExpFile, dataAddress
 from TimeTracker import TimeTracker
+
+import scipy.ndimage as ndimage
+import scipy.ndimage.filters as filters
+
+
+def findImageMaxima(im, neighborhood_size=20, threshold=1):
+    data_max = filters.maximum_filter(im, neighborhood_size)
+    maxima = (im == data_max)
+    data_min = filters.minimum_filter(im, neighborhood_size)
+    diff = ((data_max - data_min) > threshold)
+    maxima[diff == 0] = 0
+    labeled, num_objects = ndimage.label(maxima)
+    slices = ndimage.find_objects(labeled)
+    x, y = [], []
+    for dy,dx in slices:
+        x_center = (dx.start + dx.stop - 1)/2
+        x.append(x_center)
+        y_center = (dy.start + dy.stop - 1)/2    
+        y.append(y_center)
+    print('Found ' + str(len(x)) + ' Maxima.')
+    return [p for p in zip([int(x_) for x_ in x],[int(y_) for y_ in y])]
+
+
+def fitManyGaussianImage(im, numGauss, neighborhood_size=20, threshold=1, direct=True, widthGuess=1):
+    """
+    Maxima finding is based on the answer to this question:
+    https://stackoverflow.com/questions/9111711/get-coordinates-of-local-maxima-in-2d-array-above-certain-value
+    """
+    maximaLocs = findImageMaxima(im, neighborhood_size=neighborhood_size, threshold=threshold)
+    if len(maximaLocs) != numGauss:
+        raise ValueError("ERROR: didn't find the right number of maxima!")
+    guess = [min(im.flatten())]
+    for loc in maximaLocs:
+        guess += [im[loc[1],loc[0]], loc[0], loc[1], widthGuess, widthGuess]
+    xpts = np.arange(len(im[0]))
+    ypts = np.arange(len(im))
+    X,Y = np.meshgrid(xpts,ypts)
+    print(guess)
+    zpts = arb_2d_sum.f((X,Y), *guess).reshape(X.shape)
+    f, ax = subplots(1,5,figsize=(20,10))
+    ax[0].imshow(im)
+    ax[0].set_title('Orig')
+    ax[1].imshow(zpts)
+    ax[1].set_title('Guess')
+    ax[2].imshow(im-zpts)
+    ax[2].set_title('Guess-Diff')
+    optParam, optCov = opt.curve_fit(arb_2d_sum.f, (X,Y), im.flatten(), p0=guess)
+    zpts_fit = arb_2d_sum.f((X,Y), *optParam).reshape(X.shape)
+    ax[3].imshow(zpts_fit)
+    ax[3].set_title('Fit')
+    ax[4].imshow(im-zpts_fit)
+    ax[4].set_title('Fit-Diff')
+    return optParam
+
 
 def temperatureAnalysis( data, magnification, **standardImagesArgs ):
     res = ma.standardImages(data, scanType="Time(ms)", majorData='fits', fitPics=True, manualAccumulation=True, quiet=True, **standardImagesArgs)
@@ -252,7 +306,7 @@ def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias, sign=1, hFreqs=None, vF
         raise ValueError('Lengths of horizontal data dont match')
     if not (len(new_V_Bias) == len(vFreqs) == len(vPhases)):
         raise ValueError('Lengths of vertical data dont match')
-    with open('J:/Code-Files/New-Depth-Evening-Config.txt','w') as file:
+    with open('J:/Code_Files/New-Depth-Evening-Config.txt','w') as file:
         file.write('HORIZONTAL:\n')
         for f, b, p in zip(hFreqs, new_H_Bias, hPhases):
             file.write(str(f) + '\t' + str(b) + '\t' + str(p) + '\n')
@@ -271,7 +325,7 @@ def extrapolateEveningBiases(hBiasIn, vBiasIn, depthIn, sign=1):
     vBiasIn /= np.sum(vBiasIn)
     guess = np.concatenate((hBiasIn, vBiasIn))
     f = lambda g: modFitFunc(sign, hBiasIn, vBiasIn, depthIn, *g, )
-    result = minimize(f, guess)
+    result = opt.minimize(f, guess)
     return result, extrapolateModDepth(sign, hBiasIn, vBiasIn, depthIn, result['x'])
 
 
@@ -329,9 +383,8 @@ def getLabels(plotType):
     return xlabelText, titleText
 
 
-def fitWithClass(fitClass, key, vals, errs=None):
+def fitWithModule(module, key, vals, errs=None, guess=None):
     """
-    fitClass is an class object *gasp*
     """
     key = arr(key)
     xFit = (np.linspace(min(key), max(key), 1000) if len(key.shape) == 1 else np.linspace(min(transpose(key)[0]),
@@ -340,25 +393,28 @@ def fitWithClass(fitClass, key, vals, errs=None):
     from numpy.linalg import LinAlgError
     try:
         # 3 parameters
-        if len(key) < len(signature(fitClass.f).parameters) - 1:
+        if len(key) < len(signature(module.f).parameters) - 1:
             print('Not enough data points to constrain a fit!')
             raise RuntimeError()
-        if errs is not None:
-            fitValues, fitCovs = opt.curve_fit(fitClass.f, key, vals, p0=[fitClass.guess(key, vals)], sigma=errs,
-                                     absolute_sigma=True)
+        #if errs is not None:
+        #    fitValues, fitCovs = opt.curve_fit(module.f, key, vals, p0=[module.guess(key, vals)], sigma=errs,
+        #                             absolute_sigma=True)
+        #else:
+        if guess is None:
+            fitValues, fitCovs = opt.curve_fit(module.f, key, vals, p0=[module.guess(key, vals)])
         else:
-            fitValues, fitCovs = opt.curve_fit(fitClass.f, key, vals, p0=[fitClass.guess(key, vals)])
+            fitValues, fitCovs = opt.curve_fit(module.f, key, vals, p0=guess)
         fitErrs = np.sqrt(np.diag(fitCovs))
         corr_vals = unc.correlated_values(fitValues, fitCovs)
-        fitUncObject = fitClass.f_unc(xFit, *corr_vals)
+        fitUncObject = module.f_unc(xFit, *corr_vals)
         fitNom = unp.nominal_values(fitUncObject)
         fitStd = unp.std_devs(fitUncObject)
         fitFinished = True
     except (RuntimeError, LinAlgError, ValueError) as e:
         warn('Data Fit Failed!')
         print(e)
-        fitValues = fitClass.guess(key, vals)
-        fitNom = fitClass.f(xFit, *fitValues)
+        fitValues = module.guess(key, vals)
+        fitNom = module.f(xFit, *fitValues)
         fitFinished = False
     fitInfo = {'x': xFit, 'nom': fitNom, 'std': fitStd, 'vals': fitValues, 'errs': fitErrs, 'cov': fitCovs}
     return fitInfo, fitFinished
@@ -454,15 +510,14 @@ def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1):
         popt = np.zeros(len(initial_guess))
         pcov = np.zeros((len(initial_guess), len(initial_guess)))
         warn('Fit Pic Failed!')
-        
     if showFit:
         data_fitted = gaussian_2d.f((x, y), *popt)
         fig, ax = subplots(1, 1)
-        grid('off')
-        im = ax.pcolormesh(picture, extent=(x.min(), x.max(), y.min(), y.max()))
+        grid(False)
+        im = ax.pcolormesh(picture)#, extent=(x.min(), x.max(), y.min(), y.max()))
         ax.contour(x, y, data_fitted.reshape(picture.shape[0],picture.shape[1]), 4, colors='w', alpha=0.2)
         fig.colorbar(im)
-    return popt, np.sqrt(np.diag(pcov))
+    return initial_guess, popt, np.sqrt(np.diag(pcov))
 
 
 def fitPictures(pictures, dataRange, guessSigma_x=1, guessSigma_y=1, quiet=False):
@@ -488,7 +543,7 @@ def fitPictures(pictures, dataRange, guessSigma_x=1, guessSigma_y=1, quiet=False
             fitParameters.append(np.zeros(7))
             fitErrors.append(np.zeros(7))
         try:
-            parameters, errors = fitPic(picture, showFit=False, guessSigma_x=guessSigma_x, guessSigma_y=guessSigma_y)
+            _, parameters, errors = fitPic(picture, showFit=False, guessSigma_x=guessSigma_x, guessSigma_y=guessSigma_y)
         except RuntimeError:
             if not warningHasBeenThrown:
                 print("Warning! Not all picture fits were able to fit the picture signal to a 2D Gaussian.\n"
@@ -1095,40 +1150,50 @@ def groupMultidimensionalData(key, varyingDim, atomLocations, survivalData, surv
             arr(otherDimsList))
 
 
-def getFitsDataFrame(fits, fitModule, avgFit):
-    fitDataFrame = pd.DataFrame()
-    for argnum, arg in enumerate(fitModule.args()):
-        vals = []
-        for fitData in fits:
-            vals.append(fitData['vals'][argnum])
-        errs = []
-        for fitData in fits:
-            if fitData['errs'] is not None:
-                errs.append(fitData['errs'][argnum])
-            else:
-                errs.append(0)
-        meanVal = np.mean(vals)
-        stdVal = np.std(vals)
-        vals.append(meanVal)
-        vals.append(stdVal)
-        vals.append(avgFit['vals'][argnum])
-
-        meanErr = np.mean(errs)
-        stdErr = np.std(errs)
-        errs.append(meanErr)
-        errs.append(stdErr)
-        if avgFit['errs'] is not None:
-            errs.append(avgFit['errs'][argnum])
-        else:
-            errs.append(0)
-        fitDataFrame[arg] = vals
-        fitDataFrame[arg + '-Err'] = errs
-        indexStr = ['fit ' + str(i) for i in range(len(fits))]
-        indexStr.append('Avg Val')
-        indexStr.append('Std Val')
-        indexStr.append('Fit of Avg')
-        fitDataFrame.index = indexStr
-    return fitDataFrame
+def getFitsDataFrame(fits, fitModules, avgFit):
+    uniqueModules = set(fitModules)
+    fitDataFrames = [pd.DataFrame() for _ in uniqueModules]
+    for moduleNum, fitModule in enumerate(uniqueModules):
+        for argnum, arg in enumerate(fitModule.args()):
+            vals = []
+            for fitData, mod in zip(fits, fitModules):
+                if mod is fitModule:
+                    vals.append(fitData['vals'][argnum])
+            errs = []
+            for fitData, mod in zip(fits, fitModules):
+                if mod is fitModule:
+                    if fitData['errs'] is not None:
+                        errs.append(fitData['errs'][argnum])
+                    else:
+                        errs.append(0)
+            meanVal = np.mean(vals)
+            stdVal = np.std(vals)
+            vals.append(meanVal)
+            vals.append(stdVal)
+            if fitModule == fitModules[-1]:
+                vals.append(avgFit['vals'][argnum])
+            meanErr = np.mean(errs)
+            stdErr = np.std(errs)
+            errs.append(meanErr)
+            errs.append(stdErr)
+            if fitModule == fitModules[-1]:
+                if avgFit['errs'] is not None:
+                    errs.append(avgFit['errs'][argnum])
+                else:
+                    errs.append(0)
+            fitDataFrames[moduleNum][arg] = vals
+            fitDataFrames[moduleNum][arg + '-Err'] = errs
+            indexStr = []
+            for i in range(len(fits)):
+                if fitModules[i] is fitModule:
+                    indexStr.append('fit ' +str(i))
+                    #= ['fit ' + str(i) if fitModules[i] is fitModule for i in range(len(fits))]
+            indexStr.append('Avg Val')
+            indexStr.append('Std Val')
+            if fitModule == fitModules[-1]:
+                indexStr.append('Fit of Avg')
+            fitDataFrames[moduleNum].index = indexStr
+    return fitDataFrames
 
 
 @dc.dataclass
@@ -1988,12 +2053,12 @@ def outputDataToMmaNotebook(fileNumber, survivalData, survivalErrs, captureArray
 
 def unpackAtomLocations(locs):
     """
-
     :param locs:
     :return:
     """
-    if not (type(locs[0]) == int):
-        # already unpacked
+    if type(locs) == type(9):
+        return locs
+    if not (type(locs[0]) == int):        # already unpacked
         return locs
     # assume atom grid format.
     bottomLeftRow, bottomLeftColumn, spacing, width, height = locs
@@ -2199,3 +2264,4 @@ def getEnsembleStatistics(ensembleData, reps):
             ensembleAverages = np.append(ensembleAverages, np.average(ensembleList))
     ensembleStats = {'avg': ensembleAverages, 'err': ensembleErrors}
     return ensembleStats
+

@@ -300,17 +300,17 @@ def analyzeScatterData(fileNumber, atomLocs1, connected=False, loadPic=1, transf
     key = arr(key)
     psErrors = arr(psErrors)
     psSurvivals = arr(psSurvivals)
-    fitInfo, fitFinished = fitWithClass(fitters.linear, key, psSurvivals.flatten(), errs=psErrors.flatten())
+    fitInfo, fitFinished = fitWithModule(fitters.linear, key, psSurvivals.flatten(), errs=psErrors.flatten())
     for i, (data, err) in enumerate(zip(survivalData, survivalErrs)):
-        survivalFits[i], _ = fitWithClass(fitters.linear, key, data.flatten(), errs=err.flatten())
+        survivalFits[i], _ = fitWithModule(fitters.linear, key, data.flatten(), errs=err.flatten())
     return key, psSurvivals, psErrors, fitInfo, fitFinished, survivalData, survivalErrs, survivalFits, atomLocs1
 
 
 def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, manualThreshold=None,
-                              fitModule=None, histSecondPeakGuess=None, outputMma=False, varyingDim=None,
+                              fitModules=None, histSecondPeakGuess=None, outputMma=False, varyingDim=None,
                               subtractEdgeCounts=True, loadPic=0, transPic=1, postSelectionCondition=None,
                               postSelectionConnected=False, getGenerationStats=False, rerng=False, tt=None,
-                              rigorousThresholdFinding=True, transThresholdSame=True, 
+                              rigorousThresholdFinding=True, transThresholdSame=True, fitguess=[None],
                               **organizerArgs ):
     """
     """
@@ -321,10 +321,15 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
     ( rawData, groupedData, atomLocs1, atomLocs2, keyName, repetitions, 
       key ) = organizeTransferData( fileNumber, atomLocs1, atomLocs2,  picsPerRep=picsPerRep, varyingDim=varyingDim, 
                                     **organizerArgs )
-    numOfPictures = rawData.shape[0]
+    numOfPictures = groupedData.shape[0] * groupedData.shape[1]
     allPics = getAvgPics(groupedData, picsPerRep=picsPerRep)
-    avgPics = [allPics[loadPic], allPics[transPic]]
-    
+    avgPics = [allPics[loadPic], allPics[transPic]]    
+    if type(atomLocs1) == type(9):
+        res = np.unravel_index(avgPics[0].flatten().argsort()[-atomLocs1:][::-1],avgPics[0].shape)
+        atomLocs1 = [x for x in zip(res[0],res[1])]
+    if type(atomLocs2) == type(9):
+        res = np.unravel_index(avgPics[1].flatten().argsort()[-atomLocs2:][::-1],avgPics[1].shape)
+        atomLocs2 = [x for x in zip(res[0],res[1])]
     if subtractEdgeCounts:
         borders_load = getAvgBorderCount(groupedData, loadPic, picsPerRep)
         borders_trans = getAvgBorderCount(groupedData, transPic, picsPerRep)
@@ -339,16 +344,12 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
     for i, (loc1, loc2) in enumerate(zip(atomLocs1, atomLocs2)):
         loadPixelCounts[i] = getAtomCountsData( rawData, picsPerRep, loadPic, loc1, subtractEdges=subtractEdgeCounts )
         loadThresholds[i] = getThresholds( loadPixelCounts[i], 5, manualThreshold, rigorous=rigorousThresholdFinding )        
-        #loadThresholds[i], loadThreshFids[i], loadThreshFitVals[i], loadThreshBins[i], loadThreshBinData[i], loadRmsResiduals[i] = res
         if transThresholdSame:
             transThresholds[i] = copy(loadThresholds[i])
-            #(transPixelCounts, transThresholds, transThreshFids, transThreshFitVals, transThreshBins, transThreshBinData, 
-            # transRmsResiduals) =  (loadPixelCounts, loadThresholds, loadThreshFids, loadThreshFitVals, loadThreshBins, loadThreshBinData, loadRmsResiduals)
         else: 
             # using loc2 is important here.
             transPixelCounts[i] = getAtomCountsData( rawData, picsPerRep, transPic, loc2, subtractEdges=subtractEdgeCounts )
             transThresholds[i] = getThresholds( transPixelCounts[i], 5, manualThreshold, rigorous=rigorousThresholdFinding )
-            #transThresholds[i], transThreshFids[i], transThreshFitVals[i], transThreshBins[i], transThreshBinData[i], transRmsResiduals[i] = res
         allLoadPicCounts[i]  = normalizeData(groupedData, loc1, loadPic, picsPerRep, borders_load)
         allTransPicCounts[i] = normalizeData(groupedData, loc2, transPic, picsPerRep, borders_trans)
         allLoadAtoms[i], allTransAtoms[i] = getSurvivalBoolData(allLoadPicCounts[i], allTransPicCounts[i], loadThresholds[i].t, transThresholds[i].t)
@@ -401,10 +402,20 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
         transVarErr.append(np.sqrt(p*(1-p)/len(varData)))
        
     fits = [None] * len(locationsList)
-    if fitModule is not None:
-        for i, _ in enumerate(locationsList):
-            fits[i], _ = fitWithClass(fitModule, key, transAtomsVarAvg[i])
-        avgFit, _ = fitWithClass(fitModule, key, avgTransData)
+    if len(fitModules) == 1: 
+        fitModules = [fitModules[0] for _ in range(len(locationsList)+1)]
+    if fitModules[0] is not None:
+        if type(fitModules) != list:
+            raise TypeError("ERROR: fitModules must be a list of fit modules. If you want to use only one module for everything,"
+                            " then set this to a single element list with the desired module.")
+        if len(fitguess) == 1:
+            fitguess = [fitguess[0] for _ in range(len(locationsList)+1) ]
+        if len(fitModules) != len(locationsList)+1:
+            raise ValueError("ERROR: length of fitmodules should be" + str(len(locationsList)+1) + "(Includes avg fit)")
+        for i, (loc, module) in enumerate(zip(locationsList, fitModules)):
+            fits[i], _ = fitWithModule(module, key, transAtomsVarAvg[i], guess=fitguess[i])
+        avgFit, _ = fitWithModule(fitModules[-1], key, avgTransData, guess=fitguess[-1])
+        
     
     loadAtomImages = [np.zeros(rawData[0].shape) for _ in range(int(numOfPictures/picsPerRep))]
     transAtomImages = [np.zeros(rawData[0].shape) for _ in range(int(numOfPictures/picsPerRep))]
@@ -421,11 +432,11 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
     return (atomLocs1, atomLocs2, transAtomsVarAvg, transAtomsVarErrs, loadingRate, loadPicCounts, keyName, key,
             repetitions, loadThresholds, fits, avgTransData, avgTransErr, avgFit, avgPics, otherDims, locationsList,
             genAvgs, genErrs, tt, transVarAvg, transVarErr, loadAtomImages, transAtomImages, transPicCounts, 
-            transPixelCounts, transThresholds)
+            transPixelCounts, transThresholds, fitModules)
 
 
 def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, analyzeTogether=False, 
-                                manualThreshold=None, fitModule=None, keyInput=None, fitIndv=False, subtractEdges=True,
+                                manualThreshold=None, fitModules=None, keyInput=None, fitIndv=False, subtractEdges=True,
                                 keyConversion=None, quiet=False, dataRange=None, picSlice=None):
     """
     keyConversion should be a calibration which takes in a single value as an argument and converts it.
@@ -504,11 +515,16 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
         allLoadingErr[dataInc] = np.std(allAtomPicData) / np.sqrt(len(allAtomPicData))
     # 
     avgFits = None
-    if fitModule is not None:
+    if fitModules[0] is not None:
+        if type(fitModules) != list:
+            raise TypeError("ERROR: fitModules must be a list of fit modules. If you want to use only one module for everything,"
+                            " then set this to a single element list with the desired module.")
+        if len(fitModules) == 1: 
+            fitModules = [fitModules[0] for _ in range(len(avgLoading)+1)]
         if fitIndv:
-            for i, load in enumerate(avgLoading):
-                loadFits[i], _ = fitWithClass(fitModule, key, load)
-        avgFits, _ = fitWithClass(fitModule, key, allLoadingRate)
+            for i, (load, module) in enumerate(zip(avgLoading, module)):
+                loadFits[i], _ = fitWithModule(module, key, load)
+        avgFits, _ = fitWithModule(fitModules[-1], key, allLoadingRate)
     avgPics = getAvgPics(rawData, picsPerRep=picsPerRep)
     avgPic = avgPics[whichPic]
     # get averages across all variations
@@ -522,7 +538,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
         atomImagesInc += 1
 
     return ( fullPixelCounts, thresholds, avgPic, key, avgLoadingErr, avgLoading, allLoadingRate, allLoadingErr, loadFits,
-             fitModule, keyName, totalAtomData, rawData, atomLocations, avgFits, atomImages, totalAvg, totalErr )
+             fitModules, keyName, totalAtomData, rawData, atomLocations, avgFits, atomImages, totalAvg, totalErr )
 
 
 def standardAssemblyAnalysis(fileNumber, atomLocs1, assemblyPic, atomLocs2=None, keyOffset=0, dataRange=None,

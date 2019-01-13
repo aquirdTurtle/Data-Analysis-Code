@@ -25,8 +25,8 @@ import AnalysisHelpers as ah
 import MarksConstants as consts 
 from matplotlib.patches import Ellipse
 from TimeTracker import TimeTracker
-from fitters import gaussian_2d, LargeBeamMotExpansion, exponential_saturation, double_gaussian
-
+from fitters import LargeBeamMotExpansion, exponential_saturation
+from fitters.Gaussian import gaussian_2d, double as double_gaussian
 
 def rotateTicks(plot):
     ticks = plot.get_xticklabels()
@@ -69,8 +69,8 @@ def makeThresholdStatsImages(ax, thresholds, locs, shape, ims, lims):
         a.set_title('(Nothing)')
     
 
-def plotThresholdHists(thresholds, colors, extra=None, extraname=None, thresholds_2=None):
-    f, axs = subplots(10,10, figsize=(34.0, 16.0))
+def plotThresholdHists(thresholds, colors, extra=None, extraname=None, thresholds_2=None, shape=(10,10)):
+    f, axs = subplots(shape[0], shape[1], figsize=(34.0, 16.0))
     if thresholds_2 is None:
         thresholds_2 = [None for _ in thresholds]
     for i, (t, t2, c) in enumerate(zip(thresholds, thresholds_2, colors[1:])):
@@ -286,20 +286,21 @@ def Survival(fileNumber, atomLocs, **TransferArgs):
 
 
 def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoadingRate=False, legendOption=None,
-              fitModule=None, showFitDetails=False, showFitCenterPlot=False, showImagePlots=None, plotIndvHists=False, 
+              fitModules=[None], showFitDetails=False, showFitCenterPlot=False, showImagePlots=None, plotIndvHists=False, 
               timeit=False, transThresholdSame=False, outputThresholds=False, **standardTransferArgs ):
     """
     Standard data analysis package for looking at survival rates throughout an experiment.
     :return key, transferData, survivalErrors
     """
+    avgColor='k'
     tt = TimeTracker()
-    res = standardTransferAnalysis( fileNumber, atomLocs1_orig, atomLocs2_orig, fitModule=fitModule, tt=tt,
+    res = standardTransferAnalysis( fileNumber, atomLocs1_orig, atomLocs2_orig, fitModules=fitModules, tt=tt,
                                     transThresholdSame=transThresholdSame, **standardTransferArgs )
     tt.clock('After-Standard-Analysis')
     (atomLocs1, atomLocs2, transferData, transferErrs, loadingRate, pic1Data, keyName, key,
      repetitions, loadThresholds, fits, avgTransferData, avgTransferErr, avgFit, avgPics, otherDimValues,
      locsList, genAvgs, genErrs, tt, transVarAvg, transVarErr, loadAtomImages, transAtomImages,
-     pic2Data, transPixelCounts, transThresholds) = res
+     pic2Data, transPixelCounts, transThresholds, fitModules) = res
     if not show:
         return (key, transferData, transferErrs, loadingRate, fits, avgFit, genAvgs, genErrs, pic1Data, 
             gaussianFitVals, [None], loadThresholds, [None])
@@ -327,19 +328,19 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoading
     longLegend = len(transferData[0]) == 1
     markers = getMarkers()
     # Main Plot
-    for i, (atomLoc, fit) in enumerate(zip(atomLocs1, fits)):
+    for i, (atomLoc, fit, module) in enumerate(zip(atomLocs1, fits, fitModules)):
         leg = (r"[%d,%d] " % (atomLocs1[i][0], atomLocs1[i][1]) if typeName == "Survival" 
                else r"[%d,%d]$\rightarrow$[%d,%d] " % (atomLocs1[i][0], atomLocs1[i][1], atomLocs2[i][0], atomLocs2[i][1]))
         if longLegend:
             leg += (typeName + " % = " + str(round_sig(transferData[i][0])) + "$\pm$ " + str(round_sig(transferErrs[i][0])))
         mainPlot.errorbar(key, transferData[i], yerr=transferErrs[i], color=colors[i], ls='',
-                          capsize=6, elinewidth=3, label=leg, alpha=0.3, marker=markers[i%len(markers)])
-        if fitModule is not None and showFitDetails:
+                          capsize=6, elinewidth=3, label=leg, alpha=0.3, marker=markers[i%len(markers)], markersize=10)
+        if module is not None and showFitDetails:
             if fit['vals'] is None:
                 print(loc, 'Fit Failed!')
                 continue
-            if fitModule.center() is not None:
-                centers.append(fit['vals'][fitModule.center()])
+            #if fitModules.center() is not None:
+            centers.append(module.getCenter(fit['vals']))
             mainPlot.plot(fit['x'], fit['nom'], color=colors[i], alpha=0.5)
     if type(keyName) is not type("a string"):
         keyn = ''
@@ -415,24 +416,28 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoading
             circ = Circle((loc[1], loc[0]), 0.2, color=c)
             plt.add_artist(circ)
     (_, caps, _) = mainPlot.errorbar( key, avgTransferData, yerr=avgTransferErr, color="#BBBBBB", ls='',
-                       marker='o', capsize=12, elinewidth=5, label='Atom-Avg' )
+                       marker='o', capsize=12, elinewidth=5, label='Atom-Avg', markersize=10 )
     for cap in caps:
         cap.set_markeredgewidth(1.5)
-    (_, caps, _) = mainPlot.errorbar( key, transVarAvg, yerr=transVarErr, color='#FFFFFF', ls='',
-                       marker='o', capsize=12, elinewidth=5, label='Event-Avg')
+    (_, caps, _) = mainPlot.errorbar( key, transVarAvg, yerr=transVarErr, color=avgColor, ls='',
+                       marker='o', capsize=12, elinewidth=5, label='Event-Avg', markersize=10 )
     for cap in caps:
         cap.set_markeredgewidth(1.5)
-    if fitModule is not None:
-        mainPlot.plot(avgFit['x'], avgFit['nom'], color='#FFFFFFFF', ls=':')
-        for label, fitVal, err in zip(fitModule.args(), avgFit['vals'], avgFit['errs']):
+    if fitModules[-1] is not None:
+        print('hi')
+        mainPlot.plot(avgFit['x'], avgFit['nom'], color=avgColor, ls=':')
+        for label, fitVal, err in zip(fitModules[-1].args(), avgFit['vals'], avgFit['errs']):
             print( label,':', errString(fitVal, err) )
         if showFitDetails:
-            display(getFitsDataFrame(fits, fitModule, avgFit))
-    if fitModule is not None and showFitCenterPlot:
+            frames = getFitsDataFrame(fits, fitModules, avgFit)
+            for f in frames:
+                display(f)
+    if fitModules[0] is not None and showFitCenterPlot:
         figure()
         fitCenterPic, vmin, vmax = genAvgDiscrepancyImage(centers, avgPics[0].shape, atomLocs1)
         imshow(fitCenterPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower')
         title('Fit-Centers (white is average)')
+        grid(False)
         colorbar()
     tt.clock('After-Main-Plots')
     avgTransferPic = None
@@ -492,7 +497,11 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoading
             cb.outline.set_visible(False)
         tt.clock('After-Image-Plots')
     if plotIndvHists:
-        plotThresholdHists(loadThresholds, colors, extra=avgTransfers, extraname=r"$\rightarrow$:", thresholds_2=transThresholds)
+        if type(atomLocs1_orig[-1]) == int:
+            shape = (atomLocs1_orig[-1], atomLocs1_orig[-2])
+        else:
+            shape = (10,10)
+        plotThresholdHists(loadThresholds, colors, extra=avgTransfers, extraname=r"$\rightarrow$:", thresholds_2=transThresholds, shape=shape)
         tt.clock('After-Indv-Hists')
     if timeit:
         tt.display()
@@ -509,7 +518,7 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, plotLoading
     
     return ( key, transferData, transferErrs, loadingRate, fits, avgFit, genAvgs, genErrs, pic1Data, 
              centers, avgTransferPic, transVarAvg, transVarErr, avgTransferData, avgTransferErr,
-             loadAtomImages, transAtomImages, pic2Data, loadThresholds, transThresholds)
+             loadAtomImages, transAtomImages, pic2Data, loadThresholds, transThresholds, fitModules)
 
 
 def Loading(fileNum, atomLocations, **PopulationArgs):
@@ -575,7 +584,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
                 leg += (typeName + " % = " + str(round_sig(loadRate[i][0])) + "$\pm$ "
                         + str(round_sig(loadRateErr[i][0])))
             mainPlot.errorbar(key, loadRate[i], yerr=loadRateErr[i], color=colors[i], ls='',
-                              capsize=6, elinewidth=3, label=leg, alpha=mainAlpha, marker=markers[i%len(markers)])
+                              capsize=6, elinewidth=3, label=leg, alpha=mainAlpha, marker=markers[i%len(markers)],markersize=5)
             if fitModule is not None:
                 if fit == [] or fit['vals'] is None:
                     continue
@@ -588,7 +597,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
                 print('Avg Fit Failed!')
             else:
                 centerIndex = fitModule.center()
-                mainPlot.plot(avgFits['x'], avgFits['nom'], color=avgColor, alpha = 1)
+                mainPlot.plot(avgFits['x'], avgFits['nom'], color=avgColor, alpha = 1,markersize=5)
         mainPlot.grid(True, color='#AAAAAA', which='Major')
         mainPlot.grid(True, color='#090909', which='Minor')
         mainPlot.set_yticks(np.arange(0,1,0.1))
@@ -601,7 +610,6 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         rotateTicks(mainPlot)
         titletxt = keyName + " Atom " + typeName + " Scan"
         if len(loadRate[0]) == 1:
-            print(avgLoadErr)
             titletxt = keyName + " Atom " + typeName + " Point.\n Avg " + typeName + "% = " + errString(totalAvg, totalErr) 
         mainPlot.set_title(titletxt, fontsize=30)
         mainPlot.set_ylabel("S %", fontsize=20)
@@ -669,10 +677,10 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         circ = Circle((loc[1], loc[0]), 0.2, color='r')
         avgPlt.add_artist(circ)
     mainPlot.errorbar(key, avgLoadRate, yerr=avgLoadErr, color=avgColor, ls='',
-             marker='o', capsize=6, elinewidth=3, label='Avg')
+             marker='o', capsize=6, elinewidth=3, label='Avg', markersize=5)
     if fitModule is not None and showFitDetails:
         mainPlot.plot(avgFit['x'], avgFit['nom'], color=avgColor, ls=':')
-        fits_df = getFitsDataFrame(fits, fitModule, avgFit)
+        fits_df = getFitsDataFrame(fits, fitModule, avgFit,markersize=5)
         display(fits_df)
     elif fitModule is not None:
         for val, name in zip(avgFits['vals'], fitModule.args()):
@@ -711,7 +719,11 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     for s in loadRate:
         avgLoads.append(np.mean(s))
     if plotIndvHists:
-        plotThresholdHists(thresholds, colors, extra=avgLoads, extraname="L:")
+        if type(atomLocations[-1]) == int:
+            shape = (atomLocations[-1], atomLocations[-2])
+        else:
+            shape = (10,10)
+        plotThresholdHists(thresholds, colors, extra=avgLoads, extraname="L:", shape=shape)
     """
     # output thresholds
     thresholds = np.flip(np.reshape(thresholds, (10,10)),1)
@@ -747,8 +759,8 @@ def Assembly(fileNumber, atomLocs1, pic1Num, partialCredit=False, **standardAsse
     # Main Plot
     mainPlot = subplot(grid1[:, :12])
     for stats, label, c in zip((ensembleStats, enhancementStats), ('Assembly', 'Enhancement'), colors):
-        mainPlot.errorbar(key, stats['avg'], yerr=stats['err'], color=c, ls='',
-                          marker='o', capsize=6, elinewidth=3, label=label)
+        mainPlot.errorbar( key, stats['avg'], yerr=stats['err'], color=c, ls='',
+                           marker='o', capsize=6, elinewidth=3, label=label )
     if partialCredit:
         mainPlot.set_ylim({-0.02, len(atomLocs1)+0.01})
     else:
