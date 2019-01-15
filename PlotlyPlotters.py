@@ -82,13 +82,13 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=[None], sho
     """
     res = standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, fitModules=fitModules,
                                    **standardTransferArgs)
-    (atomLocs1, atomLocs2, transferData, transferErrs, loadingRate, pic1Data, keyName, key,
-     repetitions, loadThresholds, fits, avgTransferData, avgTransferErr, avgFit, avgPics, otherDimValues,
-     locsList, genAvgs, genErrs, tt, transVarAvg, transVarErr, loadAtomImages, transAtomImages,
+    (atomLocs1, atomLocs2, transferData, transferErrs, initPopulations, pic1Data, keyName, key,
+     repetitions, initThresholds, fits, avgTransferData, avgTransferErr, avgFit, avgPics, otherDimValues,
+     locsList, genAvgs, genErrs, tt, transVarAvg, transVarErr, initAtomImages, transAtomImages,
      pic2Data, transPixelCounts, transThresholds, fitModules) = res
     
     if not show:
-        return key, transferData, transferErrs, loadingRate
+        return key, transferData, transferErrs, initPopulations
     
     # get the colors for the plots.
     pltColors, pltColors2 = getColors(len(locsList) + 1)
@@ -109,7 +109,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=[None], sho
     transferErrs = list(transferErrs)
     # Make the plots
     alphaVal = 0.5
-    mainPlot, countsHist, countsFig, loadingPlot = [[] for _ in range(4)]
+    mainPlot, countsHist, countsFig, initPopPlot = [[] for _ in range(4)]
     avgFigs = [[] for _ in range(2)]
     avgFigs[0].append(go.Heatmap(z=avgPics[0], colorscale='Viridis',yaxis={'autorange':'reversed'}))
     avgFigs[1].append(go.Heatmap(z=avgPics[1], colorscale='Viridis',yaxis={'autorange':'reversed'}))
@@ -158,14 +158,14 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=[None], sho
         
         iplot(go.Figure(data=fitCenterFig, layout=layout))
     maxHeight = np.max(arr([np.histogram(data.flatten(), bins=histBins)[0] for data in pic1Data]).flatten())
-    for data, load, loc1, loc2, color, threshold, legend in zip(pic1Data, loadingRate, atomLocs1, atomLocs2, pltColors,
-                                                         loadThresholds, legends):
+    for data, pop, loc1, loc2, color, threshold, legend in zip(pic1Data, initPopulations, atomLocs1, atomLocs2, pltColors,
+                                                         initThresholds, legends):
         countsHist.append(go.Histogram(x=data, nbinsx=histBins, legendgroup=legend, showlegend=False, opacity=alphaVal/2,
                                        marker=dict(color=color)))
         countsHist.append(go.Scatter(y=[0, maxHeight], x=[threshold.t, threshold.t], showlegend=False,
                                      mode='lines', line={'color': color, 'width': 1}, hoverinfo='none',
                                      legendgroup=legend))
-        loadingPlot.append(go.Scatter(x=key, y=load, mode="markers", name=str(loc1),
+        initPopPlot.append(go.Scatter(x=key, y=pop, mode="markers", name=str(loc1),
                                       marker={'color': color}, legendgroup=legend, showlegend=False,
                                       opacity=alphaVal))
         
@@ -197,7 +197,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=[None], sho
                                        showlegend=False, opacity=0.1, marker=dict(color="#000000"),
                                        xbins=dict(start=min(pic1Data.flatten()), end=max(pic1Data.flatten()))))
         d, _ = np.histogram(atomCounts.flatten(), bins=200)
-        countsHist.append(go.Scatter(x=[0, max(d) / 2], y=[np.mean([thresh.t for thresh in loadThresholds]), np.mean([thresh.t for thresh in loadThresholds])],
+        countsHist.append(go.Scatter(x=[0, max(d) / 2], y=[np.mean([thresh.t for thresh in initThresholds]), np.mean([thresh.t for thresh in initThresholds])],
                                      showlegend=False, mode='lines', line={'color': "#000000", 'width': 1},
                                      hoverinfo='none', legendgroup='avg'))
         # format and arrange plots. large grid is mostly to precisely place the histogram.
@@ -209,7 +209,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=[None], sho
             specs=[[{r: 3, c: 18}, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, {c: 4}, n, n, n,      {}, n],
                    [n,             n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, {c: 6}, n, n, n,      n,  n],
                    [n,             n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, {c: 3}, n, n, {c: 3}, n,  n]])
-        traceSets = [mainPlot, avgFigs[0], avgFigs[1], loadingPlot, countsFig, countsHist]
+        traceSets = [mainPlot, avgFigs[0], avgFigs[1], initPopPlot, countsFig, countsHist]
         
         for mainLine in mainPlot:
             fig.append_trace(mainLine, 1, 1)
@@ -217,8 +217,8 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=[None], sho
             fig.append_trace(avgPart, 3, 19)
         for avgPart in avgFigs[1]:
             fig.append_trace(avgPart, 3, 22)
-        for load in loadingPlot:
-            fig.append_trace(load, 2, 19)
+        for pop in initPopPlot:
+            fig.append_trace(pop, 2, 19)
         for counts in countsFig:
             fig.append_trace(counts, 1, 19)
         for hist in countsHist:
@@ -228,7 +228,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=[None], sho
         fig['layout']['yaxis3'].update(range=[min(pic1Data.flatten()), max(pic1Data.flatten())],
                                        showticklabels=False)
         fig['layout']['xaxis3'].update(showticklabels=False)
-        fig['layout']['yaxis4'].update(title="Loading %", range=[0, 1])
+        fig['layout']['yaxis4'].update(title="Initial Population %", range=[0, 1])
         fig['layout']['yaxis5'].update(title="Average Image")
     else:
         # format and arrange plots. large grid is mostly to precisely place the histogram.
@@ -246,19 +246,22 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=[None], sho
             fig.append_trace(avgPart, 3, 19)
         for avgPart in avgFigs[1]:
             fig.append_trace(avgPart, 3, 22)
-        for load in loadingPlot:
-            fig.append_trace(load, 2, 19)
+        for pop in initPopPlot:
+            fig.append_trace(pop, 2, 19)
         for hist in countsHist:
             fig.append_trace(hist, 1, 19)
-        fig['layout']['yaxis3'].update(title="Loading %", range=[0, 1])
+        fig['layout']['yaxis3'].update(title="Initial Population %", range=[0, 1])
         fig['layout']['yaxis5'].update(title="Average Image")
     fig['layout'].update(barmode='overlay')
     fig['layout']['yaxis1'].update(title=scanType + " %", range=[0, 1])
     fig['layout']['xaxis1'].update(title=str(keyName))
     iplot(fig)
-    return key, transferData, transferErrs, loadingRate, fits, avgFit, genAvgs, genErrs, centers
+    return key, transferData, transferErrs, initPopulations, fits, avgFit, genAvgs, genErrs, centers
 
-def Loading(fileNum, atomLocations, showLoadingRate=True, showLoadingPic=False, plotCounts=False, countsMain=False,
+def Loading(fileNum, atomLocations, **TransferArgs):
+    return Population(fileNum, atomLocations, whichPic=0, **TransferArgs)
+
+def Population(fileNum, atomLocations, showLoadingRate=True, showLoadingPic=False, plotCounts=False, countsMain=False,
             indvHist=True, histMain=False, simplePlot=False, showTotalHist=False, histBins=100, picsPerRep=1, whichPic=0, **StandardArgs):
     """
     Standard data analysis package for looking at loading rates throughout an experiment.
