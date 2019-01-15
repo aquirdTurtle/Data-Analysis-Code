@@ -38,8 +38,10 @@ class ExpFile:
         self.key = None 
         self.pics = None
         self.reps = None
-        self.experiment_time = None
-        self.experiment_date = None
+        self.exp_start_time = None
+        self.exp_start_date = None
+        self.exp_stop_time = None
+        self.exp_stop_date = None
         self.data_addr = dataAddress
         if file_id is not None:
             self.f = self.open_hdf5(fileID=file_id)
@@ -49,7 +51,7 @@ class ExpFile:
                 self.key_name, self.key = self.get_key()
             self.pics = self.get_pics()
             self.reps = self.f['Master-Parameters']['Repetitions'][0]
-            self.experiment_time, self.experiment_date = self.get_experiment_time_and_date()
+            self.exp_start_date, self.exp_start_time, self.exp_stop_date, self.exp_stop_time = self.get_experiment_time_and_date()
     
     
     def __enter__(self):
@@ -275,11 +277,14 @@ class ExpFile:
         self.print_pic_info()
         print('Variaitons:', len(self.key))    
         print('Repetitions:', self.reps)
-        print('Experiment started at (H:M:S) ', self.experiment_time, ' on (Y-M-D)', self.experiment_date)
+        print('Experiment started at (H:M:S) ', self.exp_start_time, ' on (Y-M-D)', self.exp_start_date)
+        print('And ended at (H:M:S) ', self.exp_stop_time, ' on (Y-M-D)', self.exp_stop_date)
         
     def get_experiment_time_and_date(self):
-        date = ''.join([x.decode('UTF-8') for x in self.f['Miscellaneous']['Run-Date']])
-        time = ''.join([x.decode('UTF-8') for x in self.f['Miscellaneous']['Time-Of-Logging']])
-        return time, date
+        start_date = ''.join([x.decode('UTF-8') for x in self.f['Miscellaneous']['Start-Date']])
+        start_time = ''.join([x.decode('UTF-8') for x in self.f['Miscellaneous']['Start-Time']])
+        stop_date = ''.join([x.decode('UTF-8') for x in self.f['Miscellaneous']['Stop-Date']])
+        stop_time = ''.join([x.decode('UTF-8') for x in self.f['Miscellaneous']['Stop-Time']])
+        return start_date, start_time, stop_date, stop_time
 
     
