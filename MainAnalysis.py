@@ -308,22 +308,23 @@ def analyzeScatterData(fileNumber, atomLocs1, connected=False, loadPic=1, transf
 
 def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, manualThreshold=None,
                               fitModules=None, histSecondPeakGuess=None, outputMma=False, varyingDim=None,
-                              subtractEdgeCounts=True, loadPic=0, transPic=1, postSelectionCondition=None,
+                              subtractEdgeCounts=True, initPic=0, transPic=1, postSelectionCondition=None,
                               postSelectionConnected=False, getGenerationStats=False, rerng=False, tt=None,
                               rigorousThresholdFinding=True, transThresholdSame=True, fitguess=[None],
                               **organizerArgs ):
     """
+    "Survival" is a special case of transfer where the initial location and the transfer location are the same location.
     """
     if tt is None:
         tt = TimeTracker()
     if rerng:
-        loadPic, transPic, picsPerRep = 1, 2, 3
+        initPic, transPic, picsPerRep = 1, 2, 3
     ( rawData, groupedData, atomLocs1, atomLocs2, keyName, repetitions, 
       key ) = organizeTransferData( fileNumber, atomLocs1, atomLocs2,  picsPerRep=picsPerRep, varyingDim=varyingDim, 
                                     **organizerArgs )
     numOfPictures = groupedData.shape[0] * groupedData.shape[1]
     allPics = getAvgPics(groupedData, picsPerRep=picsPerRep)
-    avgPics = [allPics[loadPic], allPics[transPic]]    
+    avgPics = [allPics[initPic], allPics[transPic]]    
     if type(atomLocs1) == type(9):
         res = np.unravel_index(avgPics[0].flatten().argsort()[-atomLocs1:][::-1],avgPics[0].shape)
         atomLocs1 = [x for x in zip(res[0],res[1])]
@@ -331,61 +332,58 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
         res = np.unravel_index(avgPics[1].flatten().argsort()[-atomLocs2:][::-1],avgPics[1].shape)
         atomLocs2 = [x for x in zip(res[0],res[1])]
     if subtractEdgeCounts:
-        borders_load = getAvgBorderCount(groupedData, loadPic, picsPerRep)
+        borders_init = getAvgBorderCount(groupedData, initPic, picsPerRep)
         borders_trans = getAvgBorderCount(groupedData, transPic, picsPerRep)
     else:
-        borders_load = borders_trans = np.zeros(groupedData.shape[0]*groupedData.shape[1])
+        borders_init = borders_trans = np.zeros(groupedData.shape[0]*groupedData.shape[1])
         
-    (loadPixelCounts, loadThresholds, loadThreshFids, loadThreshFitVals, loadThreshBins, loadThreshBinData, 
-     loadRmsResiduals) =  arr([[None] * len(atomLocs1)] * 7)
-    (transPixelCounts, transThresholds, transThreshFids, transThreshFitVals, transThreshBins, transThreshBinData,
-     transRmsResiduals) =  arr([[None] * len(atomLocs1)] * 7)
-    (allLoadPicCounts, allTransPicCounts, allLoadAtoms, allTransAtoms) = arr([[None] * len(atomLocs1)] * 4)
+    (initPixelCounts, initThresholds, transPixelCounts, transThresholds) =  arr([[None] * len(atomLocs1)] * 4)
+    (allInitPicCounts, allTransPicCounts, allInitAtoms, allTransAtoms) = arr([[None] * len(atomLocs1)] * 4)
     for i, (loc1, loc2) in enumerate(zip(atomLocs1, atomLocs2)):
-        loadPixelCounts[i] = getAtomCountsData( rawData, picsPerRep, loadPic, loc1, subtractEdges=subtractEdgeCounts )
-        loadThresholds[i] = getThresholds( loadPixelCounts[i], 5, manualThreshold, rigorous=rigorousThresholdFinding )        
+        initPixelCounts[i] = getAtomCountsData( rawData, picsPerRep, initPic, loc1, subtractEdges=subtractEdgeCounts )
+        initThresholds[i] = getThresholds( initPixelCounts[i], 5, manualThreshold, rigorous=rigorousThresholdFinding )        
         if transThresholdSame:
-            transThresholds[i] = copy(loadThresholds[i])
+            transThresholds[i] = copy(initThresholds[i])
         else: 
             # using loc2 is important here.
             transPixelCounts[i] = getAtomCountsData( rawData, picsPerRep, transPic, loc2, subtractEdges=subtractEdgeCounts )
             transThresholds[i] = getThresholds( transPixelCounts[i], 5, manualThreshold, rigorous=rigorousThresholdFinding )
-        allLoadPicCounts[i]  = normalizeData(groupedData, loc1, loadPic, picsPerRep, borders_load)
+        allInitPicCounts[i]  = normalizeData(groupedData, loc1, initPic, picsPerRep, borders_init)
         allTransPicCounts[i] = normalizeData(groupedData, loc2, transPic, picsPerRep, borders_trans)
-        allLoadAtoms[i], allTransAtoms[i] = getSurvivalBoolData(allLoadPicCounts[i], allTransPicCounts[i], loadThresholds[i].t, transThresholds[i].t)
+        allInitAtoms[i], allTransAtoms[i] = getSurvivalBoolData(allInitPicCounts[i], allTransPicCounts[i], initThresholds[i].t, transThresholds[i].t)
     # transAtomsVarAvg, transAtomsVarErrs: the given an atom and a variation, the mean of the 
     # transfer events (mapped to a bernoili distribution), and the error on that mean. 
-    # loadAtoms (transAtoms): a list of the atom events in the load (trans) picture, mapped to a bernoilli distribution 
-    (loadPicCounts, transPicCounts, bins, binnedData, transAtomsVarAvg, transAtomsVarErrs,
-     loadingRate, loadAtoms, transAtoms, genAvgs, genErrs, transList) = arr([[None] * len(atomLocs1)] * 12)
+    # initAtoms (transAtoms): a list of the atom events in the initial (trans) picture, mapped to a bernoilli distribution 
+    (initPicCounts, transPicCounts, bins, binnedData, transAtomsVarAvg, transAtomsVarErrs,
+     initPopulation, initAtoms, transAtoms, genAvgs, genErrs, transList) = arr([[None] * len(atomLocs1)] * 12)
     for i, (loc1, loc2) in enumerate(zip(atomLocs1, atomLocs2)):
-        loadPicCounts[i]  = normalizeData(groupedData, loc1, loadPic, picsPerRep, borders_load)
+        initPicCounts[i]  = normalizeData(groupedData, loc1, initPic, picsPerRep, borders_init)
         transPicCounts[i] = normalizeData(groupedData, loc2, transPic, picsPerRep, borders_trans)
-        loadAtoms[i], transAtoms[i] = getSurvivalBoolData(loadPicCounts[i], transPicCounts[i], loadThresholds[i].t, transThresholds[i].t)
+        initAtoms[i], transAtoms[i] = getSurvivalBoolData(initPicCounts[i], transPicCounts[i], initThresholds[i].t, transThresholds[i].t)
     if postSelectionCondition is not None:
-        loadAtoms, transAtoms = postSelectOnAssembly( loadAtoms, transAtoms, postSelectionCondition,
+        initAtoms, transAtoms = postSelectOnAssembly( initAtoms, transAtoms, postSelectionCondition,
                                                       connected=postSelectionConnected )
     for i in range(len(atomLocs1)):
-        transList[i] = getTransferEvents(loadAtoms[i], transAtoms[i])
-        transAtomsVarAvg[i], transAtomsVarErrs[i], loadingRate[i] = getTransferStats(transList[i], repetitions)
+        transList[i] = getTransferEvents(initAtoms[i], transAtoms[i])
+        transAtomsVarAvg[i], transAtomsVarErrs[i], initPopulation[i] = getTransferStats(transList[i], repetitions)
         if getGenerationStats:
-            genList = getGenerationEvents(loadAtoms[i], transAtoms[i])
+            genList = getGenerationEvents(initAtoms[i], transAtoms[i])
             genAvgs[i], genErrs[i] = getGenStatistics(genList, repetitions)
         else:
             genAvgs[i], genErrs[i] = [None, None]
     # Positioning of this is very important.
-    #res = groupMultidimensionalData(key, varyingDim, atomLocs1, transferData, transAtomsVarErrs, loadingRate)
-    res = (key, atomLocs1, transAtomsVarErrs, transAtomsVarAvg, loadingRate, [None for _ in range(len(key)*len(atomLocs1))])
-    (key, locationsList, transAtomsVarErrs, transAtomsVarAvg, loadingRate, otherDims) = res
+    #res = groupMultidimensionalData(key, varyingDim, atomLocs1, transferData, transAtomsVarErrs, initPopulation)
+    res = (key, atomLocs1, transAtomsVarErrs, transAtomsVarAvg, initPopulation, [None for _ in range(len(key)*len(atomLocs1))])
+    (key, locationsList, transAtomsVarErrs, transAtomsVarAvg, initPopulation, otherDims) = res
 
-    loadPicCounts = arr(loadPicCounts.tolist())
+    initPicCounts = arr(initPicCounts.tolist())
     transPicCounts = arr(transPicCounts.tolist())
     
     # an atom average. The answer to the question: if you picked a random atom for a given variation, 
     # what's the mean [mean value] that you would find, and what is the error on that mean?
     # transAtomVarAvg, transAtomVarErr
     avgTransData, avgTransErr, avgFit = [None]*3
-    # weight the sum with loading percentage
+    # weight the sum with initial percentage
     avgTransData = np.mean(transAtomsVarAvg)
     avgTransErr = np.sqrt(np.sum(transAtomsVarErrs**2)/len(atomLocs1))
     ### ###
@@ -417,21 +415,21 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
         avgFit, _ = fitWithModule(fitModules[-1], key, avgTransData, guess=fitguess[-1])
         
     
-    loadAtomImages = [np.zeros(rawData[0].shape) for _ in range(int(numOfPictures/picsPerRep))]
+    initAtomImages = [np.zeros(rawData[0].shape) for _ in range(int(numOfPictures/picsPerRep))]
     transAtomImages = [np.zeros(rawData[0].shape) for _ in range(int(numOfPictures/picsPerRep))]
-    transImagesInc, loadImagesInc = [0,0]
+    transImagesInc, initImagesInc = [0,0]
     for picInc in range(int(numOfPictures)):
-        if picInc % picsPerRep == loadPic:
+        if picInc % picsPerRep == initPic:
             for locInc, loc in enumerate(atomLocs1):
-                loadAtomImages[loadImagesInc][loc[0]][loc[1]] = allLoadAtoms[locInc][loadImagesInc]            
-            loadImagesInc += 1
+                initAtomImages[initImagesInc][loc[0]][loc[1]] = allInitAtoms[locInc][initImagesInc]            
+            initImagesInc += 1
         elif picInc % picsPerRep == transPic:
             for locInc, loc in enumerate(atomLocs2):
                 transAtomImages[transImagesInc][loc[0]][loc[1]] = allTransAtoms[locInc][transImagesInc]
             transImagesInc += 1
-    return (atomLocs1, atomLocs2, transAtomsVarAvg, transAtomsVarErrs, loadingRate, loadPicCounts, keyName, key,
-            repetitions, loadThresholds, fits, avgTransData, avgTransErr, avgFit, avgPics, otherDims, locationsList,
-            genAvgs, genErrs, tt, transVarAvg, transVarErr, loadAtomImages, transAtomImages, transPicCounts, 
+    return (atomLocs1, atomLocs2, transAtomsVarAvg, transAtomsVarErrs, initPopulation, initPicCounts, keyName, key,
+            repetitions, initThresholds, fits, avgTransData, avgTransErr, avgFit, avgPics, otherDims, locationsList,
+            genAvgs, genErrs, tt, transVarAvg, transVarErr, initAtomImages, transAtomImages, transPicCounts, 
             transPixelCounts, transThresholds, fitModules)
 
 
@@ -483,8 +481,8 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
         numOfPictures = rawData.shape[0]
         numOfVariations = int(numOfPictures / (repetitions * picsPerRep))
     #groupedData, key, _ = orderData(groupedData, key)
-    avgLoading, avgLoadingErr, loadFits = [[[] for _ in range(len(atomLocations))] for _ in range(3)]
-    allLoadingRate, allLoadingErr = [[[]] * len(groupedData) for _ in range(2)]
+    avgPopulation, avgPopulationErr, popFits = [[[] for _ in range(len(atomLocations))] for _ in range(3)]
+    allPopulation, allPopulationErr = [[[]] * len(groupedData) for _ in range(2)]
     totalAtomData = []
     # get full data... there's probably a better way of doing this...
     (fullPixelCounts, fullAtomData, thresholds, fullAtomCount) = arr([[None] * len(atomLocations)] * 4)
@@ -509,10 +507,10 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
             variationAtomData[dataInc][i], atomCount[dataInc][i] = getAtomBoolData(variationPixelData[dataInc][i], thresholds[i].t)            
             totalAtomData.append(variationAtomData[dataInc][i])
             allAtomPicData.append(np.mean(variationAtomData[dataInc][i]))
-            avgLoading[i].append(np.mean(variationAtomData[dataInc][i]))
-            avgLoadingErr[i].append(np.std(variationAtomData[dataInc][i]) / np.sqrt(len(variationAtomData[dataInc][i])))
-        allLoadingRate[dataInc] = np.mean(allAtomPicData)
-        allLoadingErr[dataInc] = np.std(allAtomPicData) / np.sqrt(len(allAtomPicData))
+            avgPopulation[i].append(np.mean(variationAtomData[dataInc][i]))
+            avgPopulationErr[i].append(np.std(variationAtomData[dataInc][i]) / np.sqrt(len(variationAtomData[dataInc][i])))
+        allPopulation[dataInc] = np.mean(allAtomPicData)
+        allPopulationErr[dataInc] = np.std(allAtomPicData) / np.sqrt(len(allAtomPicData))
     # 
     avgFits = None
     if fitModules[0] is not None:
@@ -520,11 +518,11 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
             raise TypeError("ERROR: fitModules must be a list of fit modules. If you want to use only one module for everything,"
                             " then set this to a single element list with the desired module.")
         if len(fitModules) == 1: 
-            fitModules = [fitModules[0] for _ in range(len(avgLoading)+1)]
+            fitModules = [fitModules[0] for _ in range(len(avgPopulation)+1)]
         if fitIndv:
-            for i, (load, module) in enumerate(zip(avgLoading, module)):
-                loadFits[i], _ = fitWithModule(module, key, load)
-        avgFits, _ = fitWithModule(fitModules[-1], key, allLoadingRate)
+            for i, (pop, module) in enumerate(zip(avgPopulation, module)):
+                popFits[i], _ = fitWithModule(module, key, pop)
+        avgFits, _ = fitWithModule(fitModules[-1], key, allPopulation)
     avgPics = getAvgPics(rawData, picsPerRep=picsPerRep)
     avgPic = avgPics[whichPic]
     # get averages across all variations
@@ -537,7 +535,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
             atomImages[atomImagesInc][loc[0]][loc[1]] = fullAtomData[locInc][atomImagesInc]
         atomImagesInc += 1
 
-    return ( fullPixelCounts, thresholds, avgPic, key, avgLoadingErr, avgLoading, allLoadingRate, allLoadingErr, loadFits,
+    return ( fullPixelCounts, thresholds, avgPic, key, avgPopulationErr, avgPopulation, allPopulation, allPopulationErr, popFits,
              fitModules, keyName, totalAtomData, rawData, atomLocations, avgFits, atomImages, totalAvg, totalErr )
 
 
