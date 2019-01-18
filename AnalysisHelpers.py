@@ -194,9 +194,29 @@ def parseRearrangeInfo(addr, limitedMoves=-1):
     return moveList
 
 
+def handleKeyModifications(hdf5Key, numVariations, keyInput=None, keyOffset=0, groupData=False, keyConversion=None ):
+    key = None
+    if keyInput is None:
+        key = hdf5Key
+    if key is None: 
+        key = arr([0]) if numVariations == 1 else arr([])
+    if groupData:
+        key = [0]
+    if len(key.shape) == 1:
+        key -= keyOffset
+    if keyConversion is not None:
+        key = [keyConversion.f(k) for k in key]
+        keyName += "; " + keyConversion.units()
+    if len(key) != numOfVariations:
+        raise ValueError("ERROR: The Length of the key doesn't match the data found. "
+                         "Did you want to use a transfer-based function instead of a population-based function? Key:", 
+                         len(key), "vars:", numOfVariations)
+    return key
+
+
 def organizeTransferData( fileNumber, loadLocs, transLocs, key=None, window=None, xMin=None, xMax=None, yMin=None,
                           yMax=None, dataRange=None, keyOffset=0, dimSlice=None, varyingDim=None, groupData=False,
-                          quiet=False, picsPerRep=2, repRange=None, initPic=0, transPic=1 ):
+                          quiet=False, picsPerRep=2, repRange=None, initPic=0, transPic=1, keyConversion=None ):
     """
     Unpack inputs, properly shape the key, picture array, and run some initial checks on the consistency of the settings.
     """
@@ -207,10 +227,6 @@ def organizeTransferData( fileNumber, loadLocs, transLocs, key=None, window=None
     if repRange is not None:
         repetitions = repRange[1] - repRange[0]
         rawData = rawData[repRange[0]*picsPerRep:repRange[1]*picsPerRep]
-    if key is None:
-        key = hdf5Key
-    if len(key.shape) == 1:
-        key -= keyOffset
     # window the images images.
     if window is not None:
         xMin, yMin, xMax, yMax = window
@@ -218,11 +234,10 @@ def organizeTransferData( fileNumber, loadLocs, transLocs, key=None, window=None
     # Group data into variations.
     numberOfPictures = int(rawData.shape[0])
     if groupData:
-        key = [1]
         repetitions = int(numberOfPictures / picsPerRep)
     numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
+    key = handleKeyModifications(hdf5Key, numberOfVariations, keyInput=key, keyOffset=keyOffset, groupData=groupData, keyConversion=keyConversion )
     groupedDataRaw = rawData.reshape((numberOfVariations, repetitions * picsPerRep, rawData.shape[1], rawData.shape[2]))
-    #print(key)
     res = sliceMultidimensionalData(dimSlice, key, groupedDataRaw, varyingDim=varyingDim)
     (_, slicedData, otherDimValues, varyingDim) = res
     #print('not ordering data!')
@@ -233,10 +248,6 @@ def organizeTransferData( fileNumber, loadLocs, transLocs, key=None, window=None
     # check consistency
     numberOfPictures = int(groupedData.shape[0] * groupedData.shape[1])
     numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
-    if not len(key) == numberOfVariations:
-        raise RuntimeError("The Length of the key (" + str(len(key)) + ") doesn't match the data found ("
-                           + str(numberOfVariations) + "). Did you mean to use a population-based function instead of "
-                           "a transfer-based function?")
     numOfPictures = groupedData.shape[0] * groupedData.shape[1]
     allAvgPics = getAvgPics(groupedData, picsPerRep=picsPerRep)
     avgPics = [allAvgPics[initPic], allAvgPics[transPic]]

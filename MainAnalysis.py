@@ -302,7 +302,6 @@ def analyzeScatterData( fileNumber, atomLocs1, connected=False, loadPic=1, trans
         survivalFits[i], _ = fitWithModule(fitters.linear, key, data.flatten(), errs=err.flatten())
     return key, psSurvivals, psErrors, fitInfo, fitFinished, survivalData, survivalErrs, survivalFits, atomLocs1
 
-
 def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, manualThreshold=None,
                               fitModules=None, histSecondPeakGuess=None, outputMma=False, varyingDim=None,
                               subtractEdgeCounts=True, initPic=0, transPic=1, postSelectionCondition=None,
@@ -422,7 +421,7 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
 
 def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, analyzeTogether=False, 
                                 manualThreshold=None, fitModules=None, keyInput=None, fitIndv=False, subtractEdges=True,
-                                keyConversion=None, quiet=False, dataRange=None, picSlice=None):
+                                keyConversion=None, quiet=False, dataRange=None, picSlice=None, keyOffset=0):
     """
     keyConversion should be a calibration which takes in a single value as an argument and converts it.
         It needs a calibration function f() and a units function units()
@@ -431,37 +430,15 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
     """
     atomLocations = unpackAtomLocations(atomLocations)
     with ExpFile(fileNum) as f:
-        rawData, keyName, key, repetitions = f.pics, f.key_name, f.key, f.reps 
+        rawData, keyName, hdf5Key, repetitions = f.pics, f.key_name, f.key, f.reps 
         if not quiet:
             f.get_basic_info()
     numOfPictures = rawData.shape[0]
     numOfVariations = int(numOfPictures / (repetitions * picsPerRep))
-    # handle defaults.
-    if numOfVariations == 1:
-        if key is None:
-            key = arr([0])
-    else:
-        if key is None:
-            key = arr([])
-    if keyInput is not None:
-        key = keyInput
-    if len(arr(atomLocations).shape) == 1:
-        atomLocations = [atomLocations]
-    if not len(key) == numOfVariations:
-        raise ValueError("ERROR: The Length of the key doesn't match the data found. "
-                         "Did you want to use a transfer-based function instead of a population-based function? Key:", 
-                         len(key), "vars:", numOfVariations)
-    if keyConversion is not None:
-        key = [keyConversion.f(k) for k in key]
-        keyName += "; " + keyConversion.units()
+    key = handleKeyModifications(hdf5Key, numOfVariations, keyInput=keyInput, keyOffset=keyOffset, groupData=False, keyConversion=keyConversion )
     # ## Initial Data Analysis
     s = rawData.shape
-    if analyzeTogether:
-        newShape = (1, s[0], s[1], s[2])
-    else:
-        newShape = (numOfVariations, repetitions * picsPerRep, s[1], s[2])
-    # Split the rawData by variations
-    groupedData = rawData.reshape(newShape)
+    groupedData = rawData.reshape((1, s[0], s[1], s[2]) if analyzeTogether else (numOfVariations, repetitions * picsPerRep, s[1], s[2]))
     key, groupedData = applyDataRange(dataRange, groupedData, key)
     if picSlice is not None:
         rawData = rawData[picSlice[0]:picSlice[1]]
@@ -483,7 +460,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
     fullAtomData = arr(fullAtomData.tolist())
     fullPixelCounts = arr(fullPixelCounts.tolist())
     if not quiet:
-        print('Analyzing Variation... ', end='')    
+        print('Analyzing Variation... ', end='')
     (variationPixelData, variationAtomData, atomCount) = arr([[[None for _ in atomLocations] for _ in groupedData] for _ in range(3)])
     for dataInc, data in enumerate(groupedData):
         if not quiet:
