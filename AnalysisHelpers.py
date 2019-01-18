@@ -194,14 +194,12 @@ def parseRearrangeInfo(addr, limitedMoves=-1):
     return moveList
 
 
-def organizeTransferData(fileNumber, loadLocs, transLocs, key=None, window=None, xMin=None, xMax=None, yMin=None,
-                         yMax=None, dataRange=None, keyOffset=0, dimSlice=None, varyingDim=None, groupData=False,
-                         quiet=False, picsPerRep=2, repRange=None):
+def organizeTransferData( fileNumber, loadLocs, transLocs, key=None, window=None, xMin=None, xMax=None, yMin=None,
+                          yMax=None, dataRange=None, keyOffset=0, dimSlice=None, varyingDim=None, groupData=False,
+                          quiet=False, picsPerRep=2, repRange=None, initPic=0, transPic=1 ):
     """
     Unpack inputs, properly shape the key, picture array, and run some initial checks on the consistency of the settings.
     """
-    loadLocs = unpackAtomLocations(loadLocs)
-    transLocs = unpackAtomLocations(transLocs)
     with ExpFile(fileNumber) as f:
         rawData, keyName, hdf5Key, repetitions = f.pics, f.key_name, f.key, f.reps 
         if not quiet:
@@ -239,7 +237,12 @@ def organizeTransferData(fileNumber, loadLocs, transLocs, key=None, window=None,
         raise RuntimeError("The Length of the key (" + str(len(key)) + ") doesn't match the data found ("
                            + str(numberOfVariations) + "). Did you mean to use a population-based function instead of "
                            "a transfer-based function?")
-    return rawData, groupedData, loadLocs, transLocs, keyName, repetitions, key
+    numOfPictures = groupedData.shape[0] * groupedData.shape[1]
+    allAvgPics = getAvgPics(groupedData, picsPerRep=picsPerRep)
+    avgPics = [allAvgPics[initPic], allAvgPics[transPic]]
+    atomLocs1 = unpackAtomLocations(atomLocs1, avgPic=avgPics[0])
+    atomLocs2 = unpackAtomLocations(atomLocs2, avgPic=avgPics[1])
+    return rawData, groupedData, atomLocs1, atomLocs2, keyName, repetitions, key, numOfPictures, avgPics
 
 
 def modFitFunc(sign, hBiasIn, vBiasIn, depthIn, *testBiases):
@@ -2051,7 +2054,7 @@ def outputDataToMmaNotebook(fileNumber, survivalData, survivalErrs, captureArray
         print("Error while outputting data to mathematica file.")
 
 
-def unpackAtomLocations(locs):
+def unpackAtomLocations(locs, avgPic=None):
     """
     :param locs:
     :return:
@@ -2066,6 +2069,11 @@ def unpackAtomLocations(locs):
     for widthInc in range(width):
         for heightInc in range(height):
             locArray.append([bottomLeftRow + spacing * heightInc, bottomLeftColumn + spacing * widthInc])
+    # this option looks for the X brightest spots in the average picture and assumes that this is where the 
+    # atoms are. Note that it can mess up the ordering of different locations.
+    if type(locArray) == type(9) and avgPic is not None:
+        res = np.unravel_index(avgPic.flatten().argsort()[-locArray:][::-1],avgPic.shape)
+        locArray = [x for x in zip(res[0],res[1])]
     return locArray
 
 

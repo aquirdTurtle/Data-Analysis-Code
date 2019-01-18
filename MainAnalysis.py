@@ -1,6 +1,3 @@
-__version__ = "1.4"
-"""
-"""
 
 from numpy import array as arr
 from pandas import DataFrame
@@ -320,35 +317,25 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
     if rerng:
         initPic, transPic, picsPerRep = 1, 2, 3
     ( rawData, groupedData, atomLocs1, atomLocs2, keyName, repetitions, 
-      key ) = organizeTransferData( fileNumber, atomLocs1, atomLocs2,  picsPerRep=picsPerRep, varyingDim=varyingDim, 
-                                    **organizerArgs )
-    numOfPictures = groupedData.shape[0] * groupedData.shape[1]
-    allPics = getAvgPics(groupedData, picsPerRep=picsPerRep)
-    avgPics = [allPics[initPic], allPics[transPic]]    
-    if type(atomLocs1) == type(9):
-        res = np.unravel_index(avgPics[0].flatten().argsort()[-atomLocs1:][::-1],avgPics[0].shape)
-        atomLocs1 = [x for x in zip(res[0],res[1])]
-    if type(atomLocs2) == type(9):
-        res = np.unravel_index(avgPics[1].flatten().argsort()[-atomLocs2:][::-1],avgPics[1].shape)
-        atomLocs2 = [x for x in zip(res[0],res[1])]
-    if subtractEdgeCounts:
-        borders_init = getAvgBorderCount(groupedData, initPic, picsPerRep)
-        borders_trans = getAvgBorderCount(groupedData, transPic, picsPerRep)
-    else:
-        borders_init = borders_trans = np.zeros(groupedData.shape[0]*groupedData.shape[1])
-        
+      key, numOfPictures, avgPics ) = organizeTransferData( fileNumber, atomLocs1, atomLocs2,  picsPerRep=picsPerRep, varyingDim=varyingDim,
+                                                              initPic=initPic, transPic=transPic, **organizerArgs )
     (initPixelCounts, initThresholds, transPixelCounts, transThresholds) =  arr([[None] * len(atomLocs1)] * 4)
-    (allInitPicCounts, allTransPicCounts, allInitAtoms, allTransAtoms) = arr([[None] * len(atomLocs1)] * 4)
     for i, (loc1, loc2) in enumerate(zip(atomLocs1, atomLocs2)):
         initPixelCounts[i] = getAtomCountsData( rawData, picsPerRep, initPic, loc1, subtractEdges=subtractEdgeCounts )
         initThresholds[i] = getThresholds( initPixelCounts[i], 5, manualThreshold, rigorous=rigorousThresholdFinding )        
         if transThresholdSame:
             transThresholds[i] = copy(initThresholds[i])
         else: 
-            # using loc2 is important here.
             transPixelCounts[i] = getAtomCountsData( rawData, picsPerRep, transPic, loc2, subtractEdges=subtractEdgeCounts )
             transThresholds[i] = getThresholds( transPixelCounts[i], 5, manualThreshold, rigorous=rigorousThresholdFinding )
-        # 
+     
+    if subtractEdgeCounts:
+        borders_init = getAvgBorderCount(groupedData, initPic, picsPerRep)
+        borders_trans = getAvgBorderCount(groupedData, transPic, picsPerRep)
+    else:
+        borders_init = borders_trans = np.zeros(groupedData.shape[0]*groupedData.shape[1])
+    (allInitPicCounts, allTransPicCounts, allInitAtoms, allTransAtoms) = arr([[None] * len(atomLocs1)] * 4)
+    for i, (loc1, loc2) in enumerate(zip(atomLocs1, atomLocs2)):
         allInitPicCounts[i]  = normalizeData(groupedData, loc1, initPic, picsPerRep, borders_init)
         allTransPicCounts[i] = normalizeData(groupedData, loc2, transPic, picsPerRep, borders_trans)
         allInitAtoms[i], allTransAtoms[i] = getSurvivalBoolData(allInitPicCounts[i], allTransPicCounts[i], initThresholds[i].t, transThresholds[i].t)
@@ -414,7 +401,6 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
         for i, (loc, module) in enumerate(zip(locationsList, fitModules)):
             fits[i], _ = fitWithModule(module, key, transAtomsVarAvg[i], guess=fitguess[i])
         avgFit, _ = fitWithModule(fitModules[-1], key, avgTransData, guess=fitguess[-1])
-        
     
     initAtomImages = [np.zeros(rawData[0].shape) for _ in range(int(numOfPictures/picsPerRep))]
     transAtomImages = [np.zeros(rawData[0].shape) for _ in range(int(numOfPictures/picsPerRep))]
