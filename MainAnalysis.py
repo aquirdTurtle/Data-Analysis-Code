@@ -225,9 +225,9 @@ def analyzeNiawgWave(fileIndicator, ftPts=None):
         return tPts, chan1, chan2, fftInfoC1, fftInfoC2
 
 
-def analyzeScatterData(fileNumber, atomLocs1, connected=False, loadPic=1, transferPic=2, picsPerRep=3,
-                       subtractEdgeCounts=True, histSecondPeakGuess=False, manualThreshold=None,
-                       normalizeForLoadingRate=False, **transferOrganizeArgs):
+def analyzeScatterData( fileNumber, atomLocs1, connected=False, loadPic=1, transferPic=2, picsPerRep=3,
+                        subtractEdgeCounts=True, histSecondPeakGuess=False, manualThreshold=None,
+                        normalizeForLoadingRate=False, **transferOrganizeArgs ):
     """
         does all the post-selection conditions and only one import of the data. previously I did this by importing the data
         for each condition.
@@ -348,6 +348,7 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
             # using loc2 is important here.
             transPixelCounts[i] = getAtomCountsData( rawData, picsPerRep, transPic, loc2, subtractEdges=subtractEdgeCounts )
             transThresholds[i] = getThresholds( transPixelCounts[i], 5, manualThreshold, rigorous=rigorousThresholdFinding )
+        # 
         allInitPicCounts[i]  = normalizeData(groupedData, loc1, initPic, picsPerRep, borders_init)
         allTransPicCounts[i] = normalizeData(groupedData, loc2, transPic, picsPerRep, borders_trans)
         allInitAtoms[i], allTransAtoms[i] = getSurvivalBoolData(allInitPicCounts[i], allTransPicCounts[i], initThresholds[i].t, transThresholds[i].t)
@@ -594,9 +595,6 @@ def standardAssemblyAnalysis(fileNumber, atomLocs1, assemblyPic, atomLocs2=None,
     for i, (loc1, loc2) in enumerate(zip(atomLocs1, atomLocs2)):
         loadPicData[i]     = normalizeData(groupedData, loc1, loadPic,     picsPerRep, borders_load)
         assemblyPicData[i] = normalizeData(groupedData, loc2, assemblyPic, picsPerRep, borders_assembly)
-        atomCounts[i] = arr([])
-        for pic1, pic2 in zip(loadPicData[i], assemblyPicData[i]):
-            atomCounts[i] = np.append(atomCounts[i], [pic1, pic2])
         bins[i], binnedData[i] = getBinData(10, loadPicData[i])
         guess1, guess2 = guessGaussianPeaks(bins[i], binnedData[i])
         guess = arr([max(binnedData[i]), guess1, 30, max(binnedData[i]) * 0.75,
@@ -609,6 +607,9 @@ def standardAssemblyAnalysis(fileNumber, atomLocs1, assemblyPic, atomLocs2=None,
         for point1, point2 in zip(loadPicData[i], assemblyPicData[i]):
             loadAtoms[i].append(point1 > thresholds[i])
             assemblyAtoms[i].append(point2 > thresholds[i])
+        atomCounts[i] = arr([])
+        for pic1, pic2 in zip(loadPicData[i], assemblyPicData[i]):
+            atomCounts[i] = np.append(atomCounts[i], [pic1, pic2])
     # now analyze the atom data
     enhancement = getEnhancement(loadAtoms, assemblyAtoms)
     enhancementStats = getEnsembleStatistics(enhancement, repetitions)

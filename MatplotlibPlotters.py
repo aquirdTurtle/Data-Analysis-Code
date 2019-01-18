@@ -276,7 +276,6 @@ def singleImage(data, accumulations=1, loadType='andor', bg=arr([0]), title='Sin
 
 def Survival(fileNumber, atomLocs, **TransferArgs):
     """
-
     :param fileNumber:
     :param atomLocs:
     :param TransferArgs: See corresponding transfer function for valid TransferArgs.
@@ -344,7 +343,7 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
         subplt.grid(grid, color='#AAAAAA', which='Major')
         subplt.grid(grid, color='#090909', which='Minor')
         for item in ([subplt.title, subplt.xaxis.label, subplt.yaxis.label] + subplt.get_xticklabels() + subplt.get_yticklabels()):
-            item.set_fontsize(10)
+            item.set_fontsize(fs)
     
     centers = []
     colors, colors2 = getColors(len(atomLocs1) + 1)
@@ -364,9 +363,8 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
             centers.append(module.getCenter(fit['vals']))
             mainPlot.plot(fit['x'], fit['nom'], color=colors[i], alpha=0.5)
     mainPlot.xaxis.set_label_coords(0.95, -0.1)
-    cols = 4 if longLegend else 10
     if legendOption:
-        mainPlot.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), fancybox=True, ncol=cols, prop={'size': 12})
+        mainPlot.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), fancybox=True, ncol = 4 if longLegend else 10, prop={'size': 12})
     # Init Population Plot
     for i, loc in enumerate(atomLocs1):
         initPopPlot.plot(key, initPopulation[i], ls='', marker='o', color=colors[i], alpha=0.3)
@@ -375,7 +373,7 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
     for plot in [mainPlot, initPopPlot]:
         if not min(key) == max(key):
             r = max(key) - min(key)
-            plot.set_xlim(left=min(key) - r / len(key), right=max(key)+ r / len(key))
+            plot.set_xlim(left = min(key) - r / len(key), right = max(key) + r / len(key))
         plot.set_ylim({0, 1})
     # ### Count Series Plot
     for i, loc in enumerate(atomLocs1):
