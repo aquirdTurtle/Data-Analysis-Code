@@ -1,6 +1,3 @@
-__version__ = "1.4"
-"""
-"""
 
 from numpy import array as arr
 from pandas import DataFrame
@@ -305,7 +302,6 @@ def analyzeScatterData( fileNumber, atomLocs1, connected=False, loadPic=1, trans
         survivalFits[i], _ = fitWithModule(fitters.linear, key, data.flatten(), errs=err.flatten())
     return key, psSurvivals, psErrors, fitInfo, fitFinished, survivalData, survivalErrs, survivalFits, atomLocs1
 
-
 def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, manualThreshold=None,
                               fitModules=None, histSecondPeakGuess=None, outputMma=False, varyingDim=None,
                               subtractEdgeCounts=True, initPic=0, transPic=1, postSelectionCondition=None,
@@ -320,35 +316,25 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
     if rerng:
         initPic, transPic, picsPerRep = 1, 2, 3
     ( rawData, groupedData, atomLocs1, atomLocs2, keyName, repetitions, 
-      key ) = organizeTransferData( fileNumber, atomLocs1, atomLocs2,  picsPerRep=picsPerRep, varyingDim=varyingDim, 
-                                    **organizerArgs )
-    numOfPictures = groupedData.shape[0] * groupedData.shape[1]
-    allPics = getAvgPics(groupedData, picsPerRep=picsPerRep)
-    avgPics = [allPics[initPic], allPics[transPic]]    
-    if type(atomLocs1) == type(9):
-        res = np.unravel_index(avgPics[0].flatten().argsort()[-atomLocs1:][::-1],avgPics[0].shape)
-        atomLocs1 = [x for x in zip(res[0],res[1])]
-    if type(atomLocs2) == type(9):
-        res = np.unravel_index(avgPics[1].flatten().argsort()[-atomLocs2:][::-1],avgPics[1].shape)
-        atomLocs2 = [x for x in zip(res[0],res[1])]
-    if subtractEdgeCounts:
-        borders_init = getAvgBorderCount(groupedData, initPic, picsPerRep)
-        borders_trans = getAvgBorderCount(groupedData, transPic, picsPerRep)
-    else:
-        borders_init = borders_trans = np.zeros(groupedData.shape[0]*groupedData.shape[1])
-        
+      key, numOfPictures, avgPics ) = organizeTransferData( fileNumber, atomLocs1, atomLocs2,  picsPerRep=picsPerRep, varyingDim=varyingDim,
+                                                              initPic=initPic, transPic=transPic, **organizerArgs )
     (initPixelCounts, initThresholds, transPixelCounts, transThresholds) =  arr([[None] * len(atomLocs1)] * 4)
-    (allInitPicCounts, allTransPicCounts, allInitAtoms, allTransAtoms) = arr([[None] * len(atomLocs1)] * 4)
     for i, (loc1, loc2) in enumerate(zip(atomLocs1, atomLocs2)):
         initPixelCounts[i] = getAtomCountsData( rawData, picsPerRep, initPic, loc1, subtractEdges=subtractEdgeCounts )
         initThresholds[i] = getThresholds( initPixelCounts[i], 5, manualThreshold, rigorous=rigorousThresholdFinding )        
         if transThresholdSame:
             transThresholds[i] = copy(initThresholds[i])
         else: 
-            # using loc2 is important here.
             transPixelCounts[i] = getAtomCountsData( rawData, picsPerRep, transPic, loc2, subtractEdges=subtractEdgeCounts )
             transThresholds[i] = getThresholds( transPixelCounts[i], 5, manualThreshold, rigorous=rigorousThresholdFinding )
-        # 
+     
+    if subtractEdgeCounts:
+        borders_init = getAvgBorderCount(groupedData, initPic, picsPerRep)
+        borders_trans = getAvgBorderCount(groupedData, transPic, picsPerRep)
+    else:
+        borders_init = borders_trans = np.zeros(groupedData.shape[0]*groupedData.shape[1])
+    (allInitPicCounts, allTransPicCounts, allInitAtoms, allTransAtoms) = arr([[None] * len(atomLocs1)] * 4)
+    for i, (loc1, loc2) in enumerate(zip(atomLocs1, atomLocs2)):
         allInitPicCounts[i]  = normalizeData(groupedData, loc1, initPic, picsPerRep, borders_init)
         allTransPicCounts[i] = normalizeData(groupedData, loc2, transPic, picsPerRep, borders_trans)
         allInitAtoms[i], allTransAtoms[i] = getSurvivalBoolData(allInitPicCounts[i], allTransPicCounts[i], initThresholds[i].t, transThresholds[i].t)
@@ -415,7 +401,6 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
         for i, (loc, module) in enumerate(zip(locationsList, fitModules)):
             fits[i], _ = fitWithModule(module, key, transAtomsVarAvg[i], guess=fitguess[i])
         avgFit, _ = fitWithModule(fitModules[-1], key, avgTransData, guess=fitguess[-1])
-        
     
     initAtomImages = [np.zeros(rawData[0].shape) for _ in range(int(numOfPictures/picsPerRep))]
     transAtomImages = [np.zeros(rawData[0].shape) for _ in range(int(numOfPictures/picsPerRep))]
@@ -437,7 +422,7 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
 
 def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, analyzeTogether=False, 
                                 manualThreshold=None, fitModules=[None], keyInput=None, fitIndv=False, subtractEdges=True,
-                                keyConversion=None, quiet=False, dataRange=None, picSlice=None):
+                                keyConversion=None, quiet=False, dataRange=None, picSlice=None, keyOffset=0):
     """
     keyConversion should be a calibration which takes in a single value as an argument and converts it.
         It needs a calibration function f() and a units function units()
@@ -446,37 +431,15 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
     """
     atomLocations = unpackAtomLocations(atomLocations)
     with ExpFile(fileNum) as f:
-        rawData, keyName, key, repetitions = f.pics, f.key_name, f.key, f.reps 
+        rawData, keyName, hdf5Key, repetitions = f.pics, f.key_name, f.key, f.reps 
         if not quiet:
             f.get_basic_info()
     numOfPictures = rawData.shape[0]
     numOfVariations = int(numOfPictures / (repetitions * picsPerRep))
-    # handle defaults.
-    if numOfVariations == 1:
-        if key is None:
-            key = arr([0])
-    else:
-        if key is None:
-            key = arr([])
-    if keyInput is not None:
-        key = keyInput
-    if len(arr(atomLocations).shape) == 1:
-        atomLocations = [atomLocations]
-    if not len(key) == numOfVariations:
-        raise ValueError("ERROR: The Length of the key doesn't match the data found. "
-                         "Did you want to use a transfer-based function instead of a population-based function? Key:", 
-                         len(key), "vars:", numOfVariations)
-    if keyConversion is not None:
-        key = [keyConversion.f(k) for k in key]
-        keyName += "; " + keyConversion.units()
+    key = handleKeyModifications(hdf5Key, numOfVariations, keyInput=keyInput, keyOffset=keyOffset, groupData=False, keyConversion=keyConversion )
     # ## Initial Data Analysis
     s = rawData.shape
-    if analyzeTogether:
-        newShape = (1, s[0], s[1], s[2])
-    else:
-        newShape = (numOfVariations, repetitions * picsPerRep, s[1], s[2])
-    # Split the rawData by variations
-    groupedData = rawData.reshape(newShape)
+    groupedData = rawData.reshape((1, s[0], s[1], s[2]) if analyzeTogether else (numOfVariations, repetitions * picsPerRep, s[1], s[2]))
     key, groupedData = applyDataRange(dataRange, groupedData, key)
     if picSlice is not None:
         rawData = rawData[picSlice[0]:picSlice[1]]
@@ -498,7 +461,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
     fullAtomData = arr(fullAtomData.tolist())
     fullPixelCounts = arr(fullPixelCounts.tolist())
     if not quiet:
-        print('Analyzing Variation... ', end='')    
+        print('Analyzing Variation... ', end='')
     (variationPixelData, variationAtomData, atomCount) = arr([[[None for _ in atomLocations] for _ in groupedData] for _ in range(3)])
     for dataInc, data in enumerate(groupedData):
         if not quiet:

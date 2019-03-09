@@ -1,4 +1,3 @@
-__version__ = "1.1"
 
 import time
 from pandas import DataFrame
