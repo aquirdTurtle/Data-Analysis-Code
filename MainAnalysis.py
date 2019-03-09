@@ -398,7 +398,8 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
     for varData in allAtomsListByVar:
         p = np.mean(varData)
         transVarAvg.append(p)
-        transVarErr.append(np.sqrt(p*(1-p)/len(varData)))
+        transVarErr.append(ah.jeffreyInterval(p, len(varData.flatten())))
+        #transVarErr.append(np.sqrt(p*(1-p)/len(varData)))
        
     fits = [None] * len(locationsList)
     if len(fitModules) == 1: 
@@ -435,7 +436,7 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
 
 
 def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, analyzeTogether=False, 
-                                manualThreshold=None, fitModules=None, keyInput=None, fitIndv=False, subtractEdges=True,
+                                manualThreshold=None, fitModules=[None], keyInput=None, fitIndv=False, subtractEdges=True,
                                 keyConversion=None, quiet=False, dataRange=None, picSlice=None):
     """
     keyConversion should be a calibration which takes in a single value as an argument and converts it.
@@ -507,13 +508,20 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
             variationPixelData[dataInc][i] = getAtomCountsData( data, picsPerRep, whichPic, atomLoc, subtractEdges=subtractEdges )
             variationAtomData[dataInc][i], atomCount[dataInc][i] = getAtomBoolData(variationPixelData[dataInc][i], thresholds[i].t)            
             totalAtomData.append(variationAtomData[dataInc][i])
-            allAtomPicData.append(np.mean(variationAtomData[dataInc][i]))
-            avgPopulation[i].append(np.mean(variationAtomData[dataInc][i]))
-            avgPopulationErr[i].append(np.std(variationAtomData[dataInc][i]) / np.sqrt(len(variationAtomData[dataInc][i])))
-        allPopulation[dataInc] = np.mean(allAtomPicData)
-        allPopulationErr[dataInc] = np.std(allAtomPicData) / np.sqrt(len(allAtomPicData))
+            mVal = np.mean(variationAtomData[dataInc][i])
+            allAtomPicData.append(mVal)
+            avgPopulation[i].append(mVal)
+            # avgPopulationErr[i].append(np.std(variationAtomData[dataInc][i]) / np.sqrt(len(variationAtomData[dataInc][i])))
+            avgPopulationErr[i].append(ah.jeffreyInterval(mVal, len(variationAtomData[dataInc][i])))
+            # np.std(variationAtomData[dataInc][i]) / np.sqrt(len(variationAtomData[dataInc][i])))
+        meanVal = np.mean(allAtomPicData)
+        allPopulation[dataInc] = meanVal
+        allPopulationErr[dataInc] = ah.jeffreyInterval(meanVal, len(variationAtomData[dataInc][i])*len(arr(allAtomPicData).flatten()))
+        # Old error: np.std(allAtomPicData) / np.sqrt(len(allAtomPicData))
     # 
     avgFits = None
+    if len(fitModules) == 1: 
+        fitModules = [fitModules[0] for _ in range(len(avgPopulation)+1)]
     if fitModules[0] is not None:
         if type(fitModules) != list:
             raise TypeError("ERROR: fitModules must be a list of fit modules. If you want to use only one module for everything,"
