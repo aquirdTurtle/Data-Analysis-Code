@@ -436,7 +436,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
             f.get_basic_info()
     numOfPictures = rawData.shape[0]
     numOfVariations = int(numOfPictures / (repetitions * picsPerRep))
-    key = handleKeyModifications(hdf5Key, numOfVariations, keyInput=keyInput, keyOffset=keyOffset, groupData=False, keyConversion=keyConversion )
+    key = ah.handleKeyModifications(hdf5Key, numOfVariations, keyInput=keyInput, keyOffset=keyOffset, groupData=False, keyConversion=keyConversion )
     # ## Initial Data Analysis
     s = rawData.shape
     groupedData = rawData.reshape((1, s[0], s[1], s[2]) if analyzeTogether else (numOfVariations, repetitions * picsPerRep, s[1], s[2]))

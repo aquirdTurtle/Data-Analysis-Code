@@ -214,11 +214,11 @@ def handleKeyModifications(hdf5Key, numVariations, keyInput=None, keyOffset=0, g
         key -= keyOffset
     if keyConversion is not None:
         key = [keyConversion.f(k) for k in key]
-        keyName += "; " + keyConversion.units()
-    if len(key) != numOfVariations:
+        #keyName += "; " + keyConversion.units()
+    if len(key) != numVariations:
         raise ValueError("ERROR: The Length of the key doesn't match the data found. "
                          "Did you want to use a transfer-based function instead of a population-based function? Key:", 
-                         len(key), "vars:", numOfVariations)
+                         len(key), "vars:", numVariations)
     return key
 
 
