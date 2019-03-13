@@ -11,3 +11,14 @@ Videos/
 # created by jupyter.
 .ipynb_checkpoints/
 !Grey-Loading-Paper/*
+*.png
+*.svg
+*.csv
+*.pdf
+*.h5
+*.nb
+*.gif
+*.wct
+*.txt
+*.jpeg
+*.tex
