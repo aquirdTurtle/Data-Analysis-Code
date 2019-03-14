@@ -36,6 +36,14 @@ from TimeTracker import TimeTracker
 import scipy.ndimage as ndimage
 import scipy.ndimage.filters as filters
 
+from statsmodels.stats.proportion import proportion_confint as confidenceInterval
+
+def jeffreyInterval(m,num):
+    # sigma = 1-0.6827 gives the standard "1 sigma" intervals.
+    #print(round(m*num),end='')
+    i1, i2 = confidenceInterval(round(m*num), num, method='jeffreys', alpha=1-0.6827)
+    return (m - i1, i2 - m)
+
 
 def findImageMaxima(im, neighborhood_size=20, threshold=1):
     data_max = filters.maximum_filter(im, neighborhood_size)
@@ -206,11 +214,11 @@ def handleKeyModifications(hdf5Key, numVariations, keyInput=None, keyOffset=0, g
         key -= keyOffset
     if keyConversion is not None:
         key = [keyConversion.f(k) for k in key]
-        keyName += "; " + keyConversion.units()
-    if len(key) != numOfVariations:
+        #keyName += "; " + keyConversion.units()
+    if len(key) != numVariations:
         raise ValueError("ERROR: The Length of the key doesn't match the data found. "
                          "Did you want to use a transfer-based function instead of a population-based function? Key:", 
-                         len(key), "vars:", numOfVariations)
+                         len(key), "vars:", numVariations)
     return key
 
 
@@ -309,10 +317,10 @@ def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias, sign=1, hFreqs=None, vF
     print('Expected new Depth Relative Variation:', round_sig(100*np.std(modDepth)/np.mean(prevDepth),4),'%')
     print('New Vertical Biases \n[',end='')
     for v in new_V_Bias:
-        print(round_sig(v,4), ',', end=' ')
+        print(v, ',', end=' ')
     print(']\nNew Horizontal Biases \n[', end='')
     for h in new_H_Bias:
-        print(round_sig(h,4), ',', end=' ')
+        print(h, ',', end=' ')
     print(']\n')
     if hFreqs is None:
         return
@@ -1108,7 +1116,10 @@ def orderData(data, key, keyDim=None, otherDimValues=None):
                 finData.append(arr(d2))
         return arr(finData), arr(finKey), arr(otherDimValues)
     else:
-        key, data = list(zip(*sorted(zipObj, key=lambda x: x[0])))
+        if otherDimValues is None:
+            key, data = list(zip(*sorted(zipObj, key=lambda x: x[0])))
+        else:
+            key, data, otherDimValues = list(zip(*sorted(zipObj, key=lambda x: x[0])))
     return arr(data), arr(key), arr(otherDimValues)
 
 
@@ -1604,24 +1615,32 @@ def getTransferEvents_slow(pic1Atoms, pic2Atoms):
 def getTransferStats(transList, repsPerVar):
     # Take the previous data, which includes entries when there was no atom in the first picture, and convert it to
     # an array of just loaded and survived or loaded and died.
+    numVars = int(transList.size / repsPerVar)
     transferAverages = np.array([])
     loadingProbability = np.array([])
-    transferErrors = np.array([])
+    #transferErrors = np.array([])
+    transferErrors = np.zeros([numVars,2])
     if transList.size < repsPerVar:
         # probably a single variation that has been sliced to cut out bad data.
         repsPerVar = transList.size
-    for variationInc in range(0, int(transList.size / repsPerVar)):
+    for variationInc in range(0, numVars):
         transVarList = arr([x for x in transList[variationInc * repsPerVar:(variationInc+1) * repsPerVar] if x != -1])
         if transVarList.size == 0:
             # catch the case where there's no relevant data, typically if laser becomes unlocked.
-            transferErrors = np.append(transferErrors, [0])
+            #transferErrors = np.append(transferErrors, [(0,0)])
+            transferErrors[variationInc] = [0,0]
             loadingProbability = np.append(loadingProbability, [0])
             transferAverages = np.append(transferAverages, [0])
         else:
             # normal case
-            transferErrors = np.append(transferErrors, np.std(transVarList)/np.sqrt(transVarList.size))
+            meanVal = np.average(transVarList)
+            #print('i',jeffreyInterval(meanVal, len(transVarList)))
+            #transferErrors = np.append(transferErrors, jeffreyInterval(meanVal, len(transVarList)))
+            transferErrors[variationInc] = jeffreyInterval(meanVal, len(transVarList))
+            # old method
+            # transferErrors = np.append(transferErrors, np.std(transVarList)/np.sqrt(transVarList.size))
             loadingProbability = np.append(loadingProbability, transVarList.size / repsPerVar)
-            transferAverages = np.append(transferAverages, np.average(transVarList))    
+            transferAverages = np.append(transferAverages, meanVal)    
     return transferAverages, transferErrors, loadingProbability
 
 
@@ -1653,9 +1672,11 @@ def getTransferStats_fast(transferData, repetitionsPerVariation):
             transferAverages = np.append(transferAverages, [0])
         else:
             # normal case
-            transferErrors = np.append(transferErrors, np.std(transferList)/np.sqrt(transferList.size))
+            meanVal = np.average(transferList)
+            transferErrors = np.append(transferErrors, jeffreyInterval(meanVal, len(transVarList)))
+            #transferErrors = np.append(transferErrors, np.std(transferList)/np.sqrt(transferList.size))
             loadingProbability = np.append(loadingProbability, transferList.size / repetitionsPerVariation)
-            transferAverages = np.append(transferAverages, np.average(transferList))
+            transferAverages = np.append(transferAverages, meanVal)
     return transferAverages, transferErrors, loadingProbability
 
 

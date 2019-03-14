@@ -355,12 +355,17 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
                else r"[%d,%d]$\rightarrow$[%d,%d] " % (atomLocs1[i][0], atomLocs1[i][1], atomLocs2[i][0], atomLocs2[i][1]))
         if longLegend:
             leg += (typeName + " % = " + str(round_sig(transferData[i][0])) + "$\pm$ " + str(round_sig(transferErrs[i][0])))
-        mainPlot.errorbar(key, transferData[i], yerr=transferErrs[i], color=colors[i], ls='',
+        unevenErrs = [[err[0] for err in transferErrs[i]], [err[1] for err in transferErrs[i]]]
+        print(arr(unevenErrs).shape)
+        print(transferData[i].shape)
+        print(key.shape)
+        mainPlot.errorbar(key, transferData[i], yerr=unevenErrs, color=colors[i], ls='',
                           capsize=6, elinewidth=3, label=leg, alpha=0.3, marker=markers[i%len(markers)], markersize=10)
         if module is not None and showFitDetails and fit['vals'] is not None:
             #if fitModules.center() is not None:
             centers.append(module.getCenter(fit['vals']))
             mainPlot.plot(fit['x'], fit['nom'], color=colors[i], alpha=0.5)
+    print('hi')
     mainPlot.xaxis.set_label_coords(0.95, -0.1)
     if legendOption:
         mainPlot.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), fancybox=True, ncol = 4 if longLegend else 10, prop={'size': 12})
@@ -392,11 +397,14 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
         for loc, c in zip(locs, colors):
             circ = Circle((loc[1], loc[0]), 0.2, color=c)
             plt.add_artist(circ)
-    (_, caps, _) = mainPlot.errorbar( key, avgTransferData, yerr=avgTransferErr, color="#BBBBBB", ls='',
+    
+    unevenErrs = [[err[0] for err in avgTransferErr], [err[1] for err in avgTransferErr]]
+    (_, caps, _) = mainPlot.errorbar( key, avgTransferData, yerr=unevenErrs, color="#BBBBBB", ls='',
                        marker='o', capsize=12, elinewidth=5, label='Atom-Avg', markersize=10 )
     for cap in caps:
         cap.set_markeredgewidth(1.5)
-    (_, caps, _) = mainPlot.errorbar( key, transVarAvg, yerr=transVarErr, color=avgColor, ls='',
+    unevenErrs = [[err[0] for err in transVarErr], [err[1] for err in transVarErr]]
+    (_, caps, _) = mainPlot.errorbar( key, transVarAvg, yerr=unevenErrs, color=avgColor, ls='',
                        marker='o', capsize=12, elinewidth=5, label='Event-Avg', markersize=10 )
     for cap in caps:
         cap.set_markeredgewidth(1.5)
@@ -408,12 +416,12 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
             for f in getFitsDataFrame(fits, fitModules, avgFit):
                 display(f)
     if fitModules[0] is not None and showFitCenterPlot:
-        figure()
+        f, ax = subplots()
         fitCenterPic, vmin, vmax = genAvgDiscrepancyImage(centers, avgPics[0].shape, atomLocs1)
-        imshow(fitCenterPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower')
-        title('Fit-Centers (white is average)')
-        grid(False)
-        colorbar()
+        im = ax.imshow(fitCenterPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower')
+        ax.set_title('Fit-Centers (white is average)')
+        ax.grid(False)
+        f.colorbar(im)
     tt.clock('After-Main-Plots')
     avgTransferPic = None
     if showImagePlots:
@@ -456,8 +464,10 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
         tt.clock('After-Image-Plots')
     if plotIndvHists:
         if type(atomLocs1_orig[-1]) == int:
+            print('hiiiii')
             shape = (atomLocs1_orig[-1], atomLocs1_orig[-2])
         else:
+            print('what')
             shape = (10,10)
         plotThresholdHists(initThresholds, colors, extra=avgTransfers, extraname=r"$\rightarrow$:", thresholds_2=transThresholds, shape=shape)
         tt.clock('After-Indv-Hists')
@@ -498,11 +508,14 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     This routine is designed for analyzing experiments with only one picture per cycle. Typically
     These are loading exeriments, for example. There's no survival calculation.
     """
+    atomLocs_orig = atomLocations
+    avgColor='w'
     res = standardPopulationAnalysis(fileNum, atomLocations, whichPic, picsPerRep, **StandardArgs)
     (locCounts, thresholds, avgPic, key, allPopsErr, allPops, avgPop, avgPopErr, fits,
-     fitModule, keyName, atomData, rawData, atomLocations, avgFits, atomImages,
+     fitModules, keyName, atomData, rawData, atomLocations, avgFits, atomImages,
      totalAvg, totalErr) = res
     colors, _ = getColors(len(atomLocations) + 1)
+    
     if not show:
         return key, allPops, allPopsErr, locCounts, atomImages, thresholds, avgPop
     if legendOption is None and len(atomLocations) < 50:
@@ -537,25 +550,28 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         key1 = np.sort(key1)
         key2 = np.sort(key2)
     else:
-        for i, (atomLoc, fit) in enumerate(zip(atomLocations, fits)):
+        for i, (atomLoc, fit, module) in enumerate(zip(atomLocations, fits, fitModules)):
             leg = r"[%d,%d] " % (atomLoc[0], atomLoc[1])
             if longLegend:
-                leg += (typeName + " % = " + str(round_sig(allPops[i][0])) + "$\pm$ "
-                        + str(round_sig(allPopsErr[i][0])))
-            mainPlot.errorbar(key, allPops[i], yerr=allPopsErr[i], color=colors[i], ls='',
+                pass
+                #leg += (typeName + " % = " + str(round_sig(allPops[i][0])) + "$\pm$ "
+                #        + str(round_sig(allPopsErr[i][0])))
+                
+            unevenErrs = [[err[0] for err in allPopsErr[i]], [err[1] for err in allPopsErr[i]]]
+            mainPlot.errorbar(key, allPops[i], yerr=unevenErrs, color=colors[i], ls='',
                               capsize=6, elinewidth=3, label=leg, alpha=mainAlpha, marker=markers[i%len(markers)],markersize=5)
-            if fitModule is not None:
+            if module is not None:
                 if fit == [] or fit['vals'] is None:
                     continue
-                centerIndex = fitModule.center()
+                centerIndex = module.center()
                 if centerIndex is not None:
                     centers.append(fit['vals'][centerIndex])
                 mainPlot.plot(fit['x'], fit['nom'], color=colors[i], alpha = 0.5)
-        if fitModule is not None:
+        if fitModules[-1] is not None:
             if avgFits['vals'] is None:
                 print('Avg Fit Failed!')
             else:
-                centerIndex = fitModule.center()
+                centerIndex = fitModules[-1].center()
                 mainPlot.plot(avgFits['x'], avgFits['nom'], color=avgColor, alpha = 1,markersize=5)
         mainPlot.grid(True, color='#AAAAAA', which='Major')
         mainPlot.grid(True, color='#090909', which='Minor')
@@ -600,7 +616,6 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         countPlot.plot(locCounts[i], color=colors[i], ls='', marker='.', markersize=1, alpha=0.3)
         countPlot.axhline(thresholds[i].t, color=colors[i], alpha=0.3)
 
-
     countPlot.set_xlabel("Picture #")
     countPlot.set_ylabel("Camera Signal")
     countPlot.set_title("Thresh.=" + str(round_sig(thresholds[i].t)), fontsize=10) #", Fid.="
@@ -635,16 +650,17 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     for loc in atomLocations:
         circ = Circle((loc[1], loc[0]), 0.2, color='r')
         avgPlt.add_artist(circ)
+    avgPopErr = [[err[0] for err in avgPopErr], [err[1] for err in avgPopErr]]
     mainPlot.errorbar(key, avgPop, yerr=avgPopErr, color=avgColor, ls='',
              marker='o', capsize=6, elinewidth=3, label='Avg', markersize=5)
-    if fitModule is not None and showFitDetails:
+    if fitModules is not [None] and showFitDetails:
         mainPlot.plot(avgFit['x'], avgFit['nom'], color=avgColor, ls=':')
-        fits_df = getFitsDataFrame(fits, fitModule, avgFit,markersize=5)
+        fits_df = getFitsDataFrame(fits, fitModules, avgFit,markersize=5)
         display(fits_df)
-    elif fitModule is not None:
-        for val, name in zip(avgFits['vals'], fitModule.args()):
-            print(name, val)
-    if fitModule is not None and showFitCenterPlot and fits[0] != []:
+    #elif fitModules is not [None]:
+    #    for val, name in zip(avgFits['vals'], fitModule.args()):
+    #        print(name, val)
+    if fitModules is not [None] and showFitCenterPlot and fits[0] != []:
         figure()
         fitCenterPic, vmin, vmax = genAvgDiscrepancyImage(centers, avgPic.shape, atomLocations)
         imshow(fitCenterPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower')
@@ -678,8 +694,8 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     for s in allPops:
         avgPops.append(np.mean(s))
     if plotIndvHists:
-        if type(atomLocations[-1]) == int:
-            shape = (atomLocations[-1], atomLocations[-2])
+        if type(atomLocs_orig[-1]) == int:
+            shape = (atomLocs_orig[-1], atomLocs_orig[-2])
         else:
             shape = (10,10)
         plotThresholdHists(thresholds, colors, extra=avgPops, extraname="L:", shape=shape)
@@ -692,7 +708,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
                 f.write(str(thresh) + ' ') 
     """
     return { 'Key': key, 'All_Populations': allPops, 'All_Populations_Error': allPopsErr, 'Pixel_Counts':locCounts, 'Atom_Images':atomImages, 
-             'Thresholds':thresholds, 'Atom_Data':atomData, 'Raw_Data':rawData }
+             'Thresholds':thresholds, 'Atom_Data':atomData, 'Raw_Data':rawData, 'Average_Population': avgPop, 'Average_Population_Error': avgPopErr }
 
 
 def Assembly(fileNumber, atomLocs1, pic1Num, partialCredit=False, **standardAssemblyArgs):
