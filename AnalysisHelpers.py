@@ -259,8 +259,8 @@ def organizeTransferData( fileNumber, loadLocs, transLocs, key=None, window=None
     numOfPictures = groupedData.shape[0] * groupedData.shape[1]
     allAvgPics = getAvgPics(groupedData, picsPerRep=picsPerRep)
     avgPics = [allAvgPics[initPic], allAvgPics[transPic]]
-    atomLocs1 = unpackAtomLocations(atomLocs1, avgPic=avgPics[0])
-    atomLocs2 = unpackAtomLocations(atomLocs2, avgPic=avgPics[1])
+    atomLocs1 = unpackAtomLocations(loadLocs, avgPic=avgPics[0])
+    atomLocs2 = unpackAtomLocations(transLocs, avgPic=avgPics[1])
     return rawData, groupedData, atomLocs1, atomLocs2, keyName, repetitions, key, numOfPictures, avgPics
 
 
