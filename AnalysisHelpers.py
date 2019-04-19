@@ -30,6 +30,7 @@ from fitters.Gaussian import double as double_gaussian, gaussian_2d, arb_2d_sum
 import dataclasses as dc
 import MainAnalysis as ma
 
+import ExpFile as exp
 from ExpFile import ExpFile, dataAddress
 from TimeTracker import TimeTracker
 
@@ -37,6 +38,9 @@ import scipy.ndimage as ndimage
 import scipy.ndimage.filters as filters
 
 from statsmodels.stats.proportion import proportion_confint as confidenceInterval
+
+
+
 
 def jeffreyInterval(m,num):
     # sigma = 1-0.6827 gives the standard "1 sigma" intervals.
@@ -204,8 +208,7 @@ def parseRearrangeInfo(addr, limitedMoves=-1):
 
 def handleKeyModifications(hdf5Key, numVariations, keyInput=None, keyOffset=0, groupData=False, keyConversion=None ):
     key = None
-    if keyInput is None:
-        key = hdf5Key
+    key = hdf5Key if keyInput is None else keyInput
     if key is None: 
         key = arr([0]) if numVariations == 1 else arr([])
     if groupData:
@@ -222,7 +225,7 @@ def handleKeyModifications(hdf5Key, numVariations, keyInput=None, keyOffset=0, g
     return key
 
 
-def organizeTransferData( fileNumber, loadLocs, transLocs, key=None, window=None, xMin=None, xMax=None, yMin=None,
+def organizeTransferData( fileNumber, initLocs, transLocs, key=None, window=None, xMin=None, xMax=None, yMin=None,
                           yMax=None, dataRange=None, keyOffset=0, dimSlice=None, varyingDim=None, groupData=False,
                           quiet=False, picsPerRep=2, repRange=None, initPic=0, transPic=1, keyConversion=None ):
     """
@@ -259,8 +262,8 @@ def organizeTransferData( fileNumber, loadLocs, transLocs, key=None, window=None
     numOfPictures = groupedData.shape[0] * groupedData.shape[1]
     allAvgPics = getAvgPics(groupedData, picsPerRep=picsPerRep)
     avgPics = [allAvgPics[initPic], allAvgPics[transPic]]
-    atomLocs1 = unpackAtomLocations(atomLocs1, avgPic=avgPics[0])
-    atomLocs2 = unpackAtomLocations(atomLocs2, avgPic=avgPics[1])
+    atomLocs1 = unpackAtomLocations(initLocs, avgPic=avgPics[0])
+    atomLocs2 = unpackAtomLocations(transLocs, avgPic=avgPics[1])
     return rawData, groupedData, atomLocs1, atomLocs2, keyName, repetitions, key, numOfPictures, avgPics
 
 
@@ -580,16 +583,18 @@ def fitPictures(pictures, dataRange, guessSigma_x=1, guessSigma_y=1, quiet=False
     return np.array(fitParameters), np.array(fitErrors)
 
 
-def fitDoubleGaussian(binCenters, binnedData, fitGuess):
+def fitDoubleGaussian(binCenters, binnedData, fitGuess, quiet=False):
     try:
         fitVals, fitCovNotUsed = opt.curve_fit( lambda x, a1, a2, a3, a4, a5, a6:
                                             double_gaussian.f(x, a1, a2, a3, a4, a5, a6, 0),
                                             binCenters, binnedData, fitGuess )
     except opt.OptimizeWarning:
-        warn('Double-Gaussian Fit Failed!')
+        if not quiet:
+            print('Double-Gaussian Fit Failed! (Optimization Warning)')
         fitVals = (0, 0, 0, 0, 0, 0)
     except RuntimeError:
-        warn('Double-Gaussian Fit Failed!')
+        if not quiet:
+            print('Double-Gaussian Fit Failed! (Runtime error)')
         fitVals = (0, 0, 0, 0, 0, 0)        
     return [*fitVals,0]
 
@@ -924,12 +929,12 @@ def assemblePlotData(rawData, dataMinusBg, dataMinusAverage, positions, waists, 
         ax1['ylabel'] = 'Camera Counts (single pixel)'
     countData['ax1'] = ax1
     ax1['data'] = {'data': waists}
-    ax1['ylabel'] = "Waist ($2\sigma$) (pixels)"
+    ax1['ylabel'] = r"Waist ($2\sigma$) (pixels)"
     if len(waistFits) == 0:
-        ax1['legendLabels'] = ["fit $w_x$", "fit $w_y$"]
+        ax1['legendLabels'] = [r"fit $w_x$", r"fit $w_y$"]
     else:
         print('...')
-        ax1['legendLabels'] = ["fit $w_x$", "fit $w_y$", 'Fitted X: ' + str(waistFits[0]),
+        ax1['legendLabels'] = [r"fit $w_x$", r"fit $w_y$", 'Fitted X: ' + str(waistFits[0]),
                                'Fitted Y: ' + str(waistFits[1])]
         fitYData = []
         xpts = np.linspace(min(key), max(key), 1000)
@@ -1259,7 +1264,7 @@ def getThresholds( picData, binWidth, manThreshold, rigorous=True ):
     if manThreshold is None:
         guess1, guess2 = guessGaussianPeaks( t.binCenters, t.binHeights )
         guess = arr([max(t.binHeights), guess1, gWidth, max(t.binHeights)*ampFac, guess2, gWidth])
-        t.fitVals = fitDoubleGaussian(t.binCenters, t.binHeights, guess)
+        t.fitVals = fitDoubleGaussian(t.binCenters, t.binHeights, guess, quiet=True)
         t.t, t.fidelity = calculateAtomThreshold(t.fitVals)
         t.rmsResidual = getNormalizedRmsDeviationOfResiduals(t.binCenters, t.binHeights, double_gaussian.f, t.fitVals)
         if rigorous:
@@ -1269,7 +1274,7 @@ def getThresholds( picData, binWidth, manThreshold, rigorous=True ):
                 g_r = binGuessIteration[r]
                 guess = arr([max(t.binHeights), guess1, gWidth, max(t.binHeights)*ampFac, g_r, gWidth])
                 t2 = copy(t)
-                t2.fitVals = fitDoubleGaussian(t2.binCenters, t2.binHeights, guess)
+                t2.fitVals = fitDoubleGaussian(t2.binCenters, t2.binHeights, guess, quiet=True)
                 t2.t, t2.fidelity = calculateAtomThreshold(t2.fitVals)
                 t2.rmsResidual = getNormalizedRmsDeviationOfResiduals(t2.binCenters, t2.binHeights, double_gaussian.f, t2.fitVals)
                 
@@ -1284,7 +1289,7 @@ def getThresholds( picData, binWidth, manThreshold, rigorous=True ):
     elif manThreshold=='auto_guess':
         guess = arr([max(t.binHeights), (max(t.rawData) + min(t.rawData))/4.0, gWidth,
                      max(t.binHeights)*0.5, 3*(max(t.rawData) + min(t.rawData))/4.0, gWidth])
-        t.fitVals = fitDoubleGaussian(t.binCenters, t.binHeights, guess)
+        t.fitVals = fitDoubleGaussian(t.binCenters, t.binHeights, guess, quiet=False)
         t.t, t.fidelity = calculateAtomThreshold(t.fitVals)
         t.rmsResidual = getNormalizedRmsDeviationOfResiduals(t.binCenters, t.binHeights, double_gaussian.f, t.fitVals)
     else:
@@ -1362,8 +1367,13 @@ def calculateAtomThreshold(fitVals):
     :param fitVals = [Amplitude1, center1, sigma1, amp2, center2, sigma2]
     """
     # difference between centers divided by sum of sigma?
-    TCalc = (fitVals[4] - fitVals[1])/(np.abs(fitVals[5]) + np.abs(fitVals[2]))
-    threshold = abs(fitVals[1] + TCalc * fitVals[2])
+    if fitVals[5] + fitVals[2] == 0:
+        return 200, 0
+    else:
+        TCalc = (fitVals[4] - fitVals[1])/(np.abs(fitVals[5]) + np.abs(fitVals[2]))
+        threshold = abs(fitVals[1] + TCalc * fitVals[2])
+    if np.isnan(threshold):
+        threshold = 200
     fidelity = getFidelity(threshold, fitVals)
     return threshold, fidelity
 

@@ -5,6 +5,7 @@ import cython
 @cython.cdivision(True)
 cdef double f_raw(double x, double k, double weight):
     """
+    double x, double k, double weight
     The raw function call, performs no checks on valid parameters..
     This function calculates p_k{x} = weight * e^(-k) * k^x / x!.
     :param x: argument of the Poisson distribution
@@ -31,9 +32,6 @@ def guess(key, values):
     :return:
     """
     
-def hi():
-    print('hi')
-
 def f(int x, int k, double weight):
     """
     The normal function call for this function. Performs checks on valid arguments, then calls the "raw" function.

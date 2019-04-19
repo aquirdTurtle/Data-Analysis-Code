@@ -6,6 +6,34 @@ import Miscellaneous as misc
 dataAddress = None
 
 
+def annotate(fileID=None):
+    rationale = input("Experiment Rationale:")
+    result = input("Experiment Result:")
+    with ExpFile() as f:
+        f.open_hdf5(fileID, openFlag='a')
+        if 'Experiment_Rationale' in f.f['Miscellaneous'].keys():
+            del f.f['Miscellaneous']['Experiment_Rationale']
+        dset = f.f['Miscellaneous'].create_dataset("Experiment_Rationale", shape=(1,), dtype="S"+str(len(rationale))) 
+        dset[0] = np.string_(rationale)
+        if 'Experiment_Result' in f.f['Miscellaneous'].keys():
+            del f.f['Miscellaneous']['Experiment_Result']
+        dset2 = f.f['Miscellaneous'].create_dataset("Experiment_Result", shape=(1,), dtype="S"+str(len(result))) 
+        dset2[0] = np.string_(result)
+
+def checkAnnotation(fileNum, force=True):
+    try:
+        with ExpFile(fileNum) as f:
+            if 'Experiment_Rationale' not in f.f['Miscellaneous'] or 'Experiment_Result' not in f.f['Miscellaneous']:
+                #pass
+                if force:
+                    raise RuntimeError('HDF5 File number ' + str(fileNum) + ' Has not been annotated. Please call exp.annotate() to annotate the file.')
+                else:
+                    print('HDF5 File number ' + str(fileNum) + ' Has not been annotated. Please call exp.annotate() to annotate the file.')
+    except OSError:
+        # failed to open file probably, nothing to annotate.
+        pass;
+
+            
 def setPath(day, month, year, repoAddress="J:\\Data repository\\New Data Repository"):
     """
     This function sets the location of where all of the data files are stored. It is occasionally called more
@@ -65,7 +93,7 @@ class ExpFile:
             return
             
     
-    def open_hdf5(self, fileID=None, useBase=False):
+    def open_hdf5(self, fileID=None, useBase=False, openFlag='r'):
         
         if type(fileID) == int:
             path = self.data_addr + "data_" + str(fileID) + ".h5"
@@ -74,7 +102,7 @@ class ExpFile:
             path = self.data_addr + fileID + ".h5"
         else:
             path = fileID
-        file = h5.File(path, 'r')
+        file = h5.File(path, openFlag)
         self.f = file
         return file
     
@@ -279,12 +307,22 @@ class ExpFile:
         print('Repetitions:', self.reps)
         print('Experiment started at (H:M:S) ', self.exp_start_time, ' on (Y-M-D)', self.exp_start_date)
         print('And ended at (H:M:S) ', self.exp_stop_time, ' on (Y-M-D)', self.exp_stop_date)
-        
+        if 'Experiment_Rationale' in self.f['Miscellaneous'].keys():
+            print('Experiment Rationale:', self.f['Miscellaneous']['Experiment_Rationale'][0].decode("utf-8") )
+        else:
+            print('Experiment Rationale: HDF5 NOT ANNOTATED: please call exp.Annotate() to annotate this file.')
+        if 'Experiment_Result' in self.f['Miscellaneous'].keys():
+            print('Experiment Result:', self.f['Miscellaneous']['Experiment_Result'][0].decode("utf-8") )
+        else:
+            print('Experiment Result: HDF5 NOT ANNOTATED: please call exp.Annotate() to annotate this file.')
+        #        self.__print_hdf5_obj(self.f['Master-Parameters']['Seq #1 Variables'],'')
+
     def get_experiment_time_and_date(self):
         start_date = ''.join([x.decode('UTF-8') for x in self.f['Miscellaneous']['Start-Date']])
         start_time = ''.join([x.decode('UTF-8') for x in self.f['Miscellaneous']['Start-Time']])
         stop_date = ''.join([x.decode('UTF-8') for x in self.f['Miscellaneous']['Stop-Date']])
         stop_time = ''.join([x.decode('UTF-8') for x in self.f['Miscellaneous']['Stop-Time']])
         return start_date, start_time, stop_date, stop_time
+        #return "","","",""
 
     
