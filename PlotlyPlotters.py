@@ -285,7 +285,7 @@ def Population(fileNum, atomLocations, showLoadingRate=True, showLoadingPic=Fals
 
     res = standardPopulationAnalysis(fileNum, atomLocations, whichPic, picsPerRep, **StandardArgs)
     (pic1Data, thresholds, avgPic, key, loadingRateErr, loadingRateList, allLoadingRate, allLoadingErr, loadFits,
-            fitModules, keyName, totalPic1AtomData, rawData, atomLocations, avgFits, atomImages, fitVals) = res 
+            fitModules, keyName, totalPic1AtomData, rawData, atomLocations, avgFits, atomImages, totalAvg, totalErr) = res 
     maxHeight = np.max(arr([np.histogram(data.flatten(), bins=histBins)[0] for data in pic1Data]).flatten())
 
     totalHist = []

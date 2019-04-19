@@ -105,7 +105,7 @@ def getMarkers():
     return ['o','v','<','>','^','*','x','+','D']
 
 
-def getColors(num, rgb=False):
+def getColors(num, rgb=False, cmStr='nipy_spectral'):
     """
     Get an array of colors, typically to use for plotting.
 
@@ -121,7 +121,7 @@ def getColors(num, rgb=False):
     #    cmapRGB = get_cmap(m, rowSize+1)
     #    for i in range(rowSize):
     #        c.append(cmapRGB(i+1)[:-1])
-    cmapRGB = get_cmap('nipy_spectral', num+1)
+    cmapRGB = get_cmap(cmStr, num+1)
     c = [cmapRGB(i)[:-1] for i in range(num+1)][:]
     c = c[1:]
     

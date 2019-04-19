@@ -64,6 +64,10 @@ def standardImages(data,
             rawData, _, _, _ = loadHDF5(data)
         elif loadType == 'scout' or  loadType == 'ace':
             rawData = loadCompoundBasler(data, loadType)
+        elif loadType == 'basler':
+            with exp.ExpFile() as f:
+                f.open_hdf5(data,True)
+                rawData = f.get_basler_pics()
         elif loadType == 'dataray':
             raise ValueError('Loadtype of "dataray" has become deprecated and needs to be reimplemented.')
         else:
@@ -306,11 +310,13 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
                               fitModules=None, histSecondPeakGuess=None, outputMma=False, varyingDim=None,
                               subtractEdgeCounts=True, initPic=0, transPic=1, postSelectionCondition=None,
                               postSelectionConnected=False, getGenerationStats=False, rerng=False, tt=None,
-                              rigorousThresholdFinding=True, transThresholdSame=True, fitguess=[None],
+                              rigorousThresholdFinding=True, transThresholdSame=True, fitguess=[None], forceAnnotation=True,
                               **organizerArgs ):
     """
     "Survival" is a special case of transfer where the initial location and the transfer location are the same location.
     """
+    if type(fileNumber) == int and fileNumber != 1:
+        exp.checkAnnotation(fileNumber-1, force=forceAnnotation)
     if tt is None:
         tt = TimeTracker()
     if rerng:
@@ -384,7 +390,7 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
     for varData in allAtomsListByVar:
         p = np.mean(varData)
         transVarAvg.append(p)
-        transVarErr.append(ah.jeffreyInterval(p, len(varData.flatten())))
+        transVarErr.append(ah.jeffreyInterval(p, len(arr(varData).flatten())))
         #transVarErr.append(np.sqrt(p*(1-p)/len(varData)))
        
     fits = [None] * len(locationsList)
@@ -417,7 +423,7 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
     return (atomLocs1, atomLocs2, transAtomsVarAvg, transAtomsVarErrs, initPopulation, initPicCounts, keyName, key,
             repetitions, initThresholds, fits, avgTransData, avgTransErr, avgFit, avgPics, otherDims, locationsList,
             genAvgs, genErrs, tt, transVarAvg, transVarErr, initAtomImages, transAtomImages, transPicCounts, 
-            transPixelCounts, transThresholds, fitModules)
+            transPixelCounts, transThresholds, fitModules, transThresholdSame)
 
 
 def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, analyzeTogether=False, 
@@ -445,6 +451,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
         rawData = rawData[picSlice[0]:picSlice[1]]
         numOfPictures = rawData.shape[0]
         numOfVariations = int(numOfPictures / (repetitions * picsPerRep))
+    print(rawData.shape[0], numOfPictures, numOfVariations,'hi')
     #groupedData, key, _ = orderData(groupedData, key)
     avgPopulation, avgPopulationErr, popFits = [[[] for _ in range(len(atomLocations))] for _ in range(3)]
     allPopulation, allPopulationErr = [[[]] * len(groupedData) for _ in range(2)]

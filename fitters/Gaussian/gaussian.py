@@ -26,6 +26,8 @@ def f_raw(x, A1, x01, sig1, offset):
     The raw function call, performs no checks on valid parameters..
     :return: offset + A1 * np.exp(-(x - x01) ** 2 / (2 * sig1 ** 2))
     """
+    if sig1 <= 0:
+        return 1e12 * np.ones(len(x))
     return offset + A1 * np.exp(-(x - x01) ** 2 / (2 * sig1 ** 2))
 
 
