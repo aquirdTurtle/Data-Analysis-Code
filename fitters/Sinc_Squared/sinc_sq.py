@@ -11,11 +11,15 @@ def f(x, A, c, scale, offset):
     The normal function call for this function. Performs checks on valid arguments, then calls the "raw" function.
     :return:
     """
-    if offset < 0:
-        return x * 10**10
-    if A < 0:
-        return x * 10**10
+#    if offset < 0:
+#        return x * 10**10
+#    if A < 0:
+#        return x * 10**10
     return f_raw(x, A, c, scale, offset)
+
+
+def args():
+    return "Amplitude", "Center", "Width-Scale", "Offset" 
 
 
 def f_raw(x, A, c, scale, offset):
@@ -31,7 +35,8 @@ def f_unc(x, A, c, scale, offset):
     similar to the raw function call, but uses unp instead of np for uncertainties calculations.
     :return:
     """
-    return A * unp.sinc((x - c)/scale)**2 + offset
+    arg = np.pi*(x - c)/scale
+    return A * (unp.sin(arg)/arg)**2 + offset
 
 
 def guess(key, values):
@@ -42,4 +47,5 @@ def guess(key, values):
     :param values:
     :return:
     """
+    return [max(values) - min(values), key[np.argmax(values)], (max(key)-min(key))/4, min(values)+0.001]
 

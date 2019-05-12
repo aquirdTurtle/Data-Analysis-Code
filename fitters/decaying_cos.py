@@ -6,6 +6,10 @@ def center():
     return None
 
 
+def getCenter(vals=None):
+    return None
+
+
 def args():
     return 'Amp', 'Decay', 'Freq', 'Phase', 'Offset'
 
@@ -13,6 +17,15 @@ def args():
 def definition():
     return 'offset + A * np.exp(-x / tau) * np.cos(2 * np.pi * freq * x + phi)'
 
+
+def getExtremes(f,phi,tau):
+    """
+    gets the first min and max of the cosine. Calculated the locations using sympy.
+    """
+    c = 1/(np.pi*f)
+    d = 2*np.pi*f*tau
+    return (c * (-phi/2 + np.arctan(d+np.sqrt(4*np.pi**2*f**2*tau**2+1))),
+            c * (-phi/2 + np.arctan(d+np.sqrt(4*np.pi**2*f**2*tau**2+1)) + np.pi/2))
 
 def f(x, A, tau, f, phi, offset):
     # Just for sanity. Keep some numbers positive.
@@ -29,20 +42,20 @@ def f(x, A, tau, f, phi, offset):
 
 
 def f_raw(x, A, tau, freq, phi, offset):
-    return offset + A * np.exp(-x / tau) * np.cos(2 * np.pi * freq * x + phi)
+    return offset + A / 2 * np.exp(-x / tau) * np.cos(2 * np.pi * freq * x + phi)
 
 
 def f_unc(x, A, tau, freq, phi, offset):
-    return offset + A * unp.exp(-x / tau) * unp.cos(2 * np.pi * freq * x + phi)
+    return offset + A / 2 * unp.exp(-x / tau) * unp.cos(2 * np.pi * freq * x + phi)
 
 
 def guess(key, vals):
-    A_g = 0.5
+    A_g = 0.8
     # A_g = (max(vals) - min(vals)) / 2
-    tau_g = 1
+    tau_g = 0.12
     # tau_g = (max(key) - min(key)) * 2
     # assumes starts at zero then goes to max value or so. May need to modify.
-    f_g = 20.0 # 1 / (max(key)-min(key))
-    phi_g = np.pi/2
-    offset_g = 0.5
+    f_g = 10 # 1 / (max(key)-min(key))
+    phi_g = np.pi
+    offset_g = 0.3
     return [A_g, tau_g, f_g, phi_g, offset_g]

@@ -315,14 +315,12 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
     """
     "Survival" is a special case of transfer where the initial location and the transfer location are the same location.
     """
-    if type(fileNumber) == int and fileNumber != 1:
-        exp.checkAnnotation(fileNumber-1, force=forceAnnotation)
     if tt is None:
         tt = TimeTracker()
     if rerng:
         initPic, transPic, picsPerRep = 1, 2, 3
     ( rawData, groupedData, atomLocs1, atomLocs2, keyName, repetitions, 
-      key, numOfPictures, avgPics ) = organizeTransferData( fileNumber, atomLocs1, atomLocs2,  picsPerRep=picsPerRep, varyingDim=varyingDim,
+      key, numOfPictures, avgPics, basicInfoStr ) = organizeTransferData( fileNumber, atomLocs1, atomLocs2,  picsPerRep=picsPerRep, varyingDim=varyingDim,
                                                               initPic=initPic, transPic=transPic, **organizerArgs )
     (initPixelCounts, initThresholds, transPixelCounts, transThresholds) =  arr([[None] * len(atomLocs1)] * 4)
     for i, (loc1, loc2) in enumerate(zip(atomLocs1, atomLocs2)):
@@ -423,7 +421,7 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
     return (atomLocs1, atomLocs2, transAtomsVarAvg, transAtomsVarErrs, initPopulation, initPicCounts, keyName, key,
             repetitions, initThresholds, fits, avgTransData, avgTransErr, avgFit, avgPics, otherDims, locationsList,
             genAvgs, genErrs, tt, transVarAvg, transVarErr, initAtomImages, transAtomImages, transPicCounts, 
-            transPixelCounts, transThresholds, fitModules, transThresholdSame)
+            transPixelCounts, transThresholds, fitModules, transThresholdSame, basicInfoStr)
 
 
 def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, analyzeTogether=False, 
