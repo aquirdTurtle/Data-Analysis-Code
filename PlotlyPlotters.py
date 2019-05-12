@@ -75,20 +75,23 @@ def Survival(fileNumber, atomLocs, **TransferArgs):
 
 
 def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=[None], showCounts=False, showGenerationData=False,
-             histBins=150, **standardTransferArgs):
+             histBins=150, showFitDetails=False, **standardTransferArgs):
     """
     Standard data analysis package for looking at survival rates throughout an experiment.
     Returns key, survivalData, survivalErrors
     """
     res = standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, fitModules=fitModules,
                                    **standardTransferArgs)
-    (atomLocs1, atomLocs2, transferData, transferErrs, initPopulations, pic1Data, keyName, key,
+    #(atomLocs1, atomLocs2, transferData, transferErrs, initPopulations, pic1Data, keyName, key,
+    # repetitions, initThresholds, fits, avgTransferData, avgTransferErr, avgFit, avgPics, otherDimValues,
+    # locsList, genAvgs, genErrs, tt, transVarAvg, transVarErr, initAtomImages, transAtomImages,
+    # pic2Data, transPixelCounts, transThresholds, fitModules) = res
+    (atomLocs1, atomLocs2, transferData, transferErrs, initPopulation, pic1Data, keyName, key,
      repetitions, initThresholds, fits, avgTransferData, avgTransferErr, avgFit, avgPics, otherDimValues,
      locsList, genAvgs, genErrs, tt, transVarAvg, transVarErr, initAtomImages, transAtomImages,
-     pic2Data, transPixelCounts, transThresholds, fitModules) = res
-    
+     pic2Data, transPixelCounts, transThresholds, fitModules, transThresholdSame, basicInfoStr) = res
     if not show:
-        return key, transferData, transferErrs, initPopulations
+        return key, transferData, transferErrs, initPopulation
     
     # get the colors for the plots.
     pltColors, pltColors2 = getColors(len(locsList) + 1)
@@ -133,7 +136,8 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=[None], sho
             if fitData['vals'] is None:
                 print(loc, 'Fit Failed!')
                 continue
-            centers.append(module.getCenter(fitData['vals']))
+            if showFitDetails:
+                centers.append(module.getCenter(fitData['vals']))
             mainPlot.append(go.Scatter(x=fitData['x'], y=fitData['nom'], line={'color': color},
                                        legendgroup=legend, showlegend=False, opacity=alphaVal))
             if fitData['std'] is not None:
@@ -144,11 +148,11 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=[None], sho
                                            opacity=alphaVal / 2, line={'color': color},
                                            legendgroup=legend, fill='tonexty', showlegend=False,
                                            hoverinfo='none', fillcolor='rgba(7, 164, 181, ' + str(alphaVal/2) + ')'))
-    if fitModules[0] is not None:
+    transferPic = np.zeros(avgPics[0].shape)
+    for i, loc in enumerate(atomLocs1):
+        transferPic[loc[0], loc[1]] = np.mean(transferData[i])
+    if fitModules[0] is not None and showFitDetails:
         print('Fit Centers:')
-        transferPic = np.zeros(avgPics[0].shape)
-        for i, loc in enumerate(atomLocs1):
-            transferPic[loc[0], loc[1]] = np.mean(transferData[i])
         print(centers, 'AVG = ' + str(np.mean(centers)), 'AVG c^2 = ' + str(np.mean([c**2 for c in centers])))
         fitCenterPic = np.ones(avgPics[0].shape) * np.mean(centers)
         for i, loc in enumerate(atomLocs1):
@@ -158,7 +162,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=[None], sho
         
         iplot(go.Figure(data=fitCenterFig, layout=layout))
     maxHeight = np.max(arr([np.histogram(data.flatten(), bins=histBins)[0] for data in pic1Data]).flatten())
-    for data, pop, loc1, loc2, color, threshold, legend in zip(pic1Data, initPopulations, atomLocs1, atomLocs2, pltColors,
+    for data, pop, loc1, loc2, color, threshold, legend in zip(pic1Data, initPopulation, atomLocs1, atomLocs2, pltColors,
                                                          initThresholds, legends):
         countsHist.append(go.Histogram(x=data, nbinsx=histBins, legendgroup=legend, showlegend=False, opacity=alphaVal/2,
                                        marker=dict(color=color)))
@@ -256,7 +260,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=[None], sho
     fig['layout']['yaxis1'].update(title=scanType + " %", range=[0, 1])
     fig['layout']['xaxis1'].update(title=str(keyName))
     iplot(fig)
-    return key, transferData, transferErrs, initPopulations, fits, avgFit, genAvgs, genErrs, centers
+    return key, transferData, transferErrs, initPopulation, fits, avgFit, genAvgs, genErrs, centers
 
 def Loading(fileNum, atomLocations, **TransferArgs):
     return Population(fileNum, atomLocations, whichPic=0, **TransferArgs)

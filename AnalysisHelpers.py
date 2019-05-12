@@ -234,7 +234,7 @@ def organizeTransferData( fileNumber, initLocs, transLocs, key=None, window=None
     with ExpFile(fileNumber) as f:
         rawData, keyName, hdf5Key, repetitions = f.pics, f.key_name, f.key, f.reps 
         if not quiet:
-            f.get_basic_info()
+            basicInfoStr = f.get_basic_info()
     if repRange is not None:
         repetitions = repRange[1] - repRange[0]
         rawData = rawData[repRange[0]*picsPerRep:repRange[1]*picsPerRep]
@@ -264,7 +264,7 @@ def organizeTransferData( fileNumber, initLocs, transLocs, key=None, window=None
     avgPics = [allAvgPics[initPic], allAvgPics[transPic]]
     atomLocs1 = unpackAtomLocations(initLocs, avgPic=avgPics[0])
     atomLocs2 = unpackAtomLocations(transLocs, avgPic=avgPics[1])
-    return rawData, groupedData, atomLocs1, atomLocs2, keyName, repetitions, key, numOfPictures, avgPics
+    return rawData, groupedData, atomLocs1, atomLocs2, keyName, repetitions, key, numOfPictures, avgPics, basicInfoStr
 
 
 def modFitFunc(sign, hBiasIn, vBiasIn, depthIn, *testBiases):
@@ -414,7 +414,7 @@ def fitWithModule(module, key, vals, errs=None, guess=None):
     key = arr(key)
     xFit = (np.linspace(min(key), max(key), 1000) if len(key.shape) == 1 else np.linspace(min(transpose(key)[0]),
                                                                                           max(transpose(key)[0]), 1000))
-    fitNom = fitStd = fitValues = fitErrs = fitCovs = None
+    fitNom = fitStd = fitValues = fitErrs = fitCovs = fitGuess = None
     from numpy.linalg import LinAlgError
     try:
         # 3 parameters
@@ -435,13 +435,14 @@ def fitWithModule(module, key, vals, errs=None, guess=None):
         fitNom = unp.nominal_values(fitUncObject)
         fitStd = unp.std_devs(fitUncObject)
         fitFinished = True
+        fitGuess = module.f(xFit, *module.guess(key, vals))
     except (RuntimeError, LinAlgError, ValueError) as e:
         warn('Data Fit Failed!')
         print(e)
         fitValues = module.guess(key, vals)
         fitNom = module.f(xFit, *fitValues)
         fitFinished = False
-    fitInfo = {'x': xFit, 'nom': fitNom, 'std': fitStd, 'vals': fitValues, 'errs': fitErrs, 'cov': fitCovs}
+    fitInfo = {'x': xFit, 'nom': fitNom, 'std': fitStd, 'vals': fitValues, 'errs': fitErrs, 'cov': fitCovs, 'guess': fitGuess}
     return fitInfo, fitFinished
 
 

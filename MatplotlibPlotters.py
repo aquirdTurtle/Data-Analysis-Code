@@ -3,7 +3,7 @@ from pandas import DataFrame
 from MainAnalysis import standardPopulationAnalysis, analyzeNiawgWave, standardTransferAnalysis, standardAssemblyAnalysis, AnalyzeRearrangeMoves
 from numpy import array as arr
 from random import randint
-from Miscellaneous import getColors, round_sig, round_sig_str, getMarkers, errString
+from Miscellaneous import getColors, getMarkers, errString
 import Miscellaneous as misc
 from matplotlib.pyplot import *
 import matplotlib.pyplot as plt
@@ -26,6 +26,9 @@ from matplotlib.patches import Ellipse
 from TimeTracker import TimeTracker
 from fitters import LargeBeamMotExpansion, exponential_saturation
 from fitters.Gaussian import gaussian_2d, double as double_gaussian
+import IPython.display as disp
+import ExpFile as exp
+
 
 def rotateTicks(plot):
     ticks = plot.get_xticklabels()
@@ -75,16 +78,12 @@ def makeThresholdStatsImages(ax, thresholds, locs, shape, ims, lims, fig):
     ims.append(ax[3].imshow(residualImage, cmap=cm.get_cmap('inferno'), vmin=lims[3][0], vmax=lims[3][1], origin='lower'))
     ax[3].set_title('Fit Rms Residuals:' + str(misc.round_sig(np.mean(residualList))), fontsize=12)
     imageTickedColorbar(fig, ims[-1], ax[3], lims[3])
-
-    for i, a in enumerate(ax[4:]):
-        noData = np.zeros((25,23))
-        lims[4+i][0], lims[4+i][1] = [0, 0]
-        ims.append(a.imshow(noData, cmap=cm.get_cmap('Greys'), vmin=-1, vmax=0))
-        a.set_title('(Nothing)')
+    for a in ax:
+        a.tick_params(axis='both', which='major', labelsize=8)
     
 
 def plotThresholdHists(thresholds, colors, extra=None, extraname=None, thresholds_2=None, shape=(10,10)):
-    f, axs = subplots(shape[0], shape[1], figsize=(34.0, 16.0))
+    f, axs = subplots(shape[0], shape[1], figsize=(34.0, 8.0))
     if thresholds_2 is None:
         thresholds_2 = [None for _ in thresholds]
     for i, (t, t2, c) in enumerate(zip(thresholds, thresholds_2, colors[1:])):
@@ -110,7 +109,7 @@ def plotThresholdHists(thresholds, colors, extra=None, extraname=None, threshold
         ax.set_ylim(0, maxy)
         ax.grid(False)
         if extra is not None:
-            txt = extraname + round_sig_str( np.mean(extra[i])) if extraname is not None else round_sig_str(np.mean(extra[i]))
+            txt = extraname + misc.round_sig_str( np.mean(extra[i])) if extraname is not None else misc.round_sig_str(np.mean(extra[i]))
             t = ax.text( (maxx + minx) / 2, maxy / 2, txt, fontsize=12 )
             t.set_bbox(dict(facecolor='k', alpha=0.3))
     f.subplots_adjust(wspace=0, hspace=0)
@@ -132,7 +131,7 @@ def indvHists(dat, thresh, colors, extra=None, extraname=None, extra2=None, extr
         ax.set_ylim(0,max(heights))
         ax.grid(False)
         if extra is not None:
-            txt = extraname + round_sig_str( np.mean(extra[i])) if extraname is not None else round_sig_str(np.mean(extra[i]))
+            txt = extraname + misc.round_sig_str( np.mean(extra[i])) if extraname is not None else misc.round_sig_str(np.mean(extra[i]))
             t = ax.text( 0.25, max(heights)-5, txt, fontsize=12 )
             t.set_bbox(dict(facecolor='k', alpha=0.3))
     f.subplots_adjust(wspace=0, hspace=0)
@@ -308,7 +307,7 @@ def Survival(fileNumber, atomLocs, **TransferArgs):
 
 def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOption=None,
               fitModules=[None], showFitDetails=False, showFitCenterPlot=False, showImagePlots=None, plotIndvHists=False, 
-              timeit=False, outputThresholds=False, **standardTransferArgs ):
+              timeit=False, outputThresholds=False, plotFitGuess=False, newAnnotation=False, **standardTransferArgs ):
     """
     Standard data analysis package for looking at survival rates throughout an experiment.
     :return key, transferData, survivalErrors
@@ -321,7 +320,7 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
     (atomLocs1, atomLocs2, transferData, transferErrs, initPopulation, pic1Data, keyName, key,
      repetitions, initThresholds, fits, avgTransferData, avgTransferErr, avgFit, avgPics, otherDimValues,
      locsList, genAvgs, genErrs, tt, transVarAvg, transVarErr, initAtomImages, transAtomImages,
-     pic2Data, transPixelCounts, transThresholds, fitModules, transThresholdSame) = res
+     pic2Data, transPixelCounts, transThresholds, fitModules, transThresholdSame, basicInfoStr) = res
     if not show:
         return (key, transferData, transferErrs, initPopulation, fits, avgFit, genAvgs, genErrs, pic1Data, 
             gaussianFitVals, [None], initThresholds, [None])
@@ -342,13 +341,17 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
     if type(keyName) is not type("a string"):
         keyName = sum([kn+',' for kn in keyname])
     titletxt = (keyName + " " + typeName + " Point.\n Avg " + typeName + "% = " 
-                + misc.dblErrString(np.mean(transVarAvg), np.sqrt(np.sum(arr(avgTransferErr)**2)/len(avgTransferErr)), 
-                                    np.sqrt(np.sum(arr(transVarErr)**2)/len(transVarErr))))
+                + (misc.dblAsymErrString(np.mean(transVarAvg), *avgTransferErr[0], *transVarErr[0]) 
+                   if len( transVarAvg ) == 1 else
+                   misc.dblErrString(np.mean(transVarAvg),  
+                                     np.sqrt(np.sum(arr(avgTransferErr)**2)/len(avgTransferErr)), 
+                                     np.sqrt(np.sum(arr(transVarErr)**2)/len(transVarErr)))))
     # some easily parallelizable stuff
     plotList = [mainPlot, initPopPlot, countPlot, avgPlt1, avgPlt2]
     xlabels = [keyName,keyName,'Picture #','','']
     ylabels = [typeName + " %","Initial Population %", "Camera Signal",'','']
-    titles = [titletxt, "Initial Population: Avg$ = " + str(round_sig(np.mean(arr(initPopulation.tolist())))) + '$', "Thresh.=" + str(round_sig(np.mean([initThresholds[i].t for i in range(len(initThresholds))]))), '', '']
+    titles = [titletxt, "Initial Population: Avg$ = " + str(misc.round_sig(np.mean(arr(initPopulation.tolist())))) + '$',
+              "Thresh.=" + str(misc.round_sig(np.mean([initThresholds[i].t for i in range(len(initThresholds))]))), '', '']
     majorYTicks = [np.arange(0,1,0.1),np.arange(0,1,0.2),np.linspace(min(pic1Data[0]),max(pic1Data[0]),5),[],[]]
     minorYTicks = [np.arange(0,1,0.05),np.arange(0,1,0.1),np.linspace(min(pic1Data[0]),max(pic1Data[0]),10),[],[]]
     xtickKey = key if len(key) < 30 else np.linspace(min(key),max(key),30)
@@ -377,14 +380,16 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
     for i, (atomLoc, fit, module) in enumerate(zip(atomLocs1, fits, fitModules)):
         leg = (r"[%d,%d] " % (atomLocs1[i][0], atomLocs1[i][1]) if typeName == "Survival" 
                else r"[%d,%d]$\rightarrow$[%d,%d] " % (atomLocs1[i][0], atomLocs1[i][1], atomLocs2[i][0], atomLocs2[i][1]))
-        #if longLegend:
-        #    leg += (typeName + " % = " + str(round_sig(transferData[i][0])) + "$\pm$ " + str(round_sig(transferErrs[i][0])))
+        if longLegend:
+            leg += (typeName + " % = " + misc.asymErrString(transferData[i][0], *reversed(transferErrs[i][0])))
+                    #str(misc.round_sig(transferData[i][0])) + "$\pm$ " 
+                    #+ str((misc.round_sig(transferErrs[i][0][0]),misc.round_sig(transferErrs[i][0][1]))))
         unevenErrs = [[err[0] for err in transferErrs[i]], [err[1] for err in transferErrs[i]]]
         mainPlot.errorbar(key, transferData[i], yerr=unevenErrs, color=colors[i], ls='',
-                          capsize=6, elinewidth=3, label=leg, alpha=0.3, marker=markers[i%len(markers)], markersize=10)
+                          capsize=6, elinewidth=3, label=leg, alpha=0.1, marker=markers[i%len(markers)], markersize=10)
         if module is not None and showFitDetails and fit['vals'] is not None:
-            #if fitModules.center() is not None:
-            centers.append(module.getCenter(fit['vals']))
+            if module.center() is not None:
+                centers.append(module.getCenter(fit['vals']))
             mainPlot.plot(fit['x'], fit['nom'], color=colors[i], alpha=0.5)
     mainPlot.xaxis.set_label_coords(0.95, -0.1)
     if legendOption:
@@ -430,11 +435,8 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
         cap.set_markeredgewidth(1.5)
     if fitModules[-1] is not None:
         mainPlot.plot(avgFit['x'], avgFit['nom'], color=avgColor, ls=':')
-        for label, fitVal, err in zip(fitModules[-1].args(), avgFit['vals'], avgFit['errs']):
-            print( label,':', errString(fitVal, err) )
-        if showFitDetails:
-            for f in getFitsDataFrame(fits, fitModules, avgFit):
-                display(f)
+        if plotFitGuess:
+            mainPlot.plot(fit['x'], fit['guess'], color='r', alpha=0.5)
     if fitModules[0] is not None and showFitCenterPlot:
         f, ax = subplots()
         fitCenterPic, vmin, vmax = genAvgDiscrepancyImage(centers, avgPics[0].shape, atomLocs1)
@@ -445,12 +447,13 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
     tt.clock('After-Main-Plots')
     avgTransferPic = None
     if showImagePlots:
-        f, axs = subplots(2 if transThresholdSame else 3, 5, figsize=(36.0, 16.0))
-        lims = [[None, None] for _ in range(10 if transThresholdSame else 15)]
+        #f_img, axs = subplots(2 if transThresholdSame else 3, 5, figsize = (36.0, 12.0) if transThresholdSame else (36.0,16.0))
+        f_img, axs = subplots(1, 9 if transThresholdSame else 13, figsize = (36.0, 8.0) if transThresholdSame else (36.0,4))
+        lims = [[None, None] for _ in range(9 if transThresholdSame else 13)]
         ims = [None for _ in range(5)]
-        makeThresholdStatsImages(axs[1,:], initThresholds, atomLocs1, avgPics[0].shape, ims, lims[5:10], f)
+        makeThresholdStatsImages(axs[5:9], initThresholds, atomLocs1, avgPics[0].shape, ims, lims[5:9], f_img)
         if not transThresholdSame:
-            makeThresholdStatsImages(axs[2,:], transThresholds, atomLocs2, avgPics[0].shape, ims, lims[10:15], f)
+            makeThresholdStatsImages(axs[9:13], transThresholds, atomLocs2, avgPics[0].shape, ims, lims[9:13], f_img)
 
         avgTransfers = [np.mean(s) for s in transferData]
         avgTransferPic, l20, l21 = genAvgDiscrepancyImage(avgTransfers, avgPics[0].shape, atomLocs1)
@@ -467,6 +470,7 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
         cmaps = ['viridis', 'viridis', 'seismic_r','seismic_r','inferno']
         titles = ['Avg 1st Pic', 'Avg 2nd Pic', 'Avg Trans:' + str(misc.round_sig(np.mean(avgTransfers))), 
                   'Avg Load:' + str(misc.round_sig(np.mean(avgPops))),'Atom-Generation: ' + str(misc.round_sig(np.mean(genAtomAvgs)))]
+        
         for i, (ax, lim, image, cmap_) in enumerate(zip(axs.flatten(), lims, images, cmaps)):
             ims[i] = ax.imshow(image, vmin=lim[0], vmax=lim[1], origin='lower', cmap=cm.get_cmap(cmap_))
         for ax, lim, title, im in zip(axs.flatten(), lims, titles, ims):
@@ -488,6 +492,23 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
         tt.display()
     avgPlt1.set_position([0.58,0,0.3,0.3])
     avgPlt2.set_position([0.73,0,0.3,0.3])
+    
+    disp.display(f)
+    if newAnnotation or not exp.checkAnnotation(fileNumber, force=False, quiet=True):
+        exp.annotate(fileNumber)
+    disp.clear_output()
+    
+    expTitle, _, _ = exp.getAnnotation(fileNumber)
+    disp.display(disp.Markdown(expTitle))
+    with exp.ExpFile(fileNumber) as f:
+        f.get_basic_info()
+    
+    if fitModules[-1] is not None:
+        for label, fitVal, err in zip(fitModules[-1].args(), avgFit['vals'], avgFit['errs']):
+            print( label,':', errString(fitVal, err) )
+        if showFitDetails:
+            for f in getFitsDataFrame(fits, fitModules, avgFit):
+                display(f)
     
     if outputThresholds:
         thresholdList = np.flip(np.reshape([t.t for t in initThresholds], (10,10)),1)
@@ -511,7 +532,7 @@ def Loading(fileNum, atomLocations, **PopulationArgs):
 
 def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=True, plotCounts=False, legendOption=None,
                showImagePlots=True, plotIndvHists=False, showFitDetails=False, showFitCenterPlot=True, show=True, histMain=False,
-               mainAlpha=0.2, avgColor='w', **StandardArgs):
+               mainAlpha=0.2, avgColor='w', newAnnotation=False, **StandardArgs):
     """
     Standard data analysis package for looking at population %s throughout an experiment.
 
@@ -536,7 +557,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         legendOption = False
     # get the colors for the plot.
     markers = ['o','^','<','>','v']
-    f = figure()
+    f_main = figure()
     # Setup grid
     grid1 = mpl.gridspec.GridSpec(12, 16)
     grid1.update(left=0.05, right=0.95, wspace=1.2, hspace=1000)
@@ -622,7 +643,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     popPlot.set_yticks(np.arange(0,1,0.2))
     popPlot.grid(True, color='#AAAAAA', which='Major')
     popPlot.grid(True, color='#090909', which='Minor')
-    popPlot.set_title("Population: Avg$ = " +  str(round_sig(np.mean(arr(allPops)))) + '$')
+    popPlot.set_title("Population: Avg$ = " +  str(misc.round_sig(np.mean(arr(allPops)))) + '$')
     for item in ([popPlot.title, popPlot.xaxis.label, popPlot.yaxis.label] +
                      popPlot.get_xticklabels() + popPlot.get_yticklabels()):
         item.set_fontsize(10)
@@ -633,7 +654,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
 
     countPlot.set_xlabel("Picture #")
     countPlot.set_ylabel("Camera Signal")
-    countPlot.set_title("Thresh.=" + str(round_sig(thresholds[i].t)), fontsize=10) #", Fid.="
+    countPlot.set_title("Thresh.=" + str(misc.round_sig(thresholds[i].t)), fontsize=10) #", Fid.="
                         # + str(round_sig(thresholdFid)), )
     ticksForVis = countPlot.xaxis.get_major_ticks()
     ticksForVis[-1].label1.set_visible(False)
@@ -670,8 +691,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
              marker='o', capsize=6, elinewidth=3, label='Avg', markersize=5)
     if fitModules is not [None] and showFitDetails:
         mainPlot.plot(avgFit['x'], avgFit['nom'], color=avgColor, ls=':')
-        fits_df = getFitsDataFrame(fits, fitModules, avgFit,markersize=5)
-        display(fits_df)
+
     #elif fitModules is not [None]:
     #    for val, name in zip(avgFits['vals'], fitModule.args()):
     #        print(name, val)
@@ -684,7 +704,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     if showImagePlots:
         ims = []
         lims = [[0,0] for _ in range(5)]
-        f, axs = subplots(1,6)
+        f_im, axs = subplots(1,6)
         
         ims.append(axs[0].imshow(avgPic, origin='lower'))
         axs[0].set_title('Avg 1st Pic')
@@ -696,7 +716,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         ims.append(axs[1].imshow(avgPopPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower'))
         axs[1].set_title('Avg Population')
         
-        makeThresholdStatsImages(axs[2:], thresholds, atomLocations, avgPic.shape, ims, lims, f)
+        makeThresholdStatsImages(axs[2:], thresholds, atomLocations, avgPic.shape, ims, lims, f_im)
 
         #for ax, im in zip(axs, ims):
         #    ax.set_yticklabels([])
@@ -714,6 +734,26 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         else:
             shape = (10,10)
         plotThresholdHists(thresholds, colors, extra=avgPops, extraname="L:", shape=shape)
+    
+    disp.display(f_main)
+    if newAnnotation or not exp.checkAnnotation(fileNum, force=False, quiet=True):
+        exp.annotate(fileNum)
+    disp.clear_output()
+    
+    expTitle, _, _ = exp.getAnnotation(fileNum)
+    disp.display(disp.Markdown(expTitle))
+    with exp.ExpFile(fileNum) as f:
+        f.get_basic_info()
+    
+    if fitModules[-1] is not None:
+        for label, fitVal, err in zip(fitModules[-1].args(), avgFit['vals'], avgFit['errs']):
+            print( label,':', errString(fitVal, err) )
+        if showFitDetails:
+            fits_df = getFitsDataFrame(fits, fitModules, avgFit, markersize=5)
+            display(fits_df)
+            #for f in getFitsDataFrame(fits, fitModules, avgFit):
+            #    display(f)
+    
     """
     # output thresholds
     thresholds = np.flip(np.reshape(thresholds, (10,10)),1)
@@ -795,7 +835,7 @@ def Assembly(fileNumber, atomLocs1, pic1Num, partialCredit=False, **standardAsse
         countPlot.axhline(thresholds[i], color='w')
     countPlot.set_xlabel("Picture #")
     countPlot.set_ylabel("Camera Signal")
-    countPlot.set_title("Thresh.=" + str(round_sig(thresholds[i]))) 
+    countPlot.set_title("Thresh.=" + str(misc.round_sig(thresholds[i]))) 
     ticksForVis = countPlot.xaxis.get_major_ticks()
     ticksForVis[-1].label1.set_visible(False)
     for item in ([countPlot.title, countPlot.xaxis.label, countPlot.yaxis.label] + countPlot.get_xticklabels()
@@ -886,7 +926,7 @@ def showPics(data, key, fitParams=np.array([]), indvColorBars=False, colorMax=-1
         im1 = pl.imshow( pic, origin='bottom', extent=(x.min(), x.max(), y.min(), y.max()),
                                               vmin=minimum, vmax=maximum )
         pl.axis('off')
-        pl.set_title(str(round_sig(key[count], 4)), fontsize=8)
+        pl.set_title(str(misc.round_sig(key[count], 4)), fontsize=8)
         if fitParams.size != 0:
             if (fitParams[count] != np.zeros(len(fitParams[count]))).all():
                 try:

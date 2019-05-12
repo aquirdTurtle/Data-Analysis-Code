@@ -7,33 +7,61 @@ dataAddress = None
 
 
 def annotate(fileID=None):
+    title = input("Run Title: ")
+    hashNum = int(input("Title-Level: "))
+    titleStr = ''.join('#' for _ in range(hashNum)) + ' ' + title
     rationale = input("Experiment Rationale:")
     result = input("Experiment Result:")
     with ExpFile() as f:
         f.open_hdf5(fileID, openFlag='a')
+        
         if 'Experiment_Rationale' in f.f['Miscellaneous'].keys():
             del f.f['Miscellaneous']['Experiment_Rationale']
         dset = f.f['Miscellaneous'].create_dataset("Experiment_Rationale", shape=(1,), dtype="S"+str(len(rationale))) 
         dset[0] = np.string_(rationale)
+        
         if 'Experiment_Result' in f.f['Miscellaneous'].keys():
             del f.f['Miscellaneous']['Experiment_Result']
         dset2 = f.f['Miscellaneous'].create_dataset("Experiment_Result", shape=(1,), dtype="S"+str(len(result))) 
         dset2[0] = np.string_(result)
+        
+        if 'Experiment_Title' in f.f['Miscellaneous'].keys():
+            del f.f['Miscellaneous']['Experiment_Title']
+        dset3 = f.f['Miscellaneous'].create_dataset("Experiment_Title", shape=(1,), dtype="S"+str(len(titleStr))) 
+        dset3[0] = np.string_(titleStr)
+        
 
-def checkAnnotation(fileNum, force=True):
+def checkAnnotation(fileNum, force=True, quiet=False):
     try:
         with ExpFile(fileNum) as f:
-            if 'Experiment_Rationale' not in f.f['Miscellaneous'] or 'Experiment_Result' not in f.f['Miscellaneous']:
+            if (   'Experiment_Rationale' not in f.f['Miscellaneous']
+                or 'Experiment_Result'    not in f.f['Miscellaneous']
+                or 'Experiment_Title'     not in f.f['Miscellaneous']):
                 #pass
                 if force:
                     raise RuntimeError('HDF5 File number ' + str(fileNum) + ' Has not been annotated. Please call exp.annotate() to annotate the file.')
                 else:
                     print('HDF5 File number ' + str(fileNum) + ' Has not been annotated. Please call exp.annotate() to annotate the file.')
+                return False
     except OSError:
         # failed to open file probably, nothing to annotate.
-        pass;
+        return False
+    except KeyError:
+        # file failed to open, probably a special run
+        return False
+    return True
 
-            
+def getAnnotation(fileNum):
+    with ExpFile(fileNum) as f:
+        f_misc = f.f['Miscellaneous']
+        if (   'Experiment_Rationale' not in f_misc
+            or 'Experiment_Result'    not in f_misc
+            or 'Experiment_Title'     not in f_misc):
+            raise RuntimeError('HDF5 File number ' + str(fileNum) + ' Has not been annotated. Please call exp.annotate() to annotate the file.')
+        return (f_misc['Experiment_Title'][0].decode("utf-8"), 
+                f_misc['Experiment_Rationale'][0].decode("utf-8"), 
+                f_misc['Experiment_Result'][0].decode("utf-8"))
+
 def setPath(day, month, year, repoAddress="J:\\Data repository\\New Data Repository"):
     """
     This function sets the location of where all of the data files are stored. It is occasionally called more
@@ -294,28 +322,30 @@ class ExpFile:
                     print(' type:', type(ds[0]), ds[0])
             print('')
             
-    def print_pic_info(self):
-        print('Number of Pictures:', self.pics.shape[0])
-        print('Picture Dimensions:', self.pics.shape[1],'x',self.pics.shape[2])
+    def get_pic_info(self):
+        infoStr = 'Number of Pictures: ' + str(self.pics.shape[0]) + '; '
+        infoStr += 'Picture Dimensions: ' + str(self.pics.shape[1]) + ' x ' + str(self.pics.shape[2]) + '\n'
+        return infoStr
     
     def get_basic_info(self):
         """
         Some quick easy to read summary info
         """
-        self.print_pic_info()
-        print('Variaitons:', len(self.key))    
-        print('Repetitions:', self.reps)
-        print('Experiment started at (H:M:S) ', self.exp_start_time, ' on (Y-M-D)', self.exp_start_date)
-        print('And ended at (H:M:S) ', self.exp_stop_time, ' on (Y-M-D)', self.exp_stop_date)
+        infoStr = self.get_pic_info()
+        infoStr += 'Variations: ' + str(len(self.key)) + ';\t'
+        infoStr += 'Repetitions: ' + str(self.reps) + '\n'
+        infoStr += 'Experiment started at (H:M:S) ' + str(self.exp_start_time) + ' on (Y-M-D) ' + str(self.exp_start_date) + ', '
+        infoStr += 'And ended at ' + str(self.exp_stop_time) + ' on ' + str(self.exp_stop_date) + '\n'
         if 'Experiment_Rationale' in self.f['Miscellaneous'].keys():
-            print('Experiment Rationale:', self.f['Miscellaneous']['Experiment_Rationale'][0].decode("utf-8") )
+            infoStr += 'Experiment Rationale: ' + str(self.f['Miscellaneous']['Experiment_Rationale'][0].decode("utf-8")) + '\n'
         else:
-            print('Experiment Rationale: HDF5 NOT ANNOTATED: please call exp.Annotate() to annotate this file.')
+            infoStr += 'Experiment Rationale: HDF5 NOT ANNOTATED: please call exp.Annotate() to annotate this file.\n'
         if 'Experiment_Result' in self.f['Miscellaneous'].keys():
-            print('Experiment Result:', self.f['Miscellaneous']['Experiment_Result'][0].decode("utf-8") )
+            infoStr += 'Experiment Result: ' + str(self.f['Miscellaneous']['Experiment_Result'][0].decode("utf-8")) + '\n'
         else:
-            print('Experiment Result: HDF5 NOT ANNOTATED: please call exp.Annotate() to annotate this file.')
-        #        self.__print_hdf5_obj(self.f['Master-Parameters']['Seq #1 Variables'],'')
+            infoStr += 'Experiment Result: HDF5 NOT ANNOTATED: please call exp.Annotate() to annotate this file.\n'
+        print(infoStr)
+        return infoStr
 
     def get_experiment_time_and_date(self):
         start_date, stop_date, start_time, stop_time = '','','',''
