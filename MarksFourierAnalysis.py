@@ -12,7 +12,7 @@ def fft(field, xpts, normalize=True):
     :param normalize: This normalizes the fft to the continuous version, multiplying the spectrum by the spacing.
         If using my Ifft function, this should match the de-normalize option there.
 
-    :return dic with 'Freq' and 'Amp' Arguments.
+    :return dic with 'Freq' and 'Field' Arguments.
 
     This is a wrapper for the fourier-transform function from Scipy.
     Takes the fourier transform of a 1-dimensional field, i.e. g{x} -> g_f{f_x}
@@ -31,7 +31,7 @@ x    returns the transform amplitudes and the frequencies in two objects. By def
     fieldFFT = FT.fftshift(FT.fft(FT.ifftshift(field)))
     if normalize:
         fieldFFT *= spacing
-    return {'Freq': freqs, 'Amp': fieldFFT}
+    return {'Freq': freqs, 'Field': fieldFFT}
 
 
 def ifft(fieldFFT, xpts, denormalize=True):
@@ -75,7 +75,7 @@ def propagate(field, fieldPos, z_fin, wavelength, n=1):
     fftData = fft(field, fieldPos)
     transferFunc = np.exp(1j * k * z_fin
                           * np.sqrt((1 - ((wavelength / n) * fftData['Freq'])**2).astype(complex)))
-    propFieldFFT = fftData['Amp'] * transferFunc
+    propFieldFFT = fftData['Field'] * transferFunc
     # need to make sure the result of ifft is interpreted as complex.
     field = ifft(propFieldFFT, fieldPos)
     return field
@@ -104,17 +104,17 @@ def diagnosticProp(field, fieldPos, z_fin, wavelength, n=1):
     fftData = fft(field, fieldPos)
     transferFunc = np.exp(1j * k * z_fin
                           * np.sqrt((1 - ((wavelength / n) * fftData['Freq'])**2).astype(complex)))
-    propFieldFFT = fftData['Amp'] * transferFunc
+    propFieldFFT = fftData['Field'] * transferFunc
     field = ifft(propFieldFFT, fieldPos)
     return field, fftData, transferFunc, propFieldFFT
 
 
 def fft2D(field, xpts, ypts, normalize=True):
     """
-    @param field: the field amplitudes of the field to be transformed
-    @param xpts: the positions that the field array above have been sampled at. Note that this function assumes
+    :@param field: the field amplitudes of the field to be transformed
+    :@param xpts: the positions that the field array above have been sampled at. Note that this function assumes
         evenly spaced points.
-    @param ypts: the positions that the field array above have been sampled at. Note that this function assumes
+    :@param ypts: the positions that the field array above have been sampled at. Note that this function assumes
         evenly spaced points.
     Takes the fourier transform of a 2-dimensional field, i.e. g{x} -> g_f{f_x}
     returns the transform amplitudes and the frequencies in two objects.
@@ -123,28 +123,31 @@ def fft2D(field, xpts, ypts, normalize=True):
     assert(len(ypts) > 1)
     assert(len(xpts) == len(field))
     assert(len(ypts) == len(field[0]))
-    xspacing = (max(xpts) - min(xpts))/(len(xpts) - 1)
-    yspacing = (max(ypts) - min(ypts))/(len(ypts) - 1)
+    xspacing = (max(xpts) - min(xpts))/(len(xpts) - 1)    
+    yspacing = (max(ypts) - min(ypts))/(len(ypts) - 1)    
     xFreqs = FT.fftshift(FT.fftfreq(len(xpts), xspacing))
     yFreqs = FT.fftshift(FT.fftfreq(len(ypts), yspacing))
     fieldFFT = FT.fftshift(FT.fft2(FT.ifftshift(field)))
     if normalize:
         fieldFFT *= (xspacing * yspacing)
-    return {'Amp': fieldFFT, 'xFreq': xFreqs, 'yFreq': yFreqs}
+    return {'Field': fieldFFT, 'xFreq': xFreqs, 'yFreq': yFreqs}
 
 
 def ifft2D(field2DFFT, xpts, ypts, denormalize=True):
     """
-    @param field2DFFT: the 2D field frequency amplitudes
-
+    @param field2DFFT: the 2D field frequency amplitudes 
+    
     Takes the inverse fourier transform of a 2-dimensional field;
     returns the amplitudes (presumably you already have the x points for those amplitudes.)
     """
-    assert (len(field2DFFT) > 1)
+    assert(len(field2DFFT) > 1)
     field = FT.fftshift(FT.ifft2(FT.ifftshift(field2DFFT)))
     if denormalize:
+        xspacing = (max(xpts) - min(xpts))/(len(xpts) - 1)    
+        yspacing = (max(ypts) - min(ypts))/(len(ypts) - 1)    
         field /= xspacing * yspacing
-    return {'Field': field, 'xpts': xpts, 'ypts': ypts}
+    return {'Field': field, 'xpts': xpts, 'ypts': ypts }
+
 
 
 def propagate2D(field, fieldPosX, fieldPosY, z_fin, wavelength, n=1):
@@ -153,24 +156,26 @@ def propagate2D(field, fieldPosX, fieldPosY, z_fin, wavelength, n=1):
     """
     k = 2 * np.pi * n / wavelength
     # Important assumption in the following line.
-    xSpacing = (max(fieldPosX) - min(fieldPosX)) / (len(fieldPosX) - 1)
+    xSpacing = (max(fieldPosX) - min(fieldPosX))/(len(fieldPosX) - 1)
     if not (xSpacing <= wavelength / 2):
         print('WARNING: spacing is not sufficient to see evanescant frequencies in X direction.'
               ' Spacing is ' + str(xSpacing))
-    ySpacing = (max(fieldPosY) - min(fieldPosY)) / (len(fieldPosY) - 1)
+    ySpacing = (max(fieldPosY) - min(fieldPosY))/(len(fieldPosY) - 1)
     if not (ySpacing <= wavelength / 2):
         print('WARNING: spacing is not sufficient to see evanescant frequencies in Y direction.'
               ' Spacing is ' + str(ySpacing))
-    fieldFFT, xFreqs, yFreqs = fft2D(field, fieldPosX, fieldPosY)
-    transferFunc = np.zeros((len(xFreqs), len(yFreqs))).astype(complex)
-    for x in range(len(xFreqs)):
-        for y in range(len(yFreqs)):
-            transferFunc[x][y] = np.exp(1j * k * z_fin * np.sqrt(
-                (1 - ((wavelength / n) * xFreqs[x]) ** 2 - ((wavelength / n) * yFreqs[y]) ** 2).astype(complex)))
-    propFieldFFT = fieldFFT * transferFunc
-    field = ifft2D(propFieldFFT)
-    return np.array(field)
-
+    theFft = fft2D(field, fieldPosX, fieldPosY)
+    #fieldFFT, xFreqs, yFreqs = 
+    transferFunc = np.zeros((len(theFft['xFreq']), len(theFft['yFreq']))).astype(complex)
+    for x in range(len(theFft['xFreq'])):
+        for y in range(len(theFft['yFreq'])):
+            transferFunc[x][y] = np.exp(1j * k * z_fin * 
+                                        np.sqrt((1 - ((wavelength / n) * theFft['xFreq'][x])**2 
+                                                 - ((wavelength / n) * theFft['yFreq'][y])**2).astype(complex)))
+    propFieldFFT = theFft['Field'] * transferFunc
+    field = np.array([], dtype=complex)
+    propField = ifft2D(propFieldFFT, fieldPosX, fieldPosY)
+    return propField
 
 def splitStepPropagate(field, xpts, n, z, wavelength, returnFinal=False, informProgress=True):
     """
@@ -225,4 +230,5 @@ def splitStepPropagate(field, xpts, n, z, wavelength, returnFinal=False, informP
                 allData = propagate(allData * np.exp(1j * k * n_z * dz),
                                     xpts, dz, wavelength, n_z)['Field']
     return allData
+
 

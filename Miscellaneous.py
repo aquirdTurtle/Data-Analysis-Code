@@ -105,7 +105,7 @@ def getMarkers():
     return ['o','v','<','>','^','*','x','+','D']
 
 
-def getColors(num, rgb=False):
+def getColors(num, rgb=False, cmStr='nipy_spectral'):
     """
     Get an array of colors, typically to use for plotting.
 
@@ -121,7 +121,7 @@ def getColors(num, rgb=False):
     #    cmapRGB = get_cmap(m, rowSize+1)
     #    for i in range(rowSize):
     #        c.append(cmapRGB(i+1)[:-1])
-    cmapRGB = get_cmap('nipy_spectral', num+1)
+    cmapRGB = get_cmap(cmStr, num+1)
     c = [cmapRGB(i)[:-1] for i in range(num+1)][:]
     c = c[1:]
     
@@ -191,6 +191,10 @@ def errString(val, err, precision=None):
     :param precision:
     :return:
     """
+    if np.isinf(err) or np.isnan(err):
+        err = 0
+    if np.isinf(val) or np.isnan(val):
+        return "?(?)"
     if err == 0:
         if precision is None:
             precision = 3
@@ -198,13 +202,14 @@ def errString(val, err, precision=None):
     valE = getExp(val)
     # determine number of values of err to show.
     errE = getExp(err)
+    if np.isinf(errE):
+        errE = 0;
+        #return  round_sig_str(val, precision) +'(?)'
     if precision is None:
         # determine first significant digit of error and use one more than that. 
         precision = int(valE - errE + 2)
-    if valE == float('Inf') or valE == float('-Inf'):
+    if np.isinf(valE):
         return "?(?)"
-    if errE == float('Inf') or errE == float('-Inf'):
-        return  round_sig_str(val, precision) +'(?)'
     try:
         num = int(errE-valE+precision)
         if num < 0:
@@ -220,14 +225,15 @@ def errString(val, err, precision=None):
     result = round_sig_str(val, precision) + '(' + round_sig_str(errNum, num) + ')'
     return result
 
+
 def dblErrString(val, err1, err2, precision=None):
     """
-    takes the input value and error and makes a nice error string. e.g.
-    inputs of
-    1.423, 0.086, 3 gives
-    1.42(9)
+    takes the input value and error and makes a nice error string with two error measures, 
+    e.g. an ensemble std and an mean error, in the format num(err1)(err2) e.g. 0.514(40)(3)
     :return:
     """
+    if np.isinf(val) or np.isnan(val):
+        return "?(?)"
     if err1 == 0 or err2 == 0:
         if precision is None:
             precision = 3
@@ -236,20 +242,23 @@ def dblErrString(val, err1, err2, precision=None):
     # determine number of values of err to show.
     errE1 = getExp(err1)
     errE2 = getExp(err2)
-    errE = min([errE1, errE2])
+    errE_m = min((errE1, errE2))
+    if errE_m == float("NaN"):
+        errE_m = 0
+    if valE == float('Inf') or valE == float('-Inf') or np.isnan(valE):
+        return "?(?)"
     if precision is None:
         # determine first significant digit of error and use one more than that. 
-        precision = int(valE - errE + 2)
-        print(precision)
-    if valE == float('Inf') or valE == float('-Inf'):
-        return "?(?)"
-    if errE == float('Inf') or errE == float('-Inf'):
+        precision = int(valE - errE_m + 2)
+    if np.isinf(errE_m):
         return  round_sig_str(val, precision) +'(?)'
     try:
-        num = int(errE-valE+precision)
+        num = int(errE_m-valE+precision)
+        num1 = int(errE1-valE+precision)
+        num2 = int(errE2-valE+precision)
         if num < 0:
             num = 0
-        expFactor = -errE + num - 1
+        expFactor = -errE_m + num - 1
     except ValueError:
         print('bad number!')
         num = 0
@@ -258,6 +267,103 @@ def dblErrString(val, err1, err2, precision=None):
         expFactor = 0
     errNum1 = int(round(err1*10**expFactor))
     errNum2 = int(round(err2*10**expFactor))
-    result = round_sig_str(val, precision) + '(' + round_sig_str(errNum1, num) + ')' + '(' + round_sig_str(errNum2, num) + ')'
+    result = round_sig_str(val, precision) + '(' + round_sig_str(errNum1, num1) + ')' + '(' + round_sig_str(errNum2, num2) + ')'
     return result
 
+def asymErrString(val, err1, err2, precision=None):
+    """
+    takes the input value with asymmetric error values makes a nice error string, 
+    e.g. r'$0.542^((3))_((20))$'
+    The string is meant to be rendered using latex. 
+    :return:
+    """
+    if np.isinf(val) or np.isnan(val):
+        return "?(?)"
+    if err1 == 0 or err2 == 0:
+        if precision is None:
+            precision = 3
+        return round_sig_str(val, precision) + '(0)(0)'
+    valE = getExp(val)
+    # determine number of values of err to show.
+    errE1 = getExp(err1)
+    errE2 = getExp(err2)
+    errE_m = min((errE1, errE2))
+    if errE_m == float("NaN"):
+        errE_m = 0
+    if valE == float('Inf') or valE == float('-Inf') or np.isnan(valE):
+        return "?(?)"
+    if precision is None:
+        # determine first significant digit of error and use one more than that. 
+        precision = int(valE - errE_m + 2)
+    if np.isinf(errE_m):
+        return  round_sig_str(val, precision) +'(?)'
+    try:
+        num = int(errE_m-valE+precision)
+        num1 = int(errE1-valE+precision)
+        num2 = int(errE2-valE+precision)
+        if num < 0:
+            num = 0
+        expFactor = -errE_m + num - 1
+    except ValueError:
+        print('bad number!')
+        num = 0
+        expFactor=0
+    if expFactor <= 0:
+        expFactor = 0
+    errNum1 = int(round(err1*10**expFactor))
+    errNum2 = int(round(err2*10**expFactor))
+    result = r'$'+round_sig_str(val, precision) + '^{(' + round_sig_str(errNum1, num1) + ')}' + '_{(' + round_sig_str(errNum2, num2) + ')}$'
+    return result
+
+
+def dblAsymErrString(val, err_L1, err_U1, err_L2, err_U2, precision=None):
+    """
+    takes the input value with asymmetric error values makes a nice error string, 
+    e.g. r'$0.542^((3))_((20))$'
+    The string is meant to be rendered using latex. 
+    :return:
+    """
+    if np.isinf(val) or np.isnan(val):
+        return "?(?)"
+    if err_L1 == 0 or err_U1 == 0 or err_L2 == 0 or err_U2 == 0:
+        if precision is None:
+            precision = 3
+        return round_sig_str(val, precision) + '(0)(0)'
+    valE = getExp(val)
+    # determine number of values of err to show.
+    errLE1 = getExp(err_L1)
+    errLE2 = getExp(err_L2)
+    errUE1 = getExp(err_U1)
+    errUE2 = getExp(err_U2)
+    errE_m = min((errLE1, errLE2, errUE1, errUE2))
+    if errE_m == float("NaN"):
+        errE_m = 0
+    if valE == float('Inf') or valE == float('-Inf') or np.isnan(valE):
+        return "?(?)"
+    if precision is None:
+        # determine first significant digit of error and use one more than that. 
+        precision = int(valE - errE_m + 2)
+    if np.isinf(errE_m):
+        return  round_sig_str(val, precision) +'(?)'
+    try:
+        num = int(errE_m-valE+precision)
+        numL1 = int(errLE1-valE+precision)
+        numL2 = int(errLE2-valE+precision)
+        numU1 = int(errUE1-valE+precision)
+        numU2 = int(errUE2-valE+precision)
+        if num < 0:
+            num = 0
+        expFactor = -errE_m + num - 1
+    except ValueError:
+        print('bad number!')
+        num = 0
+        expFactor=0
+    if expFactor <= 0:
+        expFactor = 0
+    errNumL1 = int(round(err_L1*10**expFactor))
+    errNumL2 = int(round(err_L2*10**expFactor))
+    errNumU1 = int(round(err_U1*10**expFactor))
+    errNumU2 = int(round(err_U2*10**expFactor))
+    result = (r'$'+round_sig_str(val, precision) + '^{(' + round_sig_str(errNumU1, numU1) + ')('+round_sig_str(errNumU2, numU2)+')}' 
+              + '_{(' + round_sig_str(errNumL1, numL1) + ')('+ round_sig_str(errNumL2, numL2) + ')}$')
+    return result
