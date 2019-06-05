@@ -1,4 +1,3 @@
-
 from numpy import array as arr
 from pandas import DataFrame
 
@@ -34,7 +33,6 @@ def standardImages(data,
         raise ValueError(
             "ERROR: Can't use fitBeamWaist and not fitPics! The fitBeamWaist attempts to use the fit values "
             "found by the gaussian fits.")
-
     # the key
     """
     if key.size == 0:
@@ -68,6 +66,8 @@ def standardImages(data,
             with exp.ExpFile() as f:
                 f.open_hdf5(data,True)
                 rawData = f.get_basler_pics()
+                if key is None:
+                    _, key = f.get_key()
         elif loadType == 'dataray':
             raise ValueError('Loadtype of "dataray" has become deprecated and needs to be reimplemented.')
         else:
@@ -89,6 +89,7 @@ def standardImages(data,
         rawData = data
     if not quiet:
         print('Data Loaded.')
+    print(rawData.shape)
     res = processImageData( key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulations, dataRange, zeroCorners,
                             smartWindow, manuallyAccumulate=manualAccumulation )
     key, rawData, dataMinusBg, dataMinusAvg, avgPic = res
@@ -107,8 +108,8 @@ def standardImages(data,
         else:
             if not quiet:
                 print('fitting raw data.')
-            pictureFitParams, pictureFitErrors = fitPictures(rawData, range(len(key)), guessSigma_x=fitWidthGuess,
-                                                             guessSigma_y=fitWidthGuess*0.6, quiet=quiet)
+            pictureFitParams, pictureFitErrors = fitPictures( rawData, range(len(key)), guessSigma_x=fitWidthGuess,
+                                                              guessSigma_y=fitWidthGuess, quiet=quiet )
     else:
         pictureFitParams, pictureFitErrors = np.zeros((len(key), 7)), np.zeros((len(key), 7))
 
@@ -156,7 +157,7 @@ def standardImages(data,
         minorPlotData, majorPlotData = countData, fitData
     else:
         raise ValueError("incorect 'majorData' argument")
-    return key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, pictureFitErrors
+    return key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, pictureFitErrors, plottedData
 
 
 

@@ -63,9 +63,9 @@ def guess(key, values):
     Returns guess values for the parameters of this function class based on the input. Used for fitting using this class.
     """
     return [min(values),
-            0.4, -150, 10,
+            0.4, -110, 10,
             0.4, 0, 10,
-            0.4, 150, 10]
+            0.4, 125, 10]
     
 
 def areas(A1, x01, sig1, A2, x02, sig2):

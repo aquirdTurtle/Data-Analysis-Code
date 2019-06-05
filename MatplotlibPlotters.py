@@ -1,6 +1,7 @@
 
 import time
 from pandas import DataFrame
+import MainAnalysis as ma
 from MainAnalysis import standardPopulationAnalysis, analyzeNiawgWave, standardTransferAnalysis, standardAssemblyAnalysis, AnalyzeRearrangeMoves
 from numpy import array as arr
 from random import randint
@@ -177,6 +178,36 @@ def plotNiawg(fileIndicator, points=300, plotTogether=True, plotVolts=False):
     show()
 
     
+def plotImages(data, key=None, magnification=3, showAllPics=True, plottedData=None, **standardImagesArgs):
+    res = ma.standardImages( data, scanType="Time(ms)", majorData='fits', fitPics=True, manualAccumulation=True, quiet=True, 
+                             key=key, plottedData=plottedData, **standardImagesArgs )
+    (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, pictureFitErrors, plottedData) = res
+    # convert to meters
+    waists = 2 * consts.baslerScoutPixelSize * np.sqrt((pictureFitParams[:, 3]**2+pictureFitParams[:, 4]**2)/2) * magnification
+    # convert to s
+    # temp, fitVals, fitCov, times, waists, rawData, pictureFitParams, key = res
+    errs = np.sqrt(np.diag(pictureFitErrors))
+    f, ax = subplots(figsize=(20,3))
+    ax.plot(key, waists, 'bo', label='Fit Waist')
+    ax.yaxis.label.set_color('c')
+    ax.grid( True, color='b' )
+    ax2 = ax.twinx()
+    ax2.plot(key, pictureFitParams[:, 0], 'ro:', marker='*', label='Fit Amp (counts)')
+    ax2.yaxis.label.set_color( 'r' )
+    ax.set_title('Measured atom cloud size over time')
+    ax.set_xlabel('Time (s)')
+    ax.set_ylabel('Gaussian fit waist (m)')
+    ax.legend(loc='right')
+    ax2.legend(loc='lower center')
+    ax2.grid(True,color='r')
+    if showAllPics:
+        if 'raw' in plottedData:
+            showPics(rawData, key, fitParams=pictureFitParams)
+        if '-bg' in plottedData:
+            showPics(dataMinusBg, key, fitParams=pictureFitParams)
+    return pictureFitParams,rawData
+    
+    
 def plotMotTemperature(data, key=None, magnification=3, showAllPics=True, **standardImagesArgs):
     """
     Calculate the mot temperature, and plot the data that led to this.
@@ -185,7 +216,7 @@ def plotMotTemperature(data, key=None, magnification=3, showAllPics=True, **stan
     :return:
     """
     res = ah.temperatureAnalysis(data, magnification, key=key, loadType='basler',**standardImagesArgs)
-    temp, fitVals, fitCov, times, waists, rawData, pictureFitParams, key = res
+    temp, fitVals, fitCov, times, waists, rawData, pictureFitParams, key, plottedData, dataMinusBg = res
     errs = np.sqrt(np.diag(fitCov))
     f, ax = subplots(figsize=(20,3))
     ax.plot(times, waists, 'bo', label='Fit Waist')
@@ -202,7 +233,10 @@ def plotMotTemperature(data, key=None, magnification=3, showAllPics=True, **stan
     ax2.legend(loc='lower center')
     ax2.grid(True,color='r')
     if showAllPics:
-        showPics(rawData, key, fitParams=pictureFitParams)
+        if 'raw' in plottedData:
+            showPics(rawData, key, fitParams=pictureFitParams)
+        if '-bg' in plottedData:
+            showPics(dataMinusBg, key, fitParams=pictureFitParams)    
     print("\nTemperture in the Large Laser Beam Approximation:", misc.errString(temp * 1e6, errs[2]*1e6), 'uK')
     print('Fit-Parameters:', fitVals)
     return pictureFitParams,rawData
@@ -350,8 +384,8 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
     # some easily parallelizable stuff
     plotList = [mainPlot, initPopPlot, countPlot, avgPlt1, avgPlt2]
     xlabels = [keyName,keyName,'Picture #','','']
-    ylabels = [typeName + " %","Initial Population %", "Camera Signal",'','']
-    titles = [titletxt, "Initial Population: Avg$ = " + str(misc.round_sig(np.mean(arr(initPopulation.tolist())))) + '$',
+    ylabels = [typeName + " %","Initial Pop %", "Camera Signal",'','']
+    titles = [titletxt, "Initial Pop: Avg$ = " + str(misc.round_sig(np.mean(arr(initPopulation.tolist())))) + '$',
               "Thresh.=" + str(misc.round_sig(np.mean([initThresholds[i].t for i in range(len(initThresholds))]))), '', '']
     majorYTicks = [np.arange(0,1,0.1),np.arange(0,1,0.2),np.linspace(min(pic1Data[0]),max(pic1Data[0]),5),[],[]]
     minorYTicks = [np.arange(0,1,0.05),np.arange(0,1,0.1),np.linspace(min(pic1Data[0]),max(pic1Data[0]),10),[],[]]
@@ -392,7 +426,7 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
             if module.center() is not None:
                 centers.append(module.getCenter(fit['vals']))
             mainPlot.plot(fit['x'], fit['nom'], color=colors[i], alpha=0.5)
-    mainPlot.xaxis.set_label_coords(0.95, -0.1)
+    mainPlot.xaxis.set_label_coords(0.95, -0.15)
     if legendOption:
         mainPlot.legend(loc="upper center", bbox_to_anchor=(0.4, -0.1), fancybox=True, ncol = 4 if longLegend else 10, prop={'size': 12})
     # Init Population Plot
@@ -691,7 +725,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     mainPlot.errorbar(key, avgPop, yerr=avgPopErr, color=avgColor, ls='',
              marker='o', capsize=6, elinewidth=3, label='Avg', markersize=5)
     if fitModules is not [None] and showFitDetails:
-        mainPlot.plot(avgFit['x'], avgFit['nom'], color=avgColor, ls=':')
+        mainPlot.plot(avgFits['x'], avgFits['nom'], color=avgColor, ls=':')
 
     #elif fitModules is not [None]:
     #    for val, name in zip(avgFits['vals'], fitModule.args()):
@@ -747,10 +781,10 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         f.get_basic_info()
     
     if fitModules[-1] is not None:
-        for label, fitVal, err in zip(fitModules[-1].args(), avgFit['vals'], avgFit['errs']):
+        for label, fitVal, err in zip(fitModules[-1].args(), avgFits['vals'], avgFits['errs']):
             print( label,':', errString(fitVal, err) )
         if showFitDetails:
-            fits_df = getFitsDataFrame(fits, fitModules, avgFit, markersize=5)
+            fits_df = getFitsDataFrame(fits, fitModules, avgFits, markersize=5)
             display(fits_df)
             #for f in getFitsDataFrame(fits, fitModules, avgFit):
             #    display(f)

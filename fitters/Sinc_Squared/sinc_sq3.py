@@ -1,57 +1,8 @@
 import numpy as np
 import uncertainties.unumpy as unp
-from fitters.Sinc_Squared import sinc_sq
+from fitters.Sinc_Squared import sinc_sq, arb_sinc_sq_sum
 
-
-def center():
-    return 2 # or the arg-number of the center.
-
-
-def f(x, A, c, scale, offset):
-    """
-    The normal function call for this function. Performs checks on valid arguments, then calls the "raw" function.
-    :return:
-    """
-    # if offset < 0:
-    #   return x * 10**10
-    # if A < 0:
-    #   return x * 10**10
-    return f_raw(x, A, c, scale, offset)
-
-
-def args():
-    return "Amplitude", "Center", "Width-Scale", "Offset" 
-
-
-def f_raw(x, A, c, scale, offset):
-    """
-    The raw function call, performs no checks on valid parameters..
-    :return:
-    """
-    return A * np.sinc((x - c)/scale)**2 + offset
-
-
-def f_unc(x, A, c, scale, offset):
-    """
-    similar to the raw function call, but uses unp instead of np for uncertainties calculations.
-    :return:
-    """
-    arg = np.pi*(x - c)/scale
-    return A * (unp.sin(arg)/arg)**2 + offset
-
-
-def guess(key, values):
-    """
-    Returns guess values for the parameters of this function class based on the input. Used for fitting using this
-    class.
-    :param key:
-    :param values:
-    :return:
-    """
-    return [max(values) - min(values), key[np.argmax(values)], (max(key)-min(key))/4, min(values)+0.001]
-
-"""
-"""
+numSinc = 3
 
 
 def center():
@@ -64,7 +15,7 @@ def getCenter(args):
 
 def args():
     arglist = ['Offset']
-    for i in range(7):
+    for i in range(numSinc):
         j = i+1
         arglist += ['Amp'+str(j), 'Center'+str(j),'Sigma'+str(j)]
     return arglist
@@ -75,10 +26,10 @@ def f(x, *params):
     The normal function call for this function. Performs checks on valid arguments, then calls the "raw" function.
     :return:
     """
-    if len(params) != 3*7+1:
-        raise ValueError('the bump7 fitting function expects '+str(3*7+1) + ' parameters and got ' + str(len(params)))
+    if len(params) != numSinc*3+1:
+        raise ValueError('the sinc_sq3 fitting function expects '+str(numSinc*3+1) + ' parameters and got ' + str(len(params)))
     penalty = 10**10 * np.ones(len(x))
-    for i in range(7):
+    for i in range(numSinc):
         if params[3*i+1] < 0:
             # Penalize negative amplitude fits.
             return penalty
@@ -97,7 +48,7 @@ def f_raw(x, *params):
     The raw function call, performs no checks on valid parameters..
     :return:
     """
-    return arb_1d_sum.f(x, *params)
+    return arb_sinc_sq_sum.f(x, *params)
 
 
 def f_unc(x, *params):
@@ -105,22 +56,14 @@ def f_unc(x, *params):
     similar to the raw function call, but uses unp instead of np for uncertainties calculations.
     :return:
     """
-    return arb_1d_sum.f_unc(x, *params)
+    return arb_sinc_sq_sum.f_unc(x, *params)
 
 def guess(key, values):
     """
     Returns guess values for the parameters of this function class based on the input. Used for fitting using this class.
     """
     return [min(values),
-            0.4, -68, 10,
-            0.4, -40, 10,
-            0.4, -10, 10,
+            0.4, -110, 10,
             0.4, 20, 10,
-            0.4, 50, 10,
-            0.4, 80, 10,
-            0.4, 110, 10
+            0.4, 150, 10,
             ]
-    
-
-def areas(A1, x01, sig1, A2, x02, sig2):
-    return np.array([A1*sig1,A2*sig2])*np.sqrt(2*np.pi)

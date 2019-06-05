@@ -40,8 +40,6 @@ import scipy.ndimage.filters as filters
 from statsmodels.stats.proportion import proportion_confint as confidenceInterval
 
 
-
-
 def jeffreyInterval(m,num):
     # sigma = 1-0.6827 gives the standard "1 sigma" intervals.
     #print(round(m*num),end='')
@@ -101,13 +99,13 @@ def fitManyGaussianImage(im, numGauss, neighborhood_size=20, threshold=1, direct
 
 def temperatureAnalysis( data, magnification, **standardImagesArgs ):
     res = ma.standardImages(data, scanType="Time(ms)", majorData='fits', fitPics=True, manualAccumulation=True, quiet=True, **standardImagesArgs)
-    (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, fitCov) = res
+    (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, fitCov, plottedData) = res
     # convert to meters
     waists = 2 * consts.baslerScoutPixelSize * np.sqrt((pictureFitParams[:, 3]**2+pictureFitParams[:, 4]**2)/2) * magnification
     # convert to s
     times = key / 1000
     temp, fitVals, fitCov = newCalcMotTemperature(times, waists / 2)
-    return temp, fitVals, fitCov, times, waists, rawData, pictureFitParams, key
+    return temp, fitVals, fitCov, times, waists, rawData, pictureFitParams, key, plottedData, dataMinusBg
 
 
 def motFillAnalysis( dataSetNumber, motKey, exposureTime, window=(0,0,0,0), sidemotPower=2.05, diagonalPower=8, motRadius=8 * 8e-6,
@@ -515,16 +513,14 @@ def beamWaistExpansion(z, w0, z0, wavelength):
     return w0 * np.sqrt(1+(wavelength*(z-z0)/(np.pi*w0**2))**2)
 
 
-def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1):
+def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1, guess_x=None, guess_y=None):
     """
-
-    :param picture:
-    :param showFit:
-    :param guessSigma_x:
-    :param guessSigma_y:
-    :return:
+    Fit an individual picture
     """
     pos = arr(np.unravel_index(np.argmax(picture), picture.shape))
+    pos[1] = guess_x if guess_x is not None else pos[1]
+    pos[0] = guess_y if guess_x is not None else pos[0]
+
     pic = picture.flatten()
     x = np.linspace(1, picture.shape[1], picture.shape[1])
     y = np.linspace(1, picture.shape[0], picture.shape[0])
@@ -546,9 +542,9 @@ def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1):
     return initial_guess, popt, np.sqrt(np.diag(pcov))
 
 
-def fitPictures(pictures, dataRange, guessSigma_x=1, guessSigma_y=1, quiet=False):
+def fitPictures(pictures, dataRange, guessSigma_x=1, guessSigma_y=1, quiet=False, firstIsGuide=True):
     """
-
+    if firstIsGuide is true then use the fit from the first pic as the guide for the next pictures.
     :param pictures:
     :param dataRange:
     :param guessSigma_x:
@@ -569,7 +565,12 @@ def fitPictures(pictures, dataRange, guessSigma_x=1, guessSigma_y=1, quiet=False
             fitParameters.append(np.zeros(7))
             fitErrors.append(np.zeros(7))
         try:
-            _, parameters, errors = fitPic(picture, showFit=False, guessSigma_x=guessSigma_x, guessSigma_y=guessSigma_y)
+            if firstIsGuide and picInc is not 0:
+                # amplitude, xo, yo, sigma_x, sigma_y, theta, offset
+                _, parameters, errors = fitPic(picture, showFit=False, guess_x = fitParameters[0][1], guess_y = fitParameters[0][2], 
+                                               guessSigma_x=fitParameters[0][3], guessSigma_y=fitParameters[0][4])
+            else:
+                _, parameters, errors = fitPic(picture, showFit=False, guessSigma_x=guessSigma_x, guessSigma_y=guessSigma_y)
         except RuntimeError:
             if not warningHasBeenThrown:
                 print("Warning! Not all picture fits were able to fit the picture signal to a 2D Gaussian.\n"
@@ -1864,6 +1865,10 @@ def processImageData(key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulat
                 var += rawData[varCount * accumulations + picNum]
             varCount += 1
         rawData = avgPics
+    print(rawData.shape)
+    print(rawData.shape[0])
+    
+    
     if rawData.shape[0] != len(key):
         raise ValueError("ERROR: number of pictures (after manual accumulations) " + str(rawData.shape[0]) + 
                          " data doesn't match length of key " + str(len(key)) + "!")
@@ -1921,7 +1926,6 @@ def processImageData(key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulat
         for pic in normData:
             cornerAvg = (pic[0, 0] + pic[0, -1] + pic[-1, 0] + pic[-1, -1]) / 4
             pic -= cornerAvg
-
     return key, normData, dataMinusBg, dataMinusAvg, avgPic
 
 

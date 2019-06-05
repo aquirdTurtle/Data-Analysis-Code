@@ -147,19 +147,22 @@ class ExpFile:
         keyNames = []
         keyValues = []
         foundOne = False
-        for var in self.f['Master-Parameters']['Seq #1 Variables']:
-            if not self.f['Master-Parameters']['Seq #1 Variables'][var].attrs['Constant']:
-                foundOne = True
-                keyNames.append(var)
-                keyValues.append(arr(self.f['Master-Parameters']['Seq #1 Variables'][var]))
-        if foundOne:
-            if len(keyNames) > 1:
-                return keyNames, arr(misc.transpose(arr(keyValues)))
+        nokeyreturn = 'No-Variation', arr([1])
+        try:
+            for var in self.f['Master-Parameters']['Seq #1 Variables']:
+                if not self.f['Master-Parameters']['Seq #1 Variables'][var].attrs['Constant']:
+                    foundOne = True
+                    keyNames.append(var)
+                    keyValues.append(arr(self.f['Master-Parameters']['Seq #1 Variables'][var]))
+            if foundOne:
+                if len(keyNames) > 1:
+                    return keyNames, arr(misc.transpose(arr(keyValues)))
+                else:
+                    return keyNames[0], arr(keyValues[0])
             else:
-                return keyNames[0], arr(keyValues[0])
-        else:
-            return 'No-Variation', arr([1])
-    
+                return nokeyreturn
+        except KeyError:
+            return nokeyreturn
     
     def get_old_key(self):
         """
