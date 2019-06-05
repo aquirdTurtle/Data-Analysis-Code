@@ -2,8 +2,21 @@ import MainAnalysis as ma
 import matplotlib.pyplot as plt
 import Miscellaneous as misc
 import numpy as np
+import ExpFile as exp
 
-def updateThresholds(fid, atomLocations, picsPerRep):
+
+def updateThresholds():
+    # fid, atomLocations, picsPerRep
+    
+    with open('ThresholdAnalysisInfo.txt') as f:
+        lines = f.readlines()
+        dataLines = [l.rstrip() for l in lines[5:]]
+    dateTuple = dataLines[0].split(',')
+    fid = int(dataLines[1])
+    atomLocations = dataLines[2].split(';')
+    atomLocations = [[int(x) for x in loc.replace('[','').replace(']','').split(',')] for loc in atomLocations]
+    picsPerRep = int(dataLines[3])    
+    exp.setPath(*dateTuple)
     res = ma.standardPopulationAnalysis(fid, atomLocations, 0, picsPerRep)
     (locCounts, thresholds, avgPic, key, allPopsErr, allPops, avgPop, avgPopErr, fits,
      fitModules, keyName, atomData, rawData, atomLocations, avgFits, atomImages,
@@ -13,11 +26,15 @@ def updateThresholds(fid, atomLocations, picsPerRep):
     for i, atomLoc in enumerate(atomLocations):
         ax.hist(locCounts[i], 50, color=colors[i], orientation='vertical', alpha=0.3, histtype='stepfilled')
         ax.axvline(thresholds[i].t, color=colors[i], alpha=0.3)    
+    plt.show()
     # output thresholds
     threshVals = [t.t for t in thresholds]
-    threshVals = np.flip(np.reshape(threshVals, (10,10)),1)
-    with open('J:/Code-Files/T-File.txt','w') as f:
-        for row in threshVals:
-            for thresh in row:
-                f.write(str(thresh) + ' ') 
+    with open('C:/Users/Mark-Brown/Code/Chimera-Control/T_File.txt','w') as f:
+        for val in threshVals:
+            f.write(str(val) + ' ') 
     plt.show(block=False)
+
+updateThresholds()
+
+#plt.plot([0,1,2],[2,1,2],'o:')
+#plt.show()

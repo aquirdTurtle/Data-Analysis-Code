@@ -351,10 +351,23 @@ class ExpFile:
         return infoStr
 
     def get_experiment_time_and_date(self):
-        start_date = ''.join([x.decode('UTF-8') for x in self.f['Miscellaneous']['Start-Date']])
-        start_time = ''.join([x.decode('UTF-8') for x in self.f['Miscellaneous']['Start-Time']])
-        stop_date = ''.join([x.decode('UTF-8') for x in self.f['Miscellaneous']['Stop-Date']])
-        stop_time = ''.join([x.decode('UTF-8') for x in self.f['Miscellaneous']['Stop-Time']])
+        start_date, stop_date, start_time, stop_time = '','','',''
+        try:
+            start_date = ''.join([x.decode('UTF-8') for x in self.f['Miscellaneous']['Start-Date']])
+        except KeyError:
+            pass
+        try:
+            start_time = ''.join([x.decode('UTF-8') for x in self.f['Miscellaneous']['Start-Time']])
+        except KeyError:
+            pass
+        try:
+            stop_date = ''.join([x.decode('UTF-8') for x in self.f['Miscellaneous']['Stop-Date']])
+        except KeyError:
+            pass
+        try:
+            stop_time = ''.join([x.decode('UTF-8') for x in self.f['Miscellaneous']['Stop-Time']])
+        except KeyError:
+            pass
         return start_date, start_time, stop_date, stop_time
         #return "","","",""
 
