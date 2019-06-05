@@ -1,3 +1,4 @@
+# created by mark brown
 import h5py as h5
 from colorama import Fore, Style
 from numpy import array as arr
