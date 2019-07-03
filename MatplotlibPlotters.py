@@ -84,12 +84,13 @@ def makeThresholdStatsImages(ax, thresholds, locs, shape, ims, lims, fig):
     
 
 def plotThresholdHists(thresholds, colors, extra=None, extraname=None, thresholds_2=None, shape=(10,10)):
-    f, axs = subplots(shape[0], shape[1], figsize=(34.0, 8.0))
+    fig, axs = subplots(shape[0], shape[1], figsize=(34.0, 8.0))
     if thresholds_2 is None:
         thresholds_2 = [None for _ in thresholds]
     for i, (t, t2, c) in enumerate(zip(thresholds, thresholds_2, colors[1:])):
         ax = axs[len(axs[0]) - i%len(axs[0]) - 1][int(i/len(axs))]
         ax.bar(t.binCenters, t.binHeights, align='center', width=t.binCenters[1] - t.binCenters[0], color=c)
+        #ax.semilogy(t.binCenters, t.binHeights, color=c)
         ax.axvline(t.t, color='w', ls=':')
         minx, maxx = min(t.binCenters), max(t.binCenters)
         maxy = max(t.binHeights)
@@ -107,13 +108,14 @@ def plotThresholdHists(thresholds, colors, extra=None, extraname=None, threshold
         ax.set_xticklabels([])
         ax.set_yticklabels([])
         ax.set_xlim(minx, maxx)
-        ax.set_ylim(0, maxy)
+        ax.set_ylim(0.1, maxy)
         ax.grid(False)
         if extra is not None:
             txt = extraname + misc.round_sig_str( np.mean(extra[i])) if extraname is not None else misc.round_sig_str(np.mean(extra[i]))
             t = ax.text( (maxx + minx) / 2, maxy / 2, txt, fontsize=12 )
             t.set_bbox(dict(facecolor='k', alpha=0.3))
-    f.subplots_adjust(wspace=0, hspace=0)
+    fig.subplots_adjust(wspace=0, hspace=0)
+    return fig
     
         
 def indvHists(dat, thresh, colors, extra=None, extraname=None, extra2=None, extra2Name=None, gaussianFitVals=None):
@@ -361,7 +363,7 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
     showImagePlots = showImagePlots if showImagePlots is not None else (False if len(atomLocs1) == 1 else True)
     legendOption = True if legendOption is None and len(atomLocs1) < 50 else False
     # set locations of plots.
-    f = figure(figsize=(25.0, 8.0))
+    fig = figure(figsize=(25.0, 8.0))
     typeName = "Survival" if atomLocs1 == atomLocs2 else "Transfer"
     grid1 = mpl.gridspec.GridSpec(12, 16,left=0.05, right=0.95, wspace=1.2, hspace=1000)
     mainPlot = subplot(grid1[:, :11])
@@ -512,7 +514,7 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
             ax.set_xticklabels([])
             ax.grid(False)
             ax.set_title(title, fontsize=12)
-            imageTickedColorbar(f, im, ax, lim)
+            imageTickedColorbar(fig, im, ax, lim)
         tt.clock('After-Image-Plots')
     if plotIndvHists:
         if type(atomLocs1_orig[-1]) == int:
@@ -520,22 +522,23 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
         else:
             print('what')
             shape = (10,10)
-        plotThresholdHists(initThresholds, colors, extra=avgTransfers, extraname=r"$\rightarrow$:", thresholds_2=transThresholds, shape=shape)
+        thresholdFig = plotThresholdHists(initThresholds, colors, extra=avgTransfers, extraname=r"$\rightarrow$:", thresholds_2=transThresholds, shape=shape)
         tt.clock('After-Indv-Hists')
+        disp.display(thresholdFig)
     if timeit:
         tt.display()
     avgPlt1.set_position([0.58,0,0.3,0.3])
     avgPlt2.set_position([0.73,0,0.3,0.3])
     
-    disp.display(f)
+    disp.display(fig)
     if newAnnotation or not exp.checkAnnotation(fileNumber, force=False, quiet=True):
         exp.annotate(fileNumber)
     disp.clear_output()
     
     expTitle, _, _ = exp.getAnnotation(fileNumber)
     disp.display(disp.Markdown(expTitle))
-    with exp.ExpFile(fileNumber) as f:
-        f.get_basic_info()
+    with exp.ExpFile(fileNumber) as fid:
+        fid.get_basic_info()
     
     if fitModules[-1] is not None:
         for label, fitVal, err in zip(fitModules[-1].args(), avgFit['vals'], avgFit['errs']):
@@ -591,7 +594,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         legendOption = False
     # get the colors for the plot.
     markers = ['o','^','<','>','v']
-    f_main = figure()
+    f_main = figure(figsize=(20,7))
     # Setup grid
     grid1 = mpl.gridspec.GridSpec(12, 16)
     grid1.update(left=0.05, right=0.95, wspace=1.2, hspace=1000)
@@ -738,7 +741,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     if showImagePlots:
         ims = []
         lims = [[0,0] for _ in range(5)]
-        f_im, axs = subplots(1,6)
+        f_im, axs = subplots(1,6, figsize=(20,5))
         
         ims.append(axs[0].imshow(avgPic, origin='lower'))
         axs[0].set_title('Avg 1st Pic')

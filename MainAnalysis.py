@@ -307,6 +307,7 @@ def analyzeScatterData( fileNumber, atomLocs1, connected=False, loadPic=1, trans
         survivalFits[i], _ = fitWithModule(fitters.linear, key, data.flatten(), errs=err.flatten())
     return key, psSurvivals, psErrors, fitInfo, fitFinished, survivalData, survivalErrs, survivalFits, atomLocs1
 
+
 def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, manualThreshold=None,
                               fitModules=None, histSecondPeakGuess=None, outputMma=False, varyingDim=None,
                               subtractEdgeCounts=True, initPic=0, transPic=1, postSelectionCondition=None,
@@ -427,7 +428,7 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
 
 def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, analyzeTogether=False, 
                                 manualThreshold=None, fitModules=[None], keyInput=None, fitIndv=False, subtractEdges=True,
-                                keyConversion=None, quiet=False, dataRange=None, picSlice=None, keyOffset=0):
+                                keyConversion=None, quiet=False, dataRange=None, picSlice=None, keyOffset=0, softwareBinning=None):
     """
     keyConversion should be a calibration which takes in a single value as an argument and converts it.
         It needs a calibration function f() and a units function units()
@@ -443,6 +444,9 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
     numOfVariations = int(numOfPictures / (repetitions * picsPerRep))
     key = ah.handleKeyModifications(hdf5Key, numOfVariations, keyInput=keyInput, keyOffset=keyOffset, groupData=False, keyConversion=keyConversion )
     # ## Initial Data Analysis
+    if softwareBinning is not None:
+        sb = softwareBinning
+        rawData = rawData.reshape(rawData.shape[0], rawData.shape[1]//sb[0], sb[0], rawData.shape[2]//sb[1], sb[1]).sum(4).sum(2)
     s = rawData.shape
     groupedData = rawData.reshape((1, s[0], s[1], s[2]) if analyzeTogether else (numOfVariations, repetitions * picsPerRep, s[1], s[2]))
     key, groupedData = applyDataRange(dataRange, groupedData, key)

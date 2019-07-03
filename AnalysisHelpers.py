@@ -225,7 +225,7 @@ def handleKeyModifications(hdf5Key, numVariations, keyInput=None, keyOffset=0, g
 
 def organizeTransferData( fileNumber, initLocs, transLocs, key=None, window=None, xMin=None, xMax=None, yMin=None,
                           yMax=None, dataRange=None, keyOffset=0, dimSlice=None, varyingDim=None, groupData=False,
-                          quiet=False, picsPerRep=2, repRange=None, initPic=0, transPic=1, keyConversion=None ):
+                          quiet=False, picsPerRep=2, repRange=None, initPic=0, transPic=1, keyConversion=None, softwareBinning=None ):
     """
     Unpack inputs, properly shape the key, picture array, and run some initial checks on the consistency of the settings.
     """
@@ -236,6 +236,10 @@ def organizeTransferData( fileNumber, initLocs, transLocs, key=None, window=None
     if repRange is not None:
         repetitions = repRange[1] - repRange[0]
         rawData = rawData[repRange[0]*picsPerRep:repRange[1]*picsPerRep]
+    if softwareBinning is not None:
+        sb = softwareBinning
+        rawData = rawData.reshape(rawData.shape[0], rawData.shape[1]//sb[0], sb[0], rawData.shape[2]//sb[1], sb[1]).sum(4).sum(2)
+
     # window the images images.
     if window is not None:
         xMin, yMin, xMax, yMax = window
