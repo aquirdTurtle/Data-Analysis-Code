@@ -4,13 +4,9 @@ from fitters.Gaussian import arb_1d_sum
 
 numGauss = 2
 
-def center():
-    return None  # or the arg-number of the center.
-
-
-def getCenter(args):
-    # return the average
-    return (args[1] + args[4] + args[7])/3
+def fitCharacter(args):
+    # return the diff/2
+    return (args[5] - args[2])/2
 
 
 def args():
@@ -63,8 +59,8 @@ def guess(key, values):
     Returns guess values for the parameters of this function class based on the input. Used for fitting using this class.
     """
     return [min(values),
-            0.4, -110, 20,
-            0.4, 150, 20]
+            0.4, -140, 20,
+            0.4, 200, 20]
     
 
 def areas(A1, x01, sig1, A2, x02, sig2):

@@ -10,7 +10,7 @@ from matplotlib.pyplot import *
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import mpl_toolkits.axes_grid1 as axesTool
-
+import mpl_toolkits.axes_grid1
 
 from scipy.optimize import curve_fit as fit
 from LoadingFunctions import loadDataRay, loadCompoundBasler, loadDetailedKey
@@ -22,14 +22,67 @@ from AnalysisHelpers import (processSingleImage, orderData,
                              calcMotTemperature,integrateData, computeMotNumber, getFitsDataFrame, genAvgDiscrepancyImage, 
                              getGridDims, newCalcMotTemperature)
 import AnalysisHelpers as ah
-import MarksConstants as consts 
+import MarksConstants as mc 
 from matplotlib.patches import Ellipse
 from TimeTracker import TimeTracker
 from fitters import LargeBeamMotExpansion, exponential_saturation
-from fitters.Gaussian import gaussian_2d, double as double_gaussian
+from fitters.Gaussian import gaussian_2d, double as double_gaussian, bump
 import IPython.display as disp
 import ExpFile as exp
 
+
+
+def fancyImshow( fig, ax, image, avgSize='20%', pad_=0, cb=True, imageArgs={}, hAvgArgs={'color':'orange'}, vAvgArgs={'color':'orange'}, 
+                 ticklabels=True,do_vavg=True, do_havg=True, hFitParams=None, vFitParams=None, subplotsAdjustArgs=dict(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0), 
+                 fitModule=bump):
+    """
+    Expand a normal image plot of the image input, giving it a colorbar, a horizontal-averaged step plot to the left
+    and a vertically-averaged step plot below.
+    @param fig:
+    @param ax:
+    @param image:
+    @param avgSize: size of the averaged step plots
+    @param pad_: recommended values: 0 or 0.3 to see the ticks on the image as well as the step plots.
+
+    """
+    fig.subplots_adjust(**subplotsAdjustArgs)
+    im = ax.imshow(image, origin='bottom', **imageArgs)
+    ax.grid(False)
+    ax.set_xticklabels([])
+    ax.set_yticklabels([])
+    ax.axis('off')
+    divider = mpl_toolkits.axes_grid1.make_axes_locatable(ax)
+    cax = hax = vax = None
+    hAvg, vAvg = ah.collapseImage(image)
+    if cb:
+        cax = divider.append_axes('right', size='5%', pad=0)
+        fig, colorbar(im, cax, orientation='vertical')
+    if do_vavg:
+        vAvg = [vAvg[0]] + list(vAvg)
+        vax = divider.append_axes('bottom', size=avgSize, pad=pad_)
+        vax.step(np.arange(len(vAvg)), vAvg, **vAvgArgs)
+        vax.set_xlim(0,len(vAvg)-1)
+        vax.set_yticks([])
+        if not ticklabels:
+            vax.set_xticks([])
+        if vFitParams is not None:
+            fxpts = np.linspace(0, len(vAvg))
+            fypts = fitModule.f(fxpts, *vFitParams)
+            vax.plot(fxpts,fypts)
+    if do_havg:
+        # subtle difference here from the vAvg case
+        hAvg = list(hAvg) + [hAvg[-1]]
+        hax = divider.append_axes('left', size=avgSize, pad=pad_)
+        hax.step(hAvg, np.arange(len(hAvg)),**hAvgArgs)
+        hax.set_ylim(0,len(hAvg)-1)
+        hax.set_xticks([])
+        if not ticklabels:
+            hax.set_yticks([])
+        if hFitParams is not None:
+            fxpts = np.linspace(0, len(hAvg))
+            fypts = fitModule.f(fxpts, *hFitParams)
+            hax.plot(fypts, fxpts)
+    return ax, cax, hax, vax, hAvg, vAvg
 
 def rotateTicks(plot):
     ticks = plot.get_xticklabels()
@@ -184,7 +237,7 @@ def plotImages(data, key=None, magnification=3, showAllPics=True, plottedData=No
                              key=key, plottedData=plottedData, **standardImagesArgs )
     (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, pictureFitErrors, plottedData) = res
     # convert to meters
-    waists = 2 * consts.baslerScoutPixelSize * np.sqrt((pictureFitParams[:, 3]**2+pictureFitParams[:, 4]**2)/2) * magnification
+    waists = 2 * mc.baslerScoutPixelSize * np.sqrt((pictureFitParams[:, 3]**2+pictureFitParams[:, 4]**2)/2) * magnification
     # convert to s
     # temp, fitVals, fitCov, times, waists, rawData, pictureFitParams, key = res
     errs = np.sqrt(np.diag(pictureFitErrors))
@@ -217,11 +270,17 @@ def plotMotTemperature(data, key=None, magnification=3, showAllPics=True, **stan
     :return:
     """
     res = ah.temperatureAnalysis(data, magnification, key=key, loadType='basler',**standardImagesArgs)
-    temp, fitVals, fitCov, times, waists, rawData, pictureFitParams, key, plottedData, dataMinusBg = res
+    (temp, fitVals, fitCov, times, waists, rawData, pictureFitParams, key, plottedData, dataMinusBg, 
+     v_params, v_errs, h_params, h_errs, waists_1D, temp_1D, fitVals_1D, fitCov_1D) = res
     errs = np.sqrt(np.diag(fitCov))
+    errs_1D = np.sqrt(np.diag(fitCov_1D))
     f, ax = subplots(figsize=(20,3))
-    ax.plot(times, waists, 'bo', label='Fit Waist')
-    ax.plot(times, 2 * LargeBeamMotExpansion.f(times, *fitVals), 'c:', label='Balistic Expansion Waist')
+    ax.plot(times, waists, 'bo', label='Fit Waist 2D')
+    ax.plot(times, 2 * LargeBeamMotExpansion.f(times, *fitVals), 'c:', label='Balistic Expansion Waist 2D')
+    
+    ax.plot(times, waists_1D, 'go', label='Fit Waist 1D')
+    ax.plot(times, 2 * LargeBeamMotExpansion.f(times, *fitVals_1D), 'w:', label='Balistic Expansion Waist 1D')
+    
     ax.yaxis.label.set_color('c')
     ax.grid(True,color='b')
     ax2 = ax.twinx()
@@ -235,10 +294,11 @@ def plotMotTemperature(data, key=None, magnification=3, showAllPics=True, **stan
     ax2.grid(True,color='r')
     if showAllPics:
         if 'raw' in plottedData:
-            showPics(rawData, key, fitParams=pictureFitParams)
+            showPics(rawData, key, fitParams=pictureFitParams, hFitParams=h_params, vFitParams=v_params)
         if '-bg' in plottedData:
-            showPics(dataMinusBg, key, fitParams=pictureFitParams)    
-    print("\nTemperture in the Large Laser Beam Approximation:", misc.errString(temp * 1e6, errs[2]*1e6), 'uK')
+            showPics(dataMinusBg, key, fitParams=pictureFitParams, hFitParams=h_params, vFitParams=v_params)    
+    print("\nTemperture in the Large Laser Beam Approximation (2D Fits):", misc.errString(temp * 1e6, errs[2]*1e6),    'uK')
+    print("\nTemperture in the Large Laser Beam Approximation (1D Fits):", misc.errString(temp_1D * 1e6, errs_1D[2]*1e6), 'uK')
     print('Fit-Parameters:', fitVals)
     return pictureFitParams,rawData
     
@@ -265,24 +325,22 @@ def plotMotNumberAnalysis(data, motKey, exposureTime,  *fillAnalysisArgs):
     :param detuning: detuning of the mot beams during the imaging.
     """
     rawData, intRawData, motnumber, fitParams, fluorescence, motKey = ah.motFillAnalysis(data, motKey, exposureTime, loadType='basler', *fillAnalysisArgs)
+    fig = plt.figure(figsize=(20,5))
     ax1 = subplot2grid((1, 4), (0, 0), colspan=3)
     ax2 = subplot2grid((1, 4), (0, 3), colspan=1)
+    #ax3 = subplot2grid((4, 4), (3, 3), rowspan=1, colspan=1)
     ax1.plot(motKey, intRawData, 'bo', label='data', color='b')
     xfitPts = np.linspace(min(motKey), max(motKey), 1000)
     ax1.plot(xfitPts, exponential_saturation.f(xfitPts, *fitParams), 'b-', label='fit', color='r', linestyle=':')
     ax1.set_xlabel('loading time (s)')
     ax1.set_ylabel('integrated counts')
     ax1.set_title('Mot Fill Curve: MOT Number:' + str(motnumber))
-    im = ax2.imshow(rawData[-1], origin='bottom')
-    ax2.set_title('Final Image')
-    divider = axesTool.make_axes_locatable(ax2)
-    cax = divider.append_axes('right', size='5%', pad=0.05)
-    gcf().colorbar(im, cax=cax, orientation='vertical')
-    ax2.axis('Off')
+    res = fancyImshow(fig, ax2, rawData[-1])
+    res[0].set_title('Final Image')
     print("integrated saturated counts subtracting background =", -fitParams[0])
     print("loading time 1/e =", fitParams[1], "s")
-    print('Light Scattered off of full MOT:', fluorescence * consts.h * consts.Rb87_D2LineFrequency * 1e9, "nW")
-    return motnumber
+    print('Light Scattered off of full MOT:', fluorescence * mc.h * mc.Rb87_D2LineFrequency * 1e9, "nW")
+    return motnumber, rawData[-1]
 
 
 def singleImage(data, accumulations=1, loadType='andor', bg=arr([0]), title='Single Picture', window=(0, 0, 0, 0),
@@ -342,7 +400,7 @@ def Survival(fileNumber, atomLocs, **TransferArgs):
 
 
 def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOption=None,
-              fitModules=[None], showFitDetails=False, showFitCenterPlot=False, showImagePlots=None, plotIndvHists=False, 
+              fitModules=[None], showFitDetails=False, showFitCharacterPlot=False, showImagePlots=None, plotIndvHists=False, 
               timeit=False, outputThresholds=False, plotFitGuess=False, newAnnotation=False, **standardTransferArgs ):
     """
     Standard data analysis package for looking at survival rates throughout an experiment.
@@ -407,7 +465,7 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
         for item in ([subplt.title, subplt.xaxis.label, subplt.yaxis.label] + subplt.get_xticklabels() + subplt.get_yticklabels()):
             item.set_fontsize(fs)
     
-    centers = []
+    fitCharacters = []
     colors, colors2 = getColors(len(atomLocs1) + 1)
     longLegend = len(transferData[0]) == 1
     markers = getMarkers()
@@ -424,8 +482,8 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
         mainPlot.errorbar(key, transferData[i], yerr=unevenErrs, color=colors[i], ls='',
                           capsize=6, elinewidth=3, label=leg, alpha=0.1, marker=markers[i%len(markers)], markersize=10)
         if module is not None and showFitDetails and fit['vals'] is not None:
-            if module.center() is not None:
-                centers.append(module.getCenter(fit['vals']))
+            if module.fitCharacter(fit['vals']) is not None:
+                fitCharacters.append(module.fitCharacter(fit['vals']))
             mainPlot.plot(fit['x'], fit['nom'], color=colors[i], alpha=0.5)
     mainPlot.xaxis.set_label_coords(0.95, -0.15)
     if legendOption:
@@ -473,11 +531,12 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
         mainPlot.plot(avgFit['x'], avgFit['nom'], color=avgColor, ls=':')
         if plotFitGuess:
             mainPlot.plot(fit['x'], fit['guess'], color='r', alpha=0.5)
-    if fitModules[0] is not None and showFitCenterPlot:
+    if fitModules[0] is not None and showFitCharacterPlot:
         f, ax = subplots()
-        fitCenterPic, vmin, vmax = genAvgDiscrepancyImage(centers, avgPics[0].shape, atomLocs1)
-        im = ax.imshow(fitCenterPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower')
-        ax.set_title('Fit-Centers (white is average)')
+        fitCharacters
+        fitCharacterPic, vmin, vmax = genAvgDiscrepancyImage(fitCharacters, avgPics[0].shape, atomLocs1)
+        im = ax.imshow(fitCharacterPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower')
+        ax.set_title('Fit-Character (white is average)')
         ax.grid(False)
         f.colorbar(im)
     tt.clock('After-Main-Plots')
@@ -554,7 +613,7 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
                 for thresh in row:
                     f.write(str(thresh) + ' ')
     return { 'Key':key, 'All_Transfer':transferData, 'All_Transfer_Errs':transferErrs, 'Initial_Populations':initPopulation, 'Transfer_Fits':fits, 'Average_Transfer_Fit':avgFit,
-            'Average_Atom_Generation':genAvgs, 'Average_Atom_Generation_Err':genErrs, 'Picture_1_Data':pic1Data, 'Fit_Centers':centers, 
+            'Average_Atom_Generation':genAvgs, 'Average_Atom_Generation_Err':genErrs, 'Picture_1_Data':pic1Data, 'Fit_Character':fitCharacters, 
             'Average_Transfer_Pic':avgTransferPic, 'Transfer_Averaged_Over_Variations':transVarAvg, 'Transfer_Averaged_Over_Variations_Err':transVarErr, 'Average_Transfer':avgTransferData,
             'Average_Transfer_Err':avgTransferErr, 'Initial_Atom_Images':initAtomImages, 'Transfer_Atom_Images':transAtomImages, 'Picture_2_Data':pic2Data, 'Initial_Thresholds':initThresholds,
             'Transfer_Thresholds':transThresholds, 'Fit_Modules':fitModules }
@@ -568,7 +627,7 @@ def Loading(fileNum, atomLocations, **PopulationArgs):
 
 
 def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=True, plotCounts=False, legendOption=None,
-               showImagePlots=True, plotIndvHists=False, showFitDetails=False, showFitCenterPlot=True, show=True, histMain=False,
+               showImagePlots=True, plotIndvHists=False, showFitDetails=False, showFitCharacterPlot=True, show=True, histMain=False,
                mainAlpha=0.2, avgColor='w', newAnnotation=False, **StandardArgs):
     """
     Standard data analysis package for looking at population %s throughout an experiment.
@@ -612,7 +671,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     else:
         countHist = subplot(grid1[:, :12])
         mainPlot = subplot(gridLeft[4:8, 15:16], sharey=countPlot)
-    centers = []
+    fitCharacters = []
     longLegend = len(allPops[0]) == 1
     if len(arr(key).shape) == 2:
         # 2d scan: no normal plot possible, so make colormap plot of avg
@@ -633,15 +692,13 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
             if module is not None:
                 if fit == [] or fit['vals'] is None:
                     continue
-                centerIndex = module.center()
-                if centerIndex is not None:
-                    centers.append(fit['vals'][centerIndex])
+                fitCharacters.append(module.fitCharacter())
                 mainPlot.plot(fit['x'], fit['nom'], color=colors[i], alpha = 0.5)
         if fitModules[-1] is not None:
             if avgFits['vals'] is None:
                 print('Avg Fit Failed!')
             else:
-                centerIndex = fitModules[-1].center()
+                #centerIndex = fitModules[-1].center()
                 mainPlot.plot(avgFits['x'], avgFits['nom'], color=avgColor, alpha = 1,markersize=5)
         mainPlot.grid(True, color='#AAAAAA', which='Major')
         mainPlot.grid(True, color='#090909', which='Minor')
@@ -732,11 +789,12 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     #elif fitModules is not [None]:
     #    for val, name in zip(avgFits['vals'], fitModule.args()):
     #        print(name, val)
-    if fitModules is not [None] and showFitCenterPlot and fits[0] != []:
+    if fitModules is not [None] and showFitCharacterPlot and fits[0] != []:
         figure()
-        fitCenterPic, vmin, vmax = genAvgDiscrepancyImage(centers, avgPic.shape, atomLocations)
-        imshow(fitCenterPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower')
-        title('Fit-Centers (white is average)')
+        print('fitCharacter',fitCharacters)
+        fitCharacterPic, vmin, vmax = genAvgDiscrepancyImage(fitCharacters, avgPic.shape, atomLocations)
+        imshow(fitCharacterPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower')
+        title('Fit-Character (white is average)')
         colorbar()
     if showImagePlots:
         ims = []
@@ -755,13 +813,6 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         
         makeThresholdStatsImages(axs[2:], thresholds, atomLocations, avgPic.shape, ims, lims, f_im)
 
-        #for ax, im in zip(axs, ims):
-        #    ax.set_yticklabels([])
-        #    ax.set_xticklabels([])
-        #    ax.grid(False)
-        #    divider = axesTool.make_axes_locatable(ax)
-        #    cax = divider.append_axes('right', size='5%', pad=0.05)
-        #    f.colorbar(im, cax, orientation='vertical')
     avgPops = []
     for s in allPops:
         avgPops.append(np.mean(s))
@@ -934,23 +985,33 @@ def Rearrange(rerngInfoAddress, fileNumber, locations,splitByNumberOfMoves=False
     return allData, pics, moves
         
 
-def showPics(data, key, fitParams=np.array([]), indvColorBars=False, colorMax=-1):
+def showPics(data, key, fitParams=np.array([]), indvColorBars=False, colorMax=-1, fancy=True, hFitParams=None, vFitParams=None):
+    """
+    A little function for making a nice display of an array of pics and fits to the pics
+    """
     num = len(data)
     gridsize1, gridsize2 = (0, 0)
+    if hFitParams is None:
+        hFitParams = [None for _ in range(num)]
+    if vFitParams is None:
+        vFitParams = [None for _ in range(num)]
     for i in range(100):
         if i*(i-2) >= num:
             gridsize1 = i
-            gridsize2 = i-2# if i*(i-1) >= num else i
+            gridsize2 = i-2
             break
-    fig = figure(figsize=(20,20))
-    grid = axesTool.AxesGrid( fig, 111, nrows_ncols=(2, num), axes_pad=0.0, share_all=True,
-                              label_mode="L", cbar_location="right", cbar_mode="single" )
+    if fancy:
+        fig, axs = subplots( 2,num, figsize=(20,5))
+        grid = axs.flatten()
+    else:
+        fig = figure(figsize=(20,20))
+        grid = axesTool.AxesGrid( fig, 111, nrows_ncols=(2, num), axes_pad=0.0, share_all=True,
+                                  label_mode="L", cbar_location="right", cbar_mode="single" )
     rowCount, picCount, count = 0,0,0
     maximum, minimum = sorted(data.flatten())[colorMax], min(data.flatten())
     # get picture fits & plots
     for picNum in range(num):
         pl = grid[count]
-        pl.grid(0)
         if count >= len(data):
             count += 1
             picCount += 1
@@ -960,9 +1021,15 @@ def showPics(data, key, fitParams=np.array([]), indvColorBars=False, colorMax=-1
             maximum, minimum = max(pic.flatten()), min(pic.flatten())
         y, x = [np.linspace(1, pic.shape[i], pic.shape[i]) for i in range(2)]
         x, y = np.meshgrid(x, y)
-        im1 = pl.imshow( pic, origin='bottom', extent=(x.min(), x.max(), y.min(), y.max()),
-                                              vmin=minimum, vmax=maximum )
-        pl.axis('off')
+        if fancy:            
+            pl, _,_,_,_,_=fancyImshow(fig, pl, pic, imageArgs={'extent':(x.min(), x.max(), y.min(), y.max()),
+                                                  'vmin':minimum, 'vmax':maximum}, cb=False, ticklabels=False,
+                                  hAvgArgs={'linewidth':0.5}, vAvgArgs={'linewidth':0.5}, 
+                                  hFitParams=hFitParams[count], vFitParams=vFitParams[count])
+        else:
+            im1 = pl.imshow( pic, origin='bottom', extent=(x.min(), x.max(), y.min(), y.max()),
+                                                  vmin=minimum, vmax=maximum )
+            pl.axis('off')
         pl.set_title(str(misc.round_sig(key[count], 4)), fontsize=8)
         if fitParams.size != 0:
             if (fitParams[count] != np.zeros(len(fitParams[count]))).all():
@@ -978,9 +1045,13 @@ def showPics(data, key, fitParams=np.array([]), indvColorBars=False, colorMax=-1
             x, y = np.arange(0,len(pic[0])), np.arange(0,len(pic))
             X, Y = np.meshgrid(x,y)
             vals = np.reshape(gaussian_2d.f((X,Y), *fitParams[count]), pic.shape)
-            im2 = pl2.imshow(pic-vals, vmin=-2, vmax=2, origin='bottom',
-                                                 extent=(x.min(), x.max(), y.min(), y.max()))
+            if fancy:            
+                pl2, _,_,_,_,_=fancyImshow(fig, pl2, pic-vals, imageArgs={'extent':(x.min(), x.max(), y.min(), y.max())},
+                                       cb=False, ticklabels=False, hAvgArgs={'linewidth':0.5}, vAvgArgs={'linewidth':0.5})
+            else:
+                im2 = pl2.imshow(pic-vals, vmin=-2, vmax=2, origin='bottom',
+                                                     extent=(x.min(), x.max(), y.min(), y.max()))
             pl2.axis('off')
         count += 1
         picCount += 1
-    grid.cbar_axes[0].colorbar(im1);
+    #grid.cbar_axes[0].colorbar(im1);

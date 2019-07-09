@@ -16,6 +16,7 @@ from MainAnalysis import standardAssemblyAnalysis, standardPopulationAnalysis, s
 import FittingFunctions as fitFunc
 from pandas import DataFrame
 from fitters import linear
+import AnalysisHelpers as ah
 from AnalysisHelpers import getFitsDataFrame
 
 
@@ -114,9 +115,9 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=[None], sho
     alphaVal = 0.5
     mainPlot, countsHist, countsFig, initPopPlot = [[] for _ in range(4)]
     avgFigs = [[] for _ in range(2)]
-    avgFigs[0].append(go.Heatmap(z=avgPics[0], colorscale='Viridis',yaxis={'autorange':'reversed'}))
-    avgFigs[1].append(go.Heatmap(z=avgPics[1], colorscale='Viridis',yaxis={'autorange':'reversed'}))
-    centers = []
+    avgFigs[0].append(go.Heatmap(z=avgPics[0], colorscale='Viridis'))#,y={'autorange':'reversed'}))
+    avgFigs[1].append(go.Heatmap(z=avgPics[1], colorscale='Viridis'))#,y={'autorange':'reversed'}))
+    fitCharacters = []
     
     if fitModules[0] is not None:
         frames = getFitsDataFrame(fits, fitModules, avgFit)
@@ -137,7 +138,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=[None], sho
                 print(loc, 'Fit Failed!')
                 continue
             if showFitDetails:
-                centers.append(module.getCenter(fitData['vals']))
+                fitCharacters.append(module.fitCharacter(fitData['vals']))
             mainPlot.append(go.Scatter(x=fitData['x'], y=fitData['nom'], line={'color': color},
                                        legendgroup=legend, showlegend=False, opacity=alphaVal))
             if fitData['std'] is not None:
@@ -152,15 +153,16 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=[None], sho
     for i, loc in enumerate(atomLocs1):
         transferPic[loc[0], loc[1]] = np.mean(transferData[i])
     if fitModules[0] is not None and showFitDetails:
-        print('Fit Centers:')
-        print(centers, 'AVG = ' + str(np.mean(centers)), 'AVG c^2 = ' + str(np.mean([c**2 for c in centers])))
-        fitCenterPic = np.ones(avgPics[0].shape) * np.mean(centers)
-        for i, loc in enumerate(atomLocs1):
-            fitCenterPic[loc[0], loc[1]] = centers[i]
-        fitCenterFig = [go.Heatmap(z=fitCenterPic, colorscale='Viridis', colorbar=go.ColorBar(x=1, y=0.15, len=0.3))]
-        layout = go.Layout(title='Fit-Center Pic')
+        print('Fit Character:')
+        print(fitCharacters, 'AVG = ' + str(np.mean(fitCharacters)), 'AVG c^2 = ' + str(np.mean([c**2 for c in fitCharacters])))
+        fitCharacterPic = ah.genAvgDiscrepancyImage(fitCharacters, avgPics[0].shape, atomLocs1)
+        #fitCharacterPic = np.ones(avgPics[0].shape) * np.mean(fitCharacters)
+        #for i, loc in enumerate(atomLocs1):
+        #    fitCharacterPic[loc[0], loc[1]] = fitCharacters[i]
+        fitCharacterFig = [go.Heatmap(z=fitCharacterPic, colorscale='Viridis', colorbar=go.ColorBar(x=1, y=0.15, len=0.3))]
+        layout = go.Layout(title='Fit-Character Pic')
         
-        iplot(go.Figure(data=fitCenterFig, layout=layout))
+        iplot(go.Figure(data=fitCharacterFig, layout=layout))
     maxHeight = np.max(arr([np.histogram(data.flatten(), bins=histBins)[0] for data in pic1Data]).flatten())
     for data, pop, loc1, loc2, color, threshold, legend in zip(pic1Data, initPopulation, atomLocs1, atomLocs2, pltColors,
                                                          initThresholds, legends):
@@ -260,7 +262,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=[None], sho
     fig['layout']['yaxis1'].update(title=scanType + " %", range=[0, 1])
     fig['layout']['xaxis1'].update(title=str(keyName))
     iplot(fig)
-    return key, transferData, transferErrs, initPopulation, fits, avgFit, genAvgs, genErrs, centers
+    return key, transferData, transferErrs, initPopulation, fits, avgFit, genAvgs, genErrs, fitCharacters
 
 def Loading(fileNum, atomLocations, **TransferArgs):
     return Population(fileNum, atomLocations, whichPic=0, **TransferArgs)
