@@ -17,10 +17,9 @@ from LoadingFunctions import loadDataRay, loadCompoundBasler, loadDetailedKey
 from AnalysisHelpers import (processSingleImage, orderData,
                              normalizeData, getBinData, getTransferStats, getTransferEvents, fitDoubleGaussian,
                              guessGaussianPeaks, calculateAtomThreshold, getAvgPic, getEnsembleHits,
-                             getEnsembleStatistics, handleFitting, processImageData,
-                             fitPictures, fitGaussianBeamWaist, assemblePlotData, ballisticMotExpansion, simpleMotExpansion, 
-                             calcMotTemperature,integrateData, computeMotNumber, getFitsDataFrame, genAvgDiscrepancyImage, 
-                             getGridDims, newCalcMotTemperature)
+                             getEnsembleStatistics, processImageData,
+                             fitPictures, fitGaussianBeamWaist, integrateData, 
+                             computeMotNumber, getFitsDataFrame, genAvgDiscrepancyImage, getGridDims, newCalcMotTemperature)
 import AnalysisHelpers as ah
 import MarksConstants as mc 
 from matplotlib.patches import Ellipse
@@ -169,29 +168,6 @@ def plotThresholdHists(thresholds, colors, extra=None, extraname=None, threshold
             t.set_bbox(dict(facecolor='k', alpha=0.3))
     fig.subplots_adjust(wspace=0, hspace=0)
     return fig
-    
-        
-def indvHists(dat, thresh, colors, extra=None, extraname=None, extra2=None, extra2Name=None, gaussianFitVals=None):
-    f, axs = subplots(10,10, figsize=(25,18))
-    for i, (d,t,c) in enumerate(zip(dat, thresh, colors[1:])):
-        ax = axs[len(axs[0]) - i%len(axs[0]) - 1][int(i/len(axs))]
-        heights, _, _ = ax.hist(d, 100, color=c, histtype='stepfilled')
-        ax.axvline(t, color='w', ls=':')
-        if gaussianFitVals is not None:
-            g = gaussianFitVals[i]
-            xpts = np.linspace(min(d), max(d), 1000)
-            ax.plot(xpts, double_gaussian.f(xpts, *g), 'w')
-        ax.set_xticklabels([])
-        ax.set_yticklabels([])
-        ax.set_xlim(min(dat.flatten()), max(dat.flatten()))
-        ax.set_ylim(0,max(heights))
-        ax.grid(False)
-        if extra is not None:
-            txt = extraname + misc.round_sig_str( np.mean(extra[i])) if extraname is not None else misc.round_sig_str(np.mean(extra[i]))
-            t = ax.text( 0.25, max(heights)-5, txt, fontsize=12 )
-            t.set_bbox(dict(facecolor='k', alpha=0.3))
-    f.subplots_adjust(wspace=0, hspace=0)
-
 
 def plotNiawg(fileIndicator, points=300, plotTogether=True, plotVolts=False):
     """
@@ -328,7 +304,6 @@ def plotMotNumberAnalysis(data, motKey, exposureTime,  *fillAnalysisArgs):
     fig = plt.figure(figsize=(20,5))
     ax1 = subplot2grid((1, 4), (0, 0), colspan=3)
     ax2 = subplot2grid((1, 4), (0, 3), colspan=1)
-    #ax3 = subplot2grid((4, 4), (3, 3), rowspan=1, colspan=1)
     ax1.plot(motKey, intRawData, 'bo', label='data', color='b')
     xfitPts = np.linspace(min(motKey), max(motKey), 1000)
     ax1.plot(xfitPts, exponential_saturation.f(xfitPts, *fitParams), 'b-', label='fit', color='r', linestyle=':')
@@ -346,8 +321,6 @@ def plotMotNumberAnalysis(data, motKey, exposureTime,  *fillAnalysisArgs):
 def singleImage(data, accumulations=1, loadType='andor', bg=arr([0]), title='Single Picture', window=(0, 0, 0, 0),
                 xMin=0, xMax=0, yMin=0, yMax=0, zeroCorners=False, smartWindow=False, findMax=False,
                 manualAccumulation=False, maxColor=None, key=arr([])):
-    """
-    """
     # if integer or 1D array
     if type(data) == int or (type(data) == np.array and type(data[0]) == int):
         if loadType == 'andor':

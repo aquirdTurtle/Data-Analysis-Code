@@ -139,25 +139,8 @@ def standardImages(data,
             waistFitParamsX, waistFitErrsX = fitGaussianBeamWaist(waists[0], key, 850e-9)
             waistFitParamsY, waistFitErrsY = fitGaussianBeamWaist(waists[1], key, 850e-9)
             waistFitParams = [waistFitParamsX, waistFitParamsY]
-            # assemble the data structures for plotting.
-            countData, fitData = ah.assemblePlotData(rawData, dataMinusBg, dataMinusAvg, positions, waists,
-                                                  plottedData, scanType, xLabel, plotTitle, location,
-                                                  waistFits=waistFitParams, key=key)
         except RuntimeError:
             print('gaussian waist fit failed!')
-            # assemble the data structures for plotting.
-            countData, fitData = ah.assemblePlotData(rawData, dataMinusBg, dataMinusAvg, positions, waists,
-                                                  plottedData, scanType, xLabel, plotTitle, location)
-    else:
-        # assemble the data structures for plotting.
-        countData, fitData = ah.assemblePlotData(rawData, dataMinusBg, dataMinusAvg, positions, waists,
-                                              plottedData, scanType, xLabel, plotTitle, location)
-    if majorData == 'counts':
-        majorPlotData, minorPlotData = countData, fitData
-    elif majorData == 'fits':
-        minorPlotData, majorPlotData = countData, fitData
-    else:
-        raise ValueError("incorect 'majorData' argument")
     return key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, pictureFitErrors, plottedData, v_params, v_errs, h_params, h_errs
 
 
