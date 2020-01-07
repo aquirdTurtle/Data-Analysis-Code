@@ -6,15 +6,15 @@ def f(volts):
     """
     Return units is hertz
     """
-    return f_Aug17th_2018(volts)
+    return f_Aug_17th_2018_With_Offset(volts)
 
-    
+
 def f_Aug_17th_2018(volts):
     """
     A calibration curve corresponding to a given date
     """
     return linear.f(volts, -22783561.6206, 138789680.435)
-     
+    
     
 def f_interp_Aug_30th_2017(volts):
     beatnoteFreq = [303.40,278.40,254.02,231.90,213.4,193.02,191.02,188.27,185.90,183.77,181.15,180.27,180.71,179.83,
@@ -26,3 +26,6 @@ def f_interp_Aug_30th_2017(volts):
              0.88,0.89,0.9,0.91,0.92,1]
     freqInterp = interpolate(dac20, beatnoteFreq, k=1);
     return freqInterp(volts)
+
+def f_Aug_17th_2018_With_Offset(volts):
+    return -linear.f(volts, -22783561.6206, 138789680.435) - 50e6 + 180e6

@@ -3,6 +3,7 @@ import uncertainties.unumpy as unp
 from fitters.Gaussian import arb_1d_sum
 
 numGauss = 2
+carrierLoc = 0
 
 def getExp(val):
     if val == 0:
@@ -35,47 +36,52 @@ def round_sig_str(x, sig=3):
 
 
 def fitCharacter(params):
+    offset, amp1, sig1, amp2, sig2, trapFreq = params
     # for raman spectra, return the nbar, assuming correct orientation of the 2 gaussians
-    #r = params[4]/params[1]
-    #return r/(1-r) if not (r>=1) else 5
-    # return the diff/2
-    return (params[5] + params[2])/2
+    r = amp2/amp1
+    return r/(1-r) if not (r>=1) else 5
 
 def getFitCharacterString(params):
-    r = params[4]/params[1]
+    offset, amp1, sig1, amp2, sig2, trapFreq = params
+    r = amp2/amp1
     return round_sig_str(r/(1-r) if not (r>=1) else 5)
 
 
 def args():
-    arglist = ['Offset']
-    for i in range(numGauss):
-        j = i+1
-        arglist += ['Amp'+str(j), 'Center'+str(j),'Sigma'+str(j)]
+    arglist = ['Offset', 'Amp1', 'Sig1', 'Amp2', 'Sig2', 'trapFreq']
     return arglist
 
-def f(x, *params):
+
+def getF(carrierF):
     """
+    For this module, it is expected that the user wants to manually set the carrier frequency. otherwise this is the same effectively as bump2.
+    So, you need an individually customizable fitting function but all the normal module functionality. This is my current way of doing that, 
+    with some extra args 
+    """
+    return lambda x, offset, amp1, sig1, amp2, sig2, trapFreq: f(x, carrierF, offset, amp1, sig1, amp2, sig2, trapFreq)
+
+def getF_unc(carrierF):
+    return lambda x, offset, amp1, sig1, amp2, sig2, trapFreq: f_unc(x, carrierF, offset, amp1, sig1, amp2, sig2, trapFreq)
+
+
+
+def f(x, carrierFreq, offset, amp1, sig1, amp2, sig2, trapFreq):
+    """
+    It is expected that this function is used to create a lambda
     The normal function call for this function. Performs checks on valid arguments, then calls the "raw" function.
     :return:
     """
-    if len(params) != 3*numGauss+1:
-        raise ValueError('the bump7 fitting function expects '+str(3*7+1) + ' parameters and got ' + str(len(params)))
     penalty = 10**10 * np.ones(len(x))
-    for i in range(numGauss):
-        if params[3*i+3] < 3:
-            # Penalize super-narrow fits
-            return penalty
-        if params[3*i+1] < 0:
-            # Penalize negative amplitude fits.
-            return penalty
-        if not (min(x) < params[3*i+2] < max(x)):
-            # penalize fit centers outside of the data range (assuming if you want to see these that you've
-            # at least put the gaussian in the scan)
-            return penalty
-    if params[0] < 0:
+    if sig1 < 2 or sig2 < 2:
+        # Penalize super-narrow fits
+        return penalty
+    if amp1 < 0 or amp2 < 0:
+        # Penalize negative amplitude fits.
+        return penalty
+    if offset < 0:
         # penalize negative offset
         return penalty
-    return f_raw(x, *params)
+    return f_raw(x, *[offset, amp1, carrierFreq - trapFreq, sig1, amp2, carrierFreq+trapFreq, sig2])
 
 
 def f_raw(x, *params):
@@ -86,20 +92,18 @@ def f_raw(x, *params):
     return arb_1d_sum.f(x, *params)
 
 
-def f_unc(x, *params):
+def f_unc(x, carrierFreq, offset, amp1, sig1, amp2, sig2, trapFreq):
     """
     similar to the raw function call, but uses unp instead of np for uncertainties calculations.
     :return:
     """
-    return arb_1d_sum.f_unc(x, *params)
+    return arb_1d_sum.f_unc(x, *[offset, amp1, carrierFreq - trapFreq, sig1, amp2, carrierFreq+trapFreq, sig2])
 
 def guess(key, values):
     """
     Returns guess values for the parameters of this function class based on the input. Used for fitting using this class.
     """
-    return [min(values),
-            0.2, -150, 5,
-            0.1, 95, 5]
+    return [min(values), 0.2, 3, 0.2, 3, 115]
     
 
 def areas(A1, x01, sig1, A2, x02, sig2):

@@ -5,7 +5,12 @@ import uncertainties.unumpy as unp
 def center():
     return None
 
+def getFitCharacterString(vals):
+    return str(vals[0]);
 
+def fitCharacter(vals):
+    return vals[0];
+    
 def getCenter(vals=None):
     return None
 
@@ -55,7 +60,7 @@ def guess(key, vals):
     tau_g = 0.12
     # tau_g = (max(key) - min(key)) * 2
     # assumes starts at zero then goes to max value or so. May need to modify.
-    f_g = 10 # 1 / (max(key)-min(key))
+    f_g = 5 #44.554 # 1 / (max(key)-min(key))
     phi_g = np.pi
     offset_g = 0.3
     return [A_g, tau_g, f_g, phi_g, offset_g]

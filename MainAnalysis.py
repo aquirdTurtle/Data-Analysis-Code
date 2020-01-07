@@ -14,16 +14,16 @@ import AnalysisHelpers as ah
 import MarksConstants as mc
 import copy
 
-def standardImages(data, 
-                   # Cosmetic Parameters
-                   scanType="", xLabel="", plotTitle="", convertKey=False, 
-                   colorMax=-1, individualColorBars=False, majorData='counts',
-                   # Global Data Manipulation Options
-                   loadType='andor', window=(0, 0, 0, 0), smartWindow=False, xMin=0, xMax=0, yMin=0, yMax=0,
-                   accumulations=1, key=arr([]), zeroCorners=False, dataRange=(0, 0), manualAccumulation=False,
-                   # Local Data Manipulation Options
-                   plottedData=None, bg=arr([0]), location=(-1, -1), fitBeamWaist=False, fitPics=False,
-                   cameraType='dataray', fitWidthGuess=80, quiet=False, avgFits=False):
+def standardImages( data, 
+                    # Cosmetic Parameters
+                    scanType="", xLabel="", plotTitle="", convertKey=False, 
+                    colorMax=-1, individualColorBars=False, majorData='counts',
+                    # Global Data Manipulation Options
+                    loadType='andor', window=(0, 0, 0, 0), smartWindow=False, xMin=0, xMax=0, yMin=0, yMax=0,
+                    accumulations=1, key=arr([]), zeroCorners=False, dataRange=(0, 0), manualAccumulation=False,
+                    # Local Data Manipulation Options
+                    plottedData=None, bg=arr([0]), location=(-1, -1), fitBeamWaist=False, fitPics=False,
+                    cameraType='dataray', fitWidthGuess=80, quiet=False, avgFits=False ):
     """
     """
     if plottedData is None:
@@ -34,21 +34,6 @@ def standardImages(data,
             "ERROR: Can't use fitBeamWaist and not fitPics! The fitBeamWaist attempts to use the fit values "
             "found by the gaussian fits.")
     # the key
-    """
-    if key.size == 0:
-        origKey, keyName = loadDetailedKey(data)
-    else:
-        origKey = key
-    # this section could be expanded to handle different types of conversions.
-    if convertKey:
-        a = mc.opBeamDacToVoltageConversionConstants
-        key = [a[0] + x * a[1] + x ** 2 * a[2] + x ** 3 * a[3] for x in origKey]
-    else:
-        # both keys the same.
-        key = origKey
-    if len(key) == 0:
-        raise RuntimeError('key was empty!')
-    """
     """ ### Handle data ### 
     If the corresponding inputs are given, all data gets...
     - normalized for accumulations
@@ -58,11 +43,18 @@ def standardImages(data,
     - windowed.
     """
     if type(data) == int or (type(data) == np.array and type(data[0]) == int):
+        # a file index. 
         if loadType == 'andor':
-            rawData, _, _, _ = loadHDF5(data)
-        elif loadType == 'scout' or  loadType == 'ace':
+            with exp.ExpFile() as f:
+                f.open_hdf5(data,True)
+                rawData = f.get_pics()
+                if key is None:
+                    _, key = f.get_key()
+        elif loadType == 'ace':
+            # read old data format from standalone basler programs.
             rawData = loadCompoundBasler(data, loadType)
         elif loadType == 'basler':
+            # This basically assumes scout...
             with exp.ExpFile() as f:
                 f.open_hdf5(data,True)
                 rawData = f.get_basler_pics()
@@ -70,6 +62,8 @@ def standardImages(data,
                     _, key = f.get_key()
         elif loadType == 'dataray':
             raise ValueError('Loadtype of "dataray" has become deprecated and needs to be reimplemented.')
+        elif loadType == 'scout':
+            raise ValueError('loadType value of "scout" has become deprecated. Use "Basler" to get the scout images from the HDF5 file.');
         else:
             raise ValueError('Bad value for LoadType.')
     elif type(data) == type('a string'):
@@ -89,9 +83,8 @@ def standardImages(data,
         rawData = data
     if not quiet:
         print('Data Loaded.')
-    print(rawData.shape)
     res = ah.processImageData( key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulations, dataRange, zeroCorners,
-                            smartWindow, manuallyAccumulate=manualAccumulation )
+                               smartWindow, manuallyAccumulate=manualAccumulation )
     key, rawData, dataMinusBg, dataMinusAvg, avgPic = res
     if fitPics:
         # should improve this to handle multiple sets.
@@ -110,38 +103,39 @@ def standardImages(data,
                 print('fitting raw data.')
             pictureFitParams, pictureFitErrors, v_params, v_errs, h_params, h_errs = ah.fitPictures(
                 rawData, range(len(key)), guessSigma_x=fitWidthGuess, guessSigma_y=fitWidthGuess, quiet=quiet )
+        waists = 2 * abs(arr([pictureFitParams[:, 3], pictureFitParams[:, 4]]))
+        positions = arr([pictureFitParams[:, 1], pictureFitParams[:, 2]])
+        # convert to normal optics convention. the equation uses gaussian as exp(x^2/2sigma^2), I want the waist,
+        # which is defined as exp(2x^2/waist^2):
+        if cameraType == 'dataray':
+            pixelSize = mc.dataRayPixelSize
+        elif cameraType == 'andor':
+            pixelSize = mc.andorPixelSize
+        elif cameraType == 'ace':
+            pixelSize = mc.baslerAcePixelSize
+        elif cameraType == 'scout':
+            pixelSize = mc.baslerScoutPixelSize
+        else:
+            raise ValueError("Error: Bad Value for 'cameraType'.")
+        waists *= pixelSize
+        positions *= pixelSize
+        # average of the two dimensions
+        avgWaists = []
+        for pair in np.transpose(arr(waists)):
+            avgWaists.append((pair[0] + pair[1]) / 2)
+        if fitBeamWaist:
+            try:
+                waistFitParamsX, waistFitErrsX = fitGaussianBeamWaist(waists[0], key, 850e-9)
+                waistFitParamsY, waistFitErrsY = fitGaussianBeamWaist(waists[1], key, 850e-9)
+                waistFitParams = [waistFitParamsX, waistFitParamsY]
+            except RuntimeError:
+                print('gaussian waist fit failed!')
     else:
-        pictureFitParams, pictureFitErrors = [np.zeros((len(key), 7)) for _ in range(2)]
-        v_params, v_errs, h_params, h_errs = [np.zeros((len(key), 4)) for _ in range(4)]
-
-    # convert to normal optics convention. the equation uses gaussian as exp(x^2/2sigma^2), I want the waist,
-    # which is defined as exp(2x^2/waist^2):
-    waists = 2 * abs(arr([pictureFitParams[:, 3], pictureFitParams[:, 4]]))
-    positions = arr([pictureFitParams[:, 1], pictureFitParams[:, 2]])
-    if cameraType == 'dataray':
-        pixelSize = mc.dataRayPixelSize
-    elif cameraType == 'andor':
-        pixelSize = mc.andorPixelSize
-    elif cameraType == 'ace':
-        pixelSize = mc.baslerAcePixelSize
-    elif cameraType == 'scout':
-        pixelSize = mc.baslerScoutPixelSize
-    else:
-        raise ValueError("Error: Bad Value for 'cameraType'.")
-    waists *= pixelSize
-    positions *= pixelSize
-    # average of the two dimensions
-    avgWaists = []
-    for pair in np.transpose(arr(waists)):
-        avgWaists.append((pair[0] + pair[1]) / 2)
-    if fitBeamWaist:
-        try:
-            waistFitParamsX, waistFitErrsX = fitGaussianBeamWaist(waists[0], key, 850e-9)
-            waistFitParamsY, waistFitErrsY = fitGaussianBeamWaist(waists[1], key, 850e-9)
-            waistFitParams = [waistFitParamsX, waistFitParamsY]
-        except RuntimeError:
-            print('gaussian waist fit failed!')
-    return key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, pictureFitErrors, plottedData, v_params, v_errs, h_params, h_errs
+        pictureFitParams, pictureFitErrors = [None for _ in range(2)]
+        v_params, v_errs, h_params, h_errs = [None for _ in range(4)]
+        positions, waists = [None for _ in range(2)]
+    intRawData = ah.integrateData(rawData)
+    return key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, pictureFitErrors, plottedData, v_params, v_errs, h_params, h_errs, intRawData
 
 
 def analyzeCodeTimingData(num, talk=True, numTimes=3):
@@ -211,7 +205,7 @@ def analyzeNiawgWave(fileIndicator, ftPts=None):
 
 
 def analyzeScatterData( fileNumber, atomLocs1, connected=False, loadPic=1, transferPic=2, picsPerRep=3,
-                        subtractEdgeCounts=True, histSecondPeakGuess=False, manualThreshold=None,
+                        subtractEdgeCounts=True, histSecondPeakGuess=False, thresholdOptions=None,
                         normalizeForLoadingRate=False, **transferOrganizeArgs ):
     """
         does all the post-selection conditions and only one import of the data. previously I did this by importing the data
@@ -225,7 +219,7 @@ def analyzeScatterData( fileNumber, atomLocs1, connected=False, loadPic=1, trans
     :param picsPerRep:
     :param subtractEdgeCounts:
     :param histSecondPeakGuess:
-    :param manualThreshold:
+    :param thresholdOptions:
     :param normalizeForLoadingRate:
     :param transferOrganizeArgs:
     :return:
@@ -252,7 +246,7 @@ def analyzeScatterData( fileNumber, atomLocs1, connected=False, loadPic=1, trans
         guess = arr([max(binnedData[i]), guess1, 30, max(binnedData[i]) * 0.75,
                      200 if histSecondPeakGuess is not None else histSecondPeakGuess, 10])
         gaussianFitVals = fitDoubleGaussian(bins[i], binnedData[i], guess)
-        thresholds[i], thresholdFid = ((manualThreshold, 0) if manualThreshold is not None
+        thresholds[i], thresholdFid = ((thresholdOptions, 0) if thresholdOptions is not None
                                         else getMaxFidelityThreshold(gaussianFitVals))
         pic1Atoms[i], pic2Atoms[i] = [[] for _ in range(2)]
         for point1, point2 in zip(pic1Data[i], pic2Data[i]):
@@ -291,11 +285,13 @@ def analyzeScatterData( fileNumber, atomLocs1, connected=False, loadPic=1, trans
     return key, psSurvivals, psErrors, fitInfo, fitFinished, survivalData, survivalErrs, survivalFits, atomLocs1
 
 
-def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, manualThreshold=None,
-                              fitModules=None, histSecondPeakGuess=None, outputMma=False, varyingDim=None,
+
+def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, thresholdOptions=None,
+                              fitModules=[None], histSecondPeakGuess=None, varyingDim=None,
                               subtractEdgeCounts=True, initPic=0, transPic=1, postSelectionCondition=None,
                               postSelectionConnected=False, getGenerationStats=False, rerng=False, tt=None,
-                              rigorousThresholdFinding=True, transThresholdSame=True, fitguess=[None], forceAnnotation=True,
+                              rigorousThresholdFinding=True, transThresholdSame=True, fitguess=[None], 
+                              forceAnnotation=True, indvVariationThresholds=False, getFitterArgs=[None], 
                               **organizerArgs ):
     """
     "Survival" is a special case of transfer where the initial location and the transfer location are the same location.
@@ -304,38 +300,60 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
         tt = TimeTracker()
     if rerng:
         initPic, transPic, picsPerRep = 1, 2, 3
-    ( rawData, groupedData, atomLocs1, atomLocs2, keyName, repetitions, 
-      key, numOfPictures, avgPics, basicInfoStr ) = ah.organizeTransferData( fileNumber, atomLocs1, atomLocs2,  picsPerRep=picsPerRep, varyingDim=varyingDim,
-                                                              initPic=initPic, transPic=transPic, **organizerArgs )
-    (initPixelCounts, initThresholds, transPixelCounts, transThresholds) =  arr([[None] * len(atomLocs1)] * 4)
+    ( rawData, groupedData, atomLocs1, atomLocs2, keyName, repetitions, key, numOfPictures, avgPics, 
+     basicInfoStr ) = ah.organizeTransferData( fileNumber, atomLocs1, atomLocs2,  picsPerRep=picsPerRep, varyingDim=varyingDim,
+                                               initPic=initPic, transPic=transPic, **organizerArgs )
+    (initThresholds, transThresholds) =  arr([[None] * len(atomLocs1)] * 2)
+    for atomThresholdInc, _ in enumerate(initThresholds):
+        initThresholds[atomThresholdInc] = arr([None for _ in range(groupedData.shape[0])])
+        transThresholds[atomThresholdInc] = arr([None for _ in range(groupedData.shape[0])])
+    if thresholdOptions == None:
+        thresholdOptions = [None for _ in range(len(atomLocs1))]
+    if len(thresholdOptions) == 1:
+        thresholdOptions = [thresholdOptions[0] for _ in range(len(atomLocs1))]
+
     for i, (loc1, loc2) in enumerate(zip(atomLocs1, atomLocs2)):
-        initPixelCounts[i] = ah.getAtomCountsData( rawData, picsPerRep, initPic, loc1, subtractEdges=subtractEdgeCounts )
-        initThresholds[i] = ah.getThresholds( initPixelCounts[i], 5, manualThreshold, rigorous=rigorousThresholdFinding )        
+        if indvVariationThresholds:
+            for j, variationData in enumerate(groupedData):
+                initPixelCounts = ah.getAtomCountsData( variationData, picsPerRep, initPic, loc1, subtractEdges=subtractEdgeCounts )
+                initThresholds[i][j] = ah.getThresholds( initPixelCounts, 5, thresholdOptions[i], rigorous=rigorousThresholdFinding )        
+        else:
+            # calculate once with full raw data and then copy to all slots. 
+            initPixelCounts = ah.getAtomCountsData( rawData, picsPerRep, initPic, loc1, subtractEdges=subtractEdgeCounts )
+            initThresholds[i][0] = ah.getThresholds( initPixelCounts, 5, thresholdOptions[i], rigorous=rigorousThresholdFinding )        
+            for j, _ in enumerate(groupedData):
+                initThresholds[i][j] = initThresholds[i][0]
         if transThresholdSame:
             transThresholds[i] = copy.copy(initThresholds[i])
         else: 
-            transPixelCounts[i] = ah.getAtomCountsData( rawData, picsPerRep, transPic, loc2, subtractEdges=subtractEdgeCounts )
-            transThresholds[i] = ah.getThresholds( transPixelCounts[i], 5, manualThreshold, rigorous=rigorousThresholdFinding )
-     
+            if indvVariationThresholds:
+                for j, variationData in enumerate(groupedData):
+                    transPixelCounts = ah.getAtomCountsData( variationData, picsPerRep, transPic, loc2, subtractEdges=subtractEdgeCounts )
+                    transThresholds[i][j] = ah.getThresholds( transPixelCounts, 5, thresholdOptions[i], rigorous=rigorousThresholdFinding )
+            else:
+                transPixelCounts = ah.getAtomCountsData( rawData, picsPerRep, initPic, loc1, subtractEdges=subtractEdgeCounts )
+                transThresholds[i][0] = ah.getThresholds( transPixelCounts, 5, thresholdOptions[i], rigorous=rigorousThresholdFinding )        
+                for j, _ in enumerate(groupedData):
+                    transThresholds[i][j] = transThresholds[i][0]
     if subtractEdgeCounts:
         borders_init = ah.getAvgBorderCount(groupedData, initPic, picsPerRep)
         borders_trans = ah.getAvgBorderCount(groupedData, transPic, picsPerRep)
     else:
         borders_init = borders_trans = np.zeros(groupedData.shape[0]*groupedData.shape[1])
-    (allInitPicCounts, allTransPicCounts, allInitAtoms, allTransAtoms) = arr([[None] * len(atomLocs1)] * 4)
-    for i, (loc1, loc2) in enumerate(zip(atomLocs1, atomLocs2)):
-        allInitPicCounts[i]  = ah.normalizeData(groupedData, loc1, initPic, picsPerRep, borders_init)
-        allTransPicCounts[i] = ah.normalizeData(groupedData, loc2, transPic, picsPerRep, borders_trans)
-        allInitAtoms[i], allTransAtoms[i] = ah.getSurvivalBoolData(allInitPicCounts[i], allTransPicCounts[i], initThresholds[i].t, transThresholds[i].t)
     # transAtomsVarAvg, transAtomsVarErrs: the given an atom and a variation, the mean of the 
     # transfer events (mapped to a bernoili distribution), and the error on that mean. 
     # initAtoms (transAtoms): a list of the atom events in the initial (trans) picture, mapped to a bernoilli distribution 
     (initPicCounts, transPicCounts, bins, binnedData, transAtomsVarAvg, transAtomsVarErrs,
-     initPopulation, initAtoms, transAtoms, genAvgs, genErrs, transList) = arr([[None] * len(atomLocs1)] * 12)
+     initPopulation, initAtoms, transAtoms, genAvgs, genErrs, transList) = [[[] for _ in range(len(atomLocs1))] for _ in range(12)]
     for i, (loc1, loc2) in enumerate(zip(atomLocs1, atomLocs2)):
-        initPicCounts[i]  = ah.normalizeData(groupedData, loc1, initPic, picsPerRep, borders_init)
-        transPicCounts[i] = ah.normalizeData(groupedData, loc2, transPic, picsPerRep, borders_trans)
-        initAtoms[i], transAtoms[i] = ah.getSurvivalBoolData(initPicCounts[i], transPicCounts[i], initThresholds[i].t, transThresholds[i].t)
+        for j, varData in enumerate(groupedData):
+            initCounts = ah.normalizeData(varData, loc1, initPic, picsPerRep, borders_init )
+            transCounts = ah.normalizeData(varData, loc2, transPic, picsPerRep, borders_trans )
+            Iatoms, Tatoms = ah.getSurvivalBoolData(initCounts, transCounts, initThresholds[i][j].t, transThresholds[i][j].t)
+            initAtoms[i] += Iatoms 
+            transAtoms[i] += Tatoms
+            transPicCounts[i] += list(transCounts)
+            initPicCounts[i] += list(initCounts)
     if postSelectionCondition is not None:
         initAtoms, transAtoms = ah.postSelectOnAssembly( initAtoms, transAtoms, postSelectionCondition,
                                                          connected=postSelectionConnected )
@@ -352,30 +370,27 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
     res = (key, atomLocs1, transAtomsVarErrs, transAtomsVarAvg, initPopulation, [None for _ in range(len(key)*len(atomLocs1))])
     (key, locationsList, transAtomsVarErrs, transAtomsVarAvg, initPopulation, otherDims) = res
 
-    initPicCounts = arr(initPicCounts.tolist())
-    transPicCounts = arr(transPicCounts.tolist())
+    initPicCounts = arr(initPicCounts)
+    transPicCounts = arr(transPicCounts)
     
     # an atom average. The answer to the question: if you picked a random atom for a given variation, 
-    # what's the mean [mean value] that you would find, and what is the error on that mean?
+    # what's the mean [mean value] that you would find (averaging over the atoms), and what is the error on that mean?
     # transAtomVarAvg, transAtomVarErr
     avgTransData, avgTransErr, avgFit = [None]*3
     # weight the sum with initial percentage
-    avgTransData = np.mean(transAtomsVarAvg)
-    avgTransErr = np.sqrt(np.sum(transAtomsVarErrs**2)/len(atomLocs1))
+    avgTransData = np.mean(transAtomsVarAvg, 0)
+    avgTransErr = np.sqrt(np.sum(arr(transAtomsVarErrs)**2,0)/len(atomLocs1))
     ### ###
     # averaged over all events, summed over all atoms. this data has very small error bars
     # becaues of the factor of 100 in the number of atoms.
     transVarAvg, transVarErr = [[],[]]
     transVarList = [ah.groupEventsIntoVariations(atomsList, repetitions) for atomsList in transList]
-    #print(transVarList.shape)
     allAtomsListByVar = [[z for atomList in transVarList for z in atomList[i]] for i in range(len(transVarList[0]))]
-    #allAtomsListByVar = [sum(transVarList[:,i]) for i in range(len(transVarList[0]))]
     for varData in allAtomsListByVar:
         p = np.mean(varData)
         transVarAvg.append(p)
         transVarErr.append(ah.jeffreyInterval(p, len(arr(varData).flatten())))
-        #transVarErr.append(np.sqrt(p*(1-p)/len(varData)))
-       
+    
     fits = [None] * len(locationsList)
     if len(fitModules) == 1: 
         fitModules = [fitModules[0] for _ in range(len(locationsList)+1)]
@@ -385,11 +400,13 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
                             " then set this to a single element list with the desired module.")
         if len(fitguess) == 1:
             fitguess = [fitguess[0] for _ in range(len(locationsList)+1) ]
+        if len(getFitterArgs) == 1:
+            getFitterArgs = [getFitterArgs[0] for _ in range(len(locationsList)+1) ]
         if len(fitModules) != len(locationsList)+1:
             raise ValueError("ERROR: length of fitmodules should be" + str(len(locationsList)+1) + "(Includes avg fit)")
         for i, (loc, module) in enumerate(zip(locationsList, fitModules)):
-            fits[i], _ = ah.fitWithModule(module, key, transAtomsVarAvg[i], guess=fitguess[i])
-        avgFit, _ = ah.fitWithModule(fitModules[-1], key, avgTransData, guess=fitguess[-1])
+            fits[i], _ = ah.fitWithModule(module, key, transAtomsVarAvg[i], guess=fitguess[i], getF_args=getFitterArgs[i])
+        avgFit, _ = ah.fitWithModule(fitModules[-1], key, avgTransData, guess=fitguess[-1], getF_args=getFitterArgs[-1])
     
     initAtomImages = [np.zeros(rawData[0].shape) for _ in range(int(numOfPictures/picsPerRep))]
     transAtomImages = [np.zeros(rawData[0].shape) for _ in range(int(numOfPictures/picsPerRep))]
@@ -397,21 +414,22 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, ma
     for picInc in range(int(numOfPictures)):
         if picInc % picsPerRep == initPic:
             for locInc, loc in enumerate(atomLocs1):
-                initAtomImages[initImagesInc][loc[0]][loc[1]] = allInitAtoms[locInc][initImagesInc]            
+                initAtomImages[initImagesInc][loc[0]][loc[1]] = initAtoms[locInc][initImagesInc]            
             initImagesInc += 1
         elif picInc % picsPerRep == transPic:
             for locInc, loc in enumerate(atomLocs2):
-                transAtomImages[transImagesInc][loc[0]][loc[1]] = allTransAtoms[locInc][transImagesInc]
+                transAtomImages[transImagesInc][loc[0]][loc[1]] = transAtoms[locInc][transImagesInc]
             transImagesInc += 1
     return (atomLocs1, atomLocs2, transAtomsVarAvg, transAtomsVarErrs, initPopulation, initPicCounts, keyName, key,
             repetitions, initThresholds, fits, avgTransData, avgTransErr, avgFit, avgPics, otherDims, locationsList,
             genAvgs, genErrs, tt, transVarAvg, transVarErr, initAtomImages, transAtomImages, transPicCounts, 
-            transPixelCounts, transThresholds, fitModules, transThresholdSame, basicInfoStr)
+            transThresholds, fitModules, transThresholdSame, basicInfoStr)
 
 
 def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, analyzeTogether=False, 
-                                manualThreshold=None, fitModules=[None], keyInput=None, fitIndv=False, subtractEdges=True,
-                                keyConversion=None, quiet=False, dataRange=None, picSlice=None, keyOffset=0, softwareBinning=None):
+                                thresholdOptions=None, fitModules=[None], keyInput=None, fitIndv=False, subtractEdges=True,
+                                keyConversion=None, quiet=False, dataRange=None, picSlice=None, keyOffset=0, softwareBinning=None,
+                                window=None, yMin=None, yMax=None, xMin=None, xMax=None ):
     """
     keyConversion should be a calibration which takes in a single value as an argument and converts it.
         It needs a calibration function f() and a units function units()
@@ -427,8 +445,14 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
     numOfVariations = int(numOfPictures / (repetitions * picsPerRep))
     key = ah.handleKeyModifications(hdf5Key, numOfVariations, keyInput=keyInput, keyOffset=keyOffset, groupData=False, keyConversion=keyConversion )
     # ## Initial Data Analysis
+    # window the images images.
+    if window is not None:
+        xMin, yMin, xMax, yMax = window
+    rawData = np.copy(arr(rawData[:, yMin:yMax, xMin:xMax]))
+
     if softwareBinning is not None:
         sb = softwareBinning
+        print(rawData.shape)
         rawData = rawData.reshape(rawData.shape[0], rawData.shape[1]//sb[0], sb[0], rawData.shape[2]//sb[1], sb[1]).sum(4).sum(2)
     s = rawData.shape
     groupedData = rawData.reshape((1, s[0], s[1], s[2]) if analyzeTogether else (numOfVariations, repetitions * picsPerRep, s[1], s[2]))
@@ -446,7 +470,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
     (fullPixelCounts, fullAtomData, thresholds, fullAtomCount) = arr([[None] * len(atomLocations)] * 4)
     for i, atomLoc in enumerate(atomLocations):
         fullPixelCounts[i] = ah.getAtomCountsData( rawData, picsPerRep, whichPic, atomLoc, subtractEdges=subtractEdges )
-        thresholds[i] = ah.getThresholds( fullPixelCounts[i], 5, manualThreshold )
+        thresholds[i] = ah.getThresholds( fullPixelCounts[i], 5, thresholdOptions )
         fullAtomData[i], fullAtomCount[i] = ah.getAtomBoolData(fullPixelCounts[i], thresholds[i].t)
     flatTotal = arr(arr(fullAtomData).tolist()).flatten()
     totalAvg = np.mean(flatTotal)
@@ -506,7 +530,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
 
 def standardAssemblyAnalysis(fileNumber, atomLocs1, assemblyPic, atomLocs2=None, keyOffset=0, dataRange=None,
                              window=None, picsPerRep=2, histSecondPeakGuess=None, partialCredit=False,
-                             manualThreshold=None, fitModule=None, allAtomLocs1=None, allAtomLocs2=None, keyInput=None,
+                             thresholdOptions=None, fitModule=None, allAtomLocs1=None, allAtomLocs2=None, keyInput=None,
                              loadPic=0):
     """
     :param fileNumber:
@@ -518,7 +542,7 @@ def standardAssemblyAnalysis(fileNumber, atomLocs1, assemblyPic, atomLocs2=None,
     :param picsPerRep: 
     :param dataRange: 
     :param histSecondPeakGuess: 
-    :param manualThreshold: 
+    :param thresholdOptions: 
     :param fitModule: 
     :param allAtomLocs1: 
     :param allAtomLocs2: 
@@ -563,9 +587,9 @@ def standardAssemblyAnalysis(fileNumber, atomLocs1, assemblyPic, atomLocs2=None,
         guess1, guess2 = guessGaussianPeaks(bins[i], binnedData[i])
         guess = arr([max(binnedData[i]), guess1, 30, max(binnedData[i]) * 0.75,
                      200 if histSecondPeakGuess is None else histSecondPeakGuess, 10])
-        if manualThreshold is None:
+        if thresholdOptions is None:
             gaussianFitVals = fitDoubleGaussian(bins[i], binnedData[i], guess)
-        thresholds[i], thresholdFid = ((manualThreshold, 0) if manualThreshold is not None
+        thresholds[i], thresholdFid = ((thresholdOptions, 0) if thresholdOptions is not None
                                        else calculateAtomThreshold(gaussianFitVals))
         loadAtoms[i], assemblyAtoms[i] = [[] for _ in range(2)]
         for point1, point2 in zip(loadPicData[i], assemblyPicData[i]):
@@ -592,9 +616,9 @@ def standardAssemblyAnalysis(fileNumber, atomLocs1, assemblyPic, atomLocs2=None,
         guess1, guess2 = guessGaussianPeaks(bins[i], binnedData[i])
         guess = arr([max(binnedData[i]), guess1, 30, max(binnedData[i]) * 0.75,
                      200 if histSecondPeakGuess is None else histSecondPeakGuess, 10])
-        if manualThreshold is None:
+        if thresholdOptions is None:
             gaussianFitVals = fitDoubleGaussian(bins[i], binnedData[i], guess)
-        thresholds[i], thresholdFid = ((manualThreshold, 0) if manualThreshold is not None
+        thresholds[i], thresholdFid = ((thresholdOptions, 0) if thresholdOptions is not None
                                        else calculateAtomThreshold(gaussianFitVals))
         allPic1Atoms[i], allPic2Atoms[i] = [[] for _ in range(2)]
         for point1, point2 in zip(allPic1Data[i], allPic2Data[i]):

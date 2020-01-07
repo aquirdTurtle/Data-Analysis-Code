@@ -5,6 +5,7 @@ from os import linesep
 import pandas as pd
 
 from astropy.io import fits
+import matplotlib.pyplot as plt
 
 from numpy import array as arr
 import h5py as h5
@@ -37,6 +38,71 @@ import scipy.ndimage as ndimage
 import scipy.ndimage.filters as filters
 
 from statsmodels.stats.proportion import proportion_confint as confidenceInterval
+
+import imageio
+import numpy as np
+from numpy import array as arr
+import matplotlib as mpl
+import matplotlib.cm
+from IPython.display import Image, HTML, display
+
+
+def makeVid(pics, gifAddress, videoType, fileAddress=None, dur=1, lim=None, includeCount=True, lowLim=None, 
+            finLabels=[], finTxt="Atom Reservoir Depleted", vidMap='inferno', maxMult=1, offset=0,
+            resolutionMult=1):
+    infernoMap = [mpl.cm.inferno(i)[:-1] for i in range(256)]
+    viridisMap = [mpl.cm.viridis(i)[:-1] for i in range(256)]
+    magmaMap = [mpl.cm.magma(i)[:-1] for i in range(256)]
+    hotMap = [mpl.cm.hot(i)[:-1] for i in range(256)]
+    cividisMap = [mpl.cm.cividis(i)[:-1] for i in range(256)]
+    if vidMap == 'inferno':
+        vidMap = infernoMap
+    if vidMap == 'viridis':
+        vidMap = viridisMap
+    if vidMap == 'cividisMap':
+        vidMap = cividisMap
+    
+    # global count
+    # select subsection
+    if lim is None:
+        lim = len(pics)
+    if lowLim is None:
+        lowLim = 0
+    pics = pics[lowLim:lim]
+    # normalize to rgb scale
+    pics = pics - min(pics.flatten())
+    pics = np.uint16(pics / max(pics.flatten()) * 256 * maxMult)
+    pics = arr([[[int(elem) for elem in row] for row in pic] for pic in pics])
+    pics = arr(pics-min(pics.flatten()) - offset)
+    pics = [[[vidMap[elem] if elem < 256 and elem >= 0 else vidMap[255] if elem >= 256 else vidMap[0] 
+              for elem in row] for row in pic] for pic in pics]
+    images = []
+    sequenceCount = 1
+    offset = 0
+    for picCount, pic in enumerate(pics):
+        fig = plt.figure()
+        fig.set_size_inches([9,9])
+        ax = plt.Axes(fig, [0., 0., 1., 1.])
+        ax.set_axis_off()
+        fig.add_axes(ax)
+        plt.grid(False)
+        ax.imshow(pic, aspect='equal')
+        if includeCount:
+            ax.text(-0.1, 0.1, str(picCount+1-offset), color='white', fontsize=40)
+        if picCount+1 in finLabels:
+            ax.text(1.5, 14, finTxt, color='r', fontsize=40)
+        name = "temp"+str(picCount+1)+".png"
+        plt.savefig(name)
+        images.append(imageio.imread(name))
+        if picCount+1 in finLabels:
+            sequenceCount += 1
+            offset = picCount+1
+            for _ in range(4):
+                images.append(imageio.imread(name))
+        plt.close('all')
+    # make bigger
+    pics = [np.repeat(np.repeat(pic, resolutionMult, axis=0), resolutionMult, axis=1) for pic in pics]
+    imageio.mimsave(gifAddress, images, format=videoType, duration=dur)
 
 def collapseImage(im):
     vAvg = np.zeros(len(im[0]))
@@ -106,10 +172,11 @@ def fitManyGaussianImage(im, numGauss, neighborhood_size=20, threshold=1, direct
 
 def temperatureAnalysis( data, magnification, **standardImagesArgs ):
     res = ma.standardImages(data, scanType="Time(ms)", majorData='fits', fitPics=True, manualAccumulation=True, quiet=True, **standardImagesArgs)
-    (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, fitCov, plottedData, v_params, v_errs, h_params, h_errs) = res
-    # convert to meters
+    (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, fitCov, plottedData, v_params, v_errs, h_params, h_errs, intRawData) = res
+    # convert to meters, convert from sigma to waist
     waists = 2 * mc.baslerScoutPixelSize * np.sqrt((pictureFitParams[:, 3]**2+pictureFitParams[:, 4]**2)/2) * magnification
-    waists_1D = 2 * mc.baslerScoutPixelSize * np.sqrt((v_params[:, 2]**2+h_params[:, 2]**2)/2) * magnification
+    #waists_1D = 2 * mc.baslerScoutPixelSize * np.sqrt((v_params[:, 2]**2+h_params[:, 2]**2)/2) * magnification
+    waists_1D = 2 * mc.baslerScoutPixelSize * v_params[:, 2] * magnification
     # convert to s
     times = key / 1000
     temp, fitVals, fitCov = newCalcMotTemperature(times, waists / 2)
@@ -124,7 +191,7 @@ def motFillAnalysis( dataSetNumber, motKey, exposureTime, window=(0,0,0,0), side
     intRawData = integrateData(rawData)
     try:
         fitParams, pcov = opt.curve_fit( exponential_saturation.f, motKey, intRawData,
-                                   p0=[np.min(intRawData) - np.max(intRawData), 1 / 2, np.max(intRawData)] )
+                                         p0=[np.min(intRawData) - np.max(intRawData), 1 / 2, np.max(intRawData)] )
     except RuntimeError:
         print('MOT # Fit failed!')
         # probably failed because of a bad guess. Show the user the guess fit to help them debug.
@@ -230,11 +297,11 @@ def handleKeyModifications(hdf5Key, numVariations, keyInput=None, keyOffset=0, g
 def organizeTransferData( fileNumber, initLocs, transLocs, key=None, window=None, xMin=None, xMax=None, yMin=None,
                           yMax=None, dataRange=None, keyOffset=0, dimSlice=None, varyingDim=None, groupData=False,
                           quiet=False, picsPerRep=2, repRange=None, initPic=0, transPic=1, keyConversion=None, softwareBinning=None,
-                          removePics=None):
+                          removePics=None, expFile_version=3):
     """
     Unpack inputs, properly shape the key, picture array, and run some initial checks on the consistency of the settings.
     """
-    with ExpFile(fileNumber) as f:
+    with ExpFile(fileNumber, expFile_version=expFile_version) as f:
         rawData, keyName, hdf5Key, repetitions = f.pics, f.key_name, f.key, f.reps
         if not quiet:
             basicInfoStr = f.get_basic_info()
@@ -313,6 +380,7 @@ def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias, sign=1, hFreqs=None, vF
     print('Please note that if using the outputted centers from Survival(), then you need to reshape the data'
           ' into a 2D numpy array correctly to match the ordering of the V and H biases. This is normally done'
           ' via a call to np.reshape() and a transpose to match the comments above.')
+    print('Sign Argument should be -1 if numbers are pushout resonance locations.')
     if type(prevDepth) is not type(arr([])) or type(prevDepth[0]) is not type(arr([])):
         raise TypeError('ERROR: previous depth array must be 2D numpy array')
     result, modDepth = extrapolateEveningBiases(prev_H_Bias, prev_V_Bias, prevDepth, sign=sign);
@@ -320,13 +388,13 @@ def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias, sign=1, hFreqs=None, vF
     new_V_Bias = result['x'][len(prev_H_Bias):]
     print('Horizontal Changes')
     for prev, new in zip(prev_H_Bias, new_H_Bias):
-        print(round_sig(prev,4), '->', round_sig(new,4), str(round_sig(100 * (new - prev) / prev, 2)) + '%')
+        print(misc.round_sig(prev,4), '->', misc.round_sig(new,4), str(misc.round_sig(100 * (new - prev) / prev, 2)) + '%')
     print('Vertical Changes')
     for prev, new in zip(prev_V_Bias, new_V_Bias):
-        print(round_sig(prev,4), '->', round_sig(new,4), str(round_sig(100 * (new - prev) / prev, 2)) + '%')
-    print('Previous Depth Relative Variation:', round_sig(np.std(prevDepth),4), '/', 
-          round_sig(np.mean(prevDepth),4), '=', round_sig(100 * np.std(prevDepth)/np.mean(prevDepth)), '%')
-    print('Expected new Depth Relative Variation:', round_sig(100*np.std(modDepth)/np.mean(prevDepth),4),'%')
+        print(misc.round_sig(prev,4), '->', misc.round_sig(new,4), str(misc.round_sig(100 * (new - prev) / prev, 2)) + '%')
+    print('Previous Depth Relative Variation:', misc.round_sig(np.std(prevDepth),4), '/', 
+          misc.round_sig(np.mean(prevDepth),4), '=', misc.round_sig(100 * np.std(prevDepth)/np.mean(prevDepth)), '%')
+    print('Expected new Depth Relative Variation:', misc.round_sig(100*np.std(modDepth)/np.mean(prevDepth),4),'%')
     print('New Vertical Biases \n[',end='')
     for v in new_V_Bias:
         print(v, ',', end=' ')
@@ -384,44 +452,40 @@ def extrapolateModDepth(sign, hBiasIn, vBiasIn, depthIn, testBiases):
     for rowInc, _ in enumerate(depthIn):
         dif = (vBiasTest[rowInc] - vBiasIn[rowInc])/vBiasIn[rowInc]
         modDepth[rowInc] = modDepth[rowInc] * (1- sign * dif)
-    for colInc, _ in enumerate(transpose(depthIn)):
+    for colInc, _ in enumerate(misc.transpose(depthIn)):
         dif = (hBiasTest[colInc] - hBiasIn[colInc])/hBiasIn[colInc]
         modDepth[:, colInc] = modDepth[:, colInc] * (1-sign * dif)
     return modDepth
 
-def fitWithModule(module, key, vals, errs=None, guess=None):
+def fitWithModule(module, key, vals, errs=None, guess=None, getF_args=[None]):
     """
     """
     key = arr(key)
-    xFit = (np.linspace(min(key), max(key), 1000) if len(key.shape) == 1 else np.linspace(min(transpose(key)[0]),
-                                                                                          max(transpose(key)[0]), 1000))
+    xFit = (np.linspace(min(key), max(key), 1000) if len(key.shape) == 1 else np.linspace(min(misc.transpose(key)[0]),
+                                                                                          max(misc.transpose(key)[0]), 1000))
     fitNom = fitStd = fitValues = fitErrs = fitCovs = fitGuess = None
     from numpy.linalg import LinAlgError
     try:
-        # 3 parameters
-        if len(key) < len(signature(module.f).parameters) - 1:
-            print('Not enough data points to constrain a fit!')
-            raise RuntimeError()
-        #if errs is not None:
-        #    fitValues, fitCovs = opt.curve_fit(module.f, key, vals, p0=[module.guess(key, vals)], sigma=errs,
-        #                             absolute_sigma=True)
-        #else:
+        fitF = module.getF(*getF_args) if hasattr(module, 'getF') else module.f
+        fitF_unc = module.getF_unc(*getF_args) if hasattr(module, 'getF_unc') else module.f_unc
+        if len(key) < len(signature(fitF).parameters) - 1:
+            raise RuntimeError('Not enough data points to constrain a fit!')
         if guess is None:
-            fitValues, fitCovs = opt.curve_fit(module.f, key, vals, p0=[module.guess(key, vals)])
+            fitValues, fitCovs = opt.curve_fit(fitF, key, vals, p0=[module.guess(key, vals)])
         else:
-            fitValues, fitCovs = opt.curve_fit(module.f, key, vals, p0=guess)
+            fitValues, fitCovs = opt.curve_fit(fitF, key, vals, p0=guess)
         fitErrs = np.sqrt(np.diag(fitCovs))
         corr_vals = unc.correlated_values(fitValues, fitCovs)
-        fitUncObject = module.f_unc(xFit, *corr_vals)
+        fitUncObject = fitF_unc(xFit, *corr_vals)
         fitNom = unp.nominal_values(fitUncObject)
         fitStd = unp.std_devs(fitUncObject)
         fitFinished = True
-        fitGuess = module.f(xFit, *module.guess(key, vals))
+        fitGuess = fitF(xFit, *module.guess(key, vals))
     except (RuntimeError, LinAlgError, ValueError) as e:
         warn('Data Fit Failed!')
         print(e)
         fitValues = module.guess(key, vals)
-        fitNom = module.f(xFit, *fitValues)
+        fitNom = fitF(xFit, *fitValues)
         fitFinished = False
     fitInfo = {'x': xFit, 'nom': fitNom, 'std': fitStd, 'vals': fitValues, 'errs': fitErrs, 'cov': fitCovs, 'guess': fitGuess}
     return fitInfo, fitFinished
@@ -465,14 +529,13 @@ def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1, guess_x=None, 
     y = np.linspace(0, picture.shape[0], picture.shape[0])
     X, Y = np.meshgrid(x, y)
     ### 2D Fit
-    initial_guess = [np.max(pic) - np.min(pic), pos[1], pos[0], guessSigma_x, guessSigma_y, 0, np.min(pic)]
+    initial_guess = [(np.max(pic) - np.min(pic)), pos[1], pos[0], guessSigma_x, guessSigma_y, np.min(pic)]
     try:
-        popt, pcov = opt.curve_fit(gaussian_2d.f, (X, Y), pic, p0=initial_guess)#, maxfev=2000)
+        popt, pcov = opt.curve_fit(gaussian_2d.f_notheta, (X, Y), pic, p0=initial_guess)#, epsfcn=0.01, ftol=0)
     except RuntimeError:
         popt = np.zeros(len(initial_guess))
         pcov = np.zeros((len(initial_guess), len(initial_guess)))
         warn('2D Gaussian Picture Fitting Failed!')
-    
     ### Vertical (i.e. collapse in the vertical direction) Average Fit
     vAvg = np.zeros(len(picture[0]))
     for r in picture:
@@ -500,7 +563,7 @@ def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1, guess_x=None, 
         warn('Horizontal Average Picture Fitting Failed!')
         
     if showFit:
-        data_fitted = gaussian_2d.f((x, y), *popt)
+        data_fitted = gaussian_2d.f_notheta((x, y), *popt)
         fig, ax = subplots(1, 1)
         grid(False)
         im = ax.pcolormesh(picture)#, extent=(x.min(), x.max(), y.min(), y.max()))
@@ -529,15 +592,17 @@ def fitPictures(pictures, dataRange, guessSigma_x=1, guessSigma_y=1, quiet=False
             print(picInc, ',', end='')
         if count not in dataRange:
             parameters, errors = [np.zeros(7) for _ in range(2)]
-            v_param, v_err, h_param, h_err = [np.zeros(4) for _ in range(2)]
+            v_param, v_err, h_param, h_err = [np.zeros(4) for _ in range(4)]
         else:
             try:
                 if firstIsGuide and picInc is not 0:
                     # amplitude, xo, yo, sigma_x, sigma_y, theta, offset
-                    _, parameters, errors, v_param, v_err, h_param, h_err = fitPic(picture, showFit=False, guess_x = fitParameters[0][1], guess_y = fitParameters[0][2], 
-                                                   guessSigma_x=fitParameters[0][3], guessSigma_y=fitParameters[0][4])
+                    _, parameters, errors, v_param, v_err, h_param, h_err = fitPic(picture, showFit=False, 
+                                                                                   guess_x = fitParameters[0][1], guess_y = fitParameters[0][2], 
+                                                                                   guessSigma_x=fitParameters[0][3], guessSigma_y=fitParameters[0][4])
                 else:
-                    _, parameters, errors, v_param, v_err, h_param, h_err = fitPic(picture, showFit=False, guessSigma_x=guessSigma_x, guessSigma_y=guessSigma_y)
+                    _, parameters, errors, v_param, v_err, h_param, h_err = fitPic(picture, showFit=False, 
+                                                                                   guessSigma_x=guessSigma_x, guessSigma_y=guessSigma_y)
             except RuntimeError:
                 if not warningHasBeenThrown:
                     print("Warning! Not all picture fits were able to fit the picture signal to a 2D Gaussian.\n"
@@ -679,7 +744,7 @@ def getOptimalAomBiases(minX, minY, spacing, widthX, widthY):
     return xFreqs, xAmps, yFreqs, yAmps
 
 def maximizeAomPerformance(horCenterFreq, vertCenterFreq, spacing, numTweezersHor, numTweezersVert, iterations=10, paperGuess=True, metric='max',
-                          vertAmps=None, horAmps=None):
+                          vertAmps=None, horAmps=None, carrierFre=255):
     """
     computes the amplitudes and phases to maximize the AOM performance.
     :param horCenterFreq:
@@ -692,6 +757,9 @@ def maximizeAomPerformance(horCenterFreq, vertCenterFreq, spacing, numTweezersHo
     """
     horFreqs  = [horCenterFreq - spacing * (numTweezersHor  - 1) / 2.0 + i * spacing for i in range(numTweezersHor )]
     vertFreqs = [horCenterFreq - spacing * (numTweezersVert - 1) / 2.0 + i * spacing for i in range(numTweezersVert)]
+    actualHFreqs = 255 - arr(horFreqs)
+    actualVFreqs = 255 - arr(vertFreqs)
+    
     if vertAmps is None:
         vertAmps = np.ones(numTweezersVert)
     if horAmps is None:
@@ -712,16 +780,16 @@ def maximizeAomPerformance(horCenterFreq, vertCenterFreq, spacing, numTweezersHo
     def getXMetric(phases):
         x = np.linspace(0, 3e-6, 20000)
         if metric=='max':
-            return max(abs(calcWave(x, phases, horFreqs, horAmps)))
+            return max(abs(calcWave(x, phases, actualHFreqs, horAmps)))
         elif metric == 'std':
-            return np.std(calcWave(x, phases, horFreqs, horAmps))
+            return np.std(calcWave(x, phases, actualHFreqs, horAmps))
 
     def getYMetric(phases):
         x = np.linspace(0, 3e-6, 20000)
         if metric=='max':
-            return max(abs(calcWave(x, phases, vertFreqs, vertAmps)))
+            return max(abs(calcWave(x, phases, actualVFreqs, vertAmps)))
         elif metric == 'std':
-            return np.std(calcWave(x, phases, vertFreqs, vertAmps))
+            return np.std(calcWave(x, phases, actualVFreqs, vertAmps))
 
     xBounds = [(0, 2 * mc.pi) for _ in range(numTweezersHor-1)]
     #
@@ -734,7 +802,7 @@ def maximizeAomPerformance(horCenterFreq, vertCenterFreq, spacing, numTweezersHo
     xPhases = list(xPhases.x) + [0]
     print('horFreqs', horFreqs)
     print('horAmps', horAmps)
-    print('Hor-Phases:', [round_sig_str(x,10) for x in xPhases])
+    print('Hor-Phases:', [misc.round_sig_str(x,10) for x in xPhases])
 
     if paperGuess:
         yGuess = arr([np.pi * i**2/numTweezersVert for i in range(numTweezersVert-1)])
@@ -745,23 +813,23 @@ def maximizeAomPerformance(horCenterFreq, vertCenterFreq, spacing, numTweezersHo
     yPhases = opt.basinhopping(getYMetric, yGuess, minimizer_kwargs=minimizer_kwargs, niter=iterations, stepsize=0.2)
     yPhases = list(yPhases.x) + [0]
     for i, xp in enumerate(yPhases):
-        yPhases[i] = round_sig(xp, 10)
+        yPhases[i] = misc.round_sig(xp, 10)
 
     print('vertFreqs', vertFreqs)
     print('vertAmps', vertAmps)
-    print('Vert-Phases:', [round_sig_str(y,10) for y in yPhases])
+    print('Vert-Phases:', [misc.round_sig_str(y,10) for y in yPhases])
 
     xpts = np.linspace(0, 1e-6, 10000)
-    ypts_x = calcWave(xpts, xPhases, horFreqs, horAmps)
-    yptsOrig = calcWaveCos(xpts, arr([0 for _ in range(numTweezersHor)]), horFreqs, horAmps)
+    ypts_x = calcWave(xpts, xPhases, actualHFreqs, horAmps)
+    yptsOrig = calcWaveCos(xpts, arr([0 for _ in range(numTweezersHor)]), actualHFreqs, horAmps)
     title('X-Axis')
     plot(xpts, ypts_x, ':', label='X-Optimization')
     plot(xpts, yptsOrig, ':', label='X-Worst-Case')
     legend()
 
     figure()
-    yptsOrig = calcWave(xpts, arr([0 for _ in range(numTweezersVert)]), vertFreqs, vertAmps)
-    ypts_y = calcWaveCos(xpts, yPhases, vertFreqs, vertAmps)
+    yptsOrig = calcWave(xpts, arr([0 for _ in range(numTweezersVert)]), actualVFreqs, vertAmps)
+    ypts_y = calcWaveCos(xpts, yPhases, actualVFreqs, vertAmps)
     title('Y-Axis')
     plot(xpts, ypts_y, ':', label='Y-Optimization')
     plot(xpts, yptsOrig, ':', label='Y-Worst-Case')
@@ -949,7 +1017,7 @@ def groupMultidimensionalData(key, varyingDim, atomLocations, survivalData, surv
     # make list of unique indexes for each dimension
     uniqueSecondaryAxisValues = []
     newKey = []
-    for i, secondaryValues in enumerate(transpose(key)):
+    for i, secondaryValues in enumerate(misc.transpose(key)):
         if i == varyingDim:
             for val in secondaryValues:
                 if val not in newKey:
@@ -970,11 +1038,11 @@ def groupMultidimensionalData(key, varyingDim, atomLocations, survivalData, surv
         newErr = locErrs[:]
         newLoad = locLoad[:]
         newData.resize(int(len(locData)/extraDimValues), extraDimValues)
-        newData = transpose(newData)
+        newData = misc.transpose(newData)
         newErr.resize(int(len(locData)/extraDimValues), extraDimValues)
-        newErr = transpose(newErr)
+        newErr = misc.transpose(newErr)
         newLoad.resize(int(len(locData)/extraDimValues), extraDimValues)
-        newLoad = transpose(newLoad)
+        newLoad = misc.transpose(newLoad)
         # iterate through all extra dimensions in the locations
         secondIndex = 0
         for val, err, load in zip(newData, newErr, newLoad):
@@ -1055,6 +1123,11 @@ class AtomThreshold:
     def __copy__(self):
         return type(self)(t=self.t, fidelity=self.fidelity, binCenters=self.binCenters, binHeights=self.binHeights, 
                           fitVals=self.fitVals, rmsResidual=self.rmsResidual, rawData=self.rawData)
+    def __str__(self):
+        return '[AtomThrehsold with t='+str(self.t) + ', fid=' + str(self.fidelity) + ']'
+    def __repr__(self):
+        return self.__str__()
+
     
 def getThresholds( picData, binWidth, manThreshold, rigorous=True ):
     t = AtomThreshold()
@@ -1111,12 +1184,15 @@ def getNormalizedRmsDeviationOfResiduals(xdata, ydata, function, fitVals):
     residuals = ydata - function(xdata, *fitVals)
     return np.sqrt(sum(residuals**2) / len(residuals)) / np.mean(ydata)
 
-def getSurvivalBoolData(loadCounts, transCounts, loadThreshold, transThreshold):
-        loadAtoms, transAtoms = [[] for _ in range(2)]
-        for loadPoint, transPoint in zip(loadCounts, transCounts):
-            loadAtoms.append(loadPoint > loadThreshold)
-            transAtoms.append(transPoint > transThreshold)
-        return loadAtoms, transAtoms
+def getSurvivalBoolData(ICounts, TCounts, IThreshold, TThreshold):
+    """    
+    I stands for init, as in initialCounts, T stands for Transfered, as in transfered Counts.
+    """
+    IAtoms, TAtoms = [[] for _ in range(2)]
+    for IPoint, TPoint in zip(ICounts, TCounts):
+        IAtoms.append(IPoint > IThreshold)
+        TAtoms.append(TPoint > TThreshold)
+    return IAtoms, TAtoms
     
 def getAtomBoolData(pic1Data, threshold):
     atomCount = 0
@@ -1206,6 +1282,7 @@ def normalizeData(data, atomLocation, picture, picturesPerExperiment, borders):
     :return: The data at atomLocation with the background subtracted away (commented out at the moment).
     """
     allData = arr([])
+    # if given data separated into different variations, flatten the variation separation.
     dimensions = data.shape
     if len(dimensions) == 4:
         rawData = data.reshape((data.shape[0] * data.shape[1], data.shape[2], data.shape[3]))
@@ -1219,7 +1296,11 @@ def normalizeData(data, atomLocation, picture, picturesPerExperiment, borders):
                 raise TypeError('AtomLocation, which has value ' + str(atomLocation) + ', should be 2 elements.')
             if len(borders) <= count:
                 raise IndexError('borders, of len ' + str(len(borders)), 'is not long enough!')
-            allData = np.append(allData, rawData[imageInc][atomLocation[0]][atomLocation[1]] - borders[count])
+            try:
+                allData = np.append(allData, rawData[imageInc][atomLocation[0]][atomLocation[1]] - borders[count])
+            except IndexError:
+                print(rawData.shape, imageInc, atomLocation, len(borders), count)
+                raise
             count += 1
     return allData
 
@@ -1534,10 +1615,7 @@ def processImageData(key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulat
             for picNum in range(accumulations):
                 var += rawData[varCount * accumulations + picNum]
             varCount += 1
-        rawData = avgPics
-    print(rawData.shape)
-    print(rawData.shape[0])
-    
+        rawData = avgPics    
     
     if rawData.shape[0] != len(key):
         raise ValueError("ERROR: number of pictures (after manual accumulations) " + str(rawData.shape[0]) + 
@@ -1643,7 +1721,7 @@ def sliceMultidimensionalData(dimSlice, origKey, rawData, varyingDim=None):
                 continue
             tempKey = []
             tempData = []
-            for j, elem in enumerate(transpose(runningKey)[i]):
+            for j, elem in enumerate(misc.transpose(runningKey)[i]):
                 if abs(elem - dimSpec) < 1e-6:
                     tempKey.append(runningKey[j])
                     tempData.append(runningData[j])
@@ -1660,9 +1738,9 @@ def sliceMultidimensionalData(dimSlice, origKey, rawData, varyingDim=None):
                 if not i == varyingDim:
                     otherDimValues[-1] += str(dimVal) + ","
     if dimSlice is not None:
-        key = arr(transpose(key)[varyingDim])
+        key = arr(misc.transpose(key)[varyingDim])
     if varyingDim is None and len(arr(key).shape) > 1:
-        key = arr(transpose(key)[0])
+        key = arr(misc.transpose(key)[0])
     return arr(key), arr(rawData), otherDimValues, varyingDim
 
 def applyDataRange(dataRange, groupedDataRaw, key):
@@ -1703,7 +1781,7 @@ def getNetLoss(pic1Atoms, pic2Atoms):
     Useful for experiments where atoms move around, e.g. rearranging.
     """
     netLoss = []
-    for inc, (atoms1, atoms2) in enumerate(zip(transpose(pic1Atoms), transpose(pic2Atoms))):
+    for inc, (atoms1, atoms2) in enumerate(zip(misc.transpose(pic1Atoms), misc.transpose(pic2Atoms))):
         loadNum, finNum = [0.0 for _ in range(2)]
 
         for atom1, atom2 in zip(atoms1, atoms2):
@@ -1736,7 +1814,7 @@ def getEnhancement(loadAtoms, assemblyAtoms, normalized=False):
     determines how many atoms were added to the assembly, another measure of how well the rearranging is working.
     """
     enhancement = []
-    for inc, (loaded, assembled) in enumerate(zip(transpose(loadAtoms), transpose(assemblyAtoms))):
+    for inc, (loaded, assembled) in enumerate(zip(misc.transpose(loadAtoms), misc.transpose(assemblyAtoms))):
         enhancement.append(sum(assembled) - sum(loaded))
         if normalized:
             enhancement[-1] /= len(assembled)
@@ -1756,7 +1834,7 @@ def getEnsembleHits(atomsList, hitCondition=None, requireConsecutive=False, part
     ensembleHits = []
     if type(hitCondition) is int:
         # condition is, e.g, 5 out of 6 of the ref pic.
-        for inc, atoms in enumerate(transpose(atomsList)):
+        for inc, atoms in enumerate(misc.transpose(atomsList)):
             matches = 0
             consecutive = True
             for atom in atoms:
@@ -1772,7 +1850,7 @@ def getEnsembleHits(atomsList, hitCondition=None, requireConsecutive=False, part
                 ensembleHits.append(matches == hitCondition)
     else:
         if not partialCredit:
-            for inc, atoms in enumerate(transpose(atomsList)):
+            for inc, atoms in enumerate(misc.transpose(atomsList)):
                 ensembleHits.append(True)
                 for atom, needAtom in zip(atoms, hitCondition):
                     if not atom and needAtom:
@@ -1780,7 +1858,7 @@ def getEnsembleHits(atomsList, hitCondition=None, requireConsecutive=False, part
                     if atom and not needAtom:
                         ensembleHits[inc] = False
         else:
-            for inc, atoms in enumerate(transpose(atomsList)):
+            for inc, atoms in enumerate(misc.transpose(atomsList)):
                 ensembleHits.append(sum(atoms))# / len(atoms))
     return ensembleHits
 

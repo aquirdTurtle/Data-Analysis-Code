@@ -4,11 +4,8 @@ import uncertainties.unumpy as unp
 from fitters.Gaussian import gaussian
 
 
-def center():
-    return 1
-
-def getCenter(args):
-    return args[center()]
+def fitCharacter(args):
+    return args[1]
 
 def args():
     return 'Amp', 'Center', r'$\sigma$', 'offset'
