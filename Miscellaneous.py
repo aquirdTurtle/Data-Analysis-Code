@@ -6,6 +6,10 @@ from matplotlib.cm import get_cmap
 from pandas import DataFrame
 
 
+def ratioToDb(ratio):
+    print('Assuming input is ratio of powers.')
+    return 10*np.log10(ratio)
+
 def revList(l):
     return list(reversed(l))
 

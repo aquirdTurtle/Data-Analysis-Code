@@ -14,6 +14,10 @@ def args():
 def f(coordinate, *gaussParams):
     """
     The normal function call for this function. Performs checks on valid arguments, then calls the "raw" function.
+    coordinate: an (x,y) pair, usually created using np.meshgrid
+    *gaussparams: first the offset, followed by a list of parameter inputs to the gaussian_2d function 
+        not including the offset and angle. 
+        e.g. [offset,  amp_1, xo_1, yo_1, sigma_x_1, sigma_y_1, amp_2, xo_2, yo_2, sigma_x_2, sigma_y_2, etc. ]
     :return:
     """
     # limit the angle to a small range to prevent unncecessary flips of the axes. The 2D gaussian has two axes of
@@ -27,7 +31,7 @@ def f_raw(coordinate, offset, *params):
     :return:
     """
     if len(params) % 5 != 0:
-        raise ValueError("Error: invlaid number of arguments passed to arb 2d gaussian sum. must be multiple of 5.")
+        raise ValueError("Error: invlaid number of arguments passed to arb 2d gaussian sum. must be multiple of 5. Number was " + str(len(params)))
     gaussParams = np.reshape(params, (int(len(params)/5), 5))
     res = 0
     #for p in gaussParams:

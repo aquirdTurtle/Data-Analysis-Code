@@ -11,6 +11,9 @@ def f(t,A,tau):
 def args():
     return ["Amplitude", "Decay-Constant"]
 
+def center():
+    return None
+
 def f_unc(t, A, tau):
     """
     similar to the raw function call, but uses unp instead of np for uncertainties calculations.
