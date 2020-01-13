@@ -69,6 +69,10 @@ def f_unc(coordinates, amplitude, xo, yo, sigma_x, sigma_y, theta, offset):
     return g.ravel()
 
 
+def areaUnder(amplitude, sigma_x, sigma_y):
+    return amplitude * sigma_x * np.sqrt(2 * np.pi) * sigma_y * np.sqrt(2 * np.pi)
+
+
 def guess(key, values):
     """
     Returns guess values for the parameters of this function class based on the input. Used for fitting using this

@@ -23,7 +23,8 @@ import scipy.interpolate as interp
 import MarksConstants as mc
 import Miscellaneous as misc
 from copy import copy, deepcopy
-from fitters import ( cython_poissonian as poissonian, 
+from fitters import ( #cython_poissonian as poissonian, 
+                      poissonian as poissonian,
                       FullBalisticMotExpansion, LargeBeamMotExpansion, exponential_saturation )
 from fitters.Gaussian import double as double_gaussian, gaussian_2d, arb_2d_sum, bump
 
