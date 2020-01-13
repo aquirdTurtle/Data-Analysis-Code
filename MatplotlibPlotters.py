@@ -29,6 +29,10 @@ import IPython.display as disp
 import ExpFile as exp
 
 
+def addAxColorbar(fig, ax, im):
+    cax = mpl_toolkits.axes_grid1.make_axes_locatable(ax).append_axes('right', size='5%', pad=0.05)
+    fig.colorbar(im, cax=cax, orientation='vertical')
+
 
 def fancyImshow( fig, ax, image, avgSize='20%', pad_=0, cb=True, imageArgs={}, hAvgArgs={'color':'orange'}, vAvgArgs={'color':'orange'}, 
                  ticklabels=True,do_vavg=True, do_havg=True, hFitParams=None, vFitParams=None, subplotsAdjustArgs=dict(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0), 
