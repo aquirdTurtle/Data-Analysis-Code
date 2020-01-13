@@ -58,29 +58,29 @@ def fancyImshow( fig, ax, image, avgSize='20%', pad_=0, cb=True, imageArgs={}, h
     if do_vavg:
         vAvg = [vAvg[0]] + list(vAvg)
         vax = divider.append_axes('bottom', size=avgSize, pad=pad_)
-        vax.step(np.arange(len(vAvg)), vAvg, **vAvgArgs)
+        vline = vax.step(np.arange(len(vAvg)), vAvg, **vAvgArgs)
         vax.set_xlim(0,len(vAvg)-1)
         vax.set_yticks([])
         if not ticklabels:
             vax.set_xticks([])
         if vFitParams is not None:
-            fxpts = np.linspace(0, len(vAvg))
+            fxpts = np.linspace(0, len(vAvg), 1000)
             fypts = fitModule.f(fxpts, *vFitParams)
-            vax.plot(fxpts,fypts)
+            vax.plot(fxpts+0.5,fypts)
     if do_havg:
         # subtle difference here from the vAvg case
         hAvg = list(hAvg) + [hAvg[-1]]
         hax = divider.append_axes('left', size=avgSize, pad=pad_)
-        hax.step(hAvg, np.arange(len(hAvg)),**hAvgArgs)
+        hline = hax.step(hAvg, np.arange(len(hAvg)),**hAvgArgs)
         hax.set_ylim(0,len(hAvg)-1)
         hax.set_xticks([])
         if not ticklabels:
             hax.set_yticks([])
         if hFitParams is not None:
-            fxpts = np.linspace(0, len(hAvg))
+            fxpts = np.linspace(0, len(hAvg), 1000)
             fypts = fitModule.f(fxpts, *hFitParams)
             hax.plot(fypts, fxpts)
-    return ax, cax, hax, vax, hAvg, vAvg
+    return ax, cax, hax, vax, hAvg, vAvg, im, vline, hline
 
 def rotateTicks(plot):
     ticks = plot.get_xticklabels()
