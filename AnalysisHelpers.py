@@ -299,59 +299,6 @@ def handleKeyModifications(hdf5Key, numVariations, keyInput=None, keyOffset=0, g
                          len(key), "vars:", numVariations)
     return key
 
-def organizeTransferData( fileNumber, initLocs, transLocs, key=None, window=None, xMin=None, xMax=None, yMin=None,
-                          yMax=None, dataRange=None, keyOffset=0, dimSlice=None, varyingDim=None, groupData=False,
-                          quiet=False, picsPerRep=2, repRange=None, initPic=0, transPic=1, keyConversion=None, softwareBinning=None,
-                          removePics=None, expFile_version=3):
-    """
-    Unpack inputs, properly shape the key, picture array, and run some initial checks on the consistency of the settings.
-    """
-    with ExpFile(fileNumber, expFile_version=expFile_version) as f:
-        rawData, keyName, hdf5Key, repetitions = f.pics, f.key_name, f.key, f.reps
-        if not quiet:
-            basicInfoStr = f.get_basic_info()
-    if removePics is not None:
-        for index in reversed(sorted(removePics)):
-            rawData = np.delete(rawData, index, 0)
-            # add zero pics to the end to keep the total number consistent.
-            rawData = np.concatenate((rawData, [np.zeros(rawData[0].shape)]), 0 )
-    if repRange is not None:
-        repetitions = repRange[1] - repRange[0]
-        rawData = rawData[repRange[0]*picsPerRep:repRange[1]*picsPerRep]
-        
-    if softwareBinning is not None:
-        sb = softwareBinning
-        rawData = rawData.reshape(rawData.shape[0], rawData.shape[1]//sb[0], sb[0], rawData.shape[2]//sb[1], sb[1]).sum(4).sum(2)
-    
-    
-    # window the images images.
-    if window is not None:
-        xMin, yMin, xMax, yMax = window
-    rawData = np.copy(arr(rawData[:, yMin:yMax, xMin:xMax]))
-    # Group data into variations.
-    numberOfPictures = int(rawData.shape[0])
-    if groupData:
-        repetitions = int(numberOfPictures / picsPerRep)
-    numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
-    key = handleKeyModifications(hdf5Key, numberOfVariations, keyInput=key, keyOffset=keyOffset, groupData=groupData, keyConversion=keyConversion )
-    groupedDataRaw = rawData.reshape((numberOfVariations, repetitions * picsPerRep, rawData.shape[1], rawData.shape[2]))
-    res = sliceMultidimensionalData(dimSlice, key, groupedDataRaw, varyingDim=varyingDim)
-    (_, slicedData, otherDimValues, varyingDim) = res
-    #print('not ordering data!')
-    slicedOrderedData = slicedData
-    #slicedOrderedData, key, otherDimValues = orderData( slicedData, key, keyDim=varyingDim, 
-    #                                                    otherDimValues=otherDimValues )
-    key, groupedData = applyDataRange(dataRange, slicedOrderedData, key)
-    # check consistency
-    numberOfPictures = int(groupedData.shape[0] * groupedData.shape[1])
-    numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
-    numOfPictures = groupedData.shape[0] * groupedData.shape[1]
-    allAvgPics = getAvgPics(groupedData, picsPerRep=picsPerRep)
-    avgPics = [allAvgPics[initPic], allAvgPics[transPic]]
-    atomLocs1 = unpackAtomLocations(initLocs, avgPic=avgPics[0])
-    atomLocs2 = unpackAtomLocations(transLocs, avgPic=avgPics[1])
-    return rawData, groupedData, atomLocs1, atomLocs2, keyName, repetitions, key, numOfPictures, avgPics, basicInfoStr
-
 def modFitFunc(sign, hBiasIn, vBiasIn, depthIn, *testBiases):
     newDepths = extrapolateModDepth(sign, hBiasIn, vBiasIn, depthIn, testBiases)
     if newDepths is None:
@@ -1249,6 +1196,8 @@ def getMaxFidelityThreshold(fitVals):
     return threshold, fidelity
 
 def postSelectOnAssembly(pic1AtomData, pic2AtomData, postSelectionCondition, connected=False):
+    if postSelectionCondition is None:
+        return pic1AtomData, pic2AtomData, None
     # see getEnsembleHits for more discussion on how the post-selection is working here. 
     ensembleHits = getEnsembleHits(pic1AtomData, postSelectionCondition, requireConsecutive=connected)
     # ps for post-selected
@@ -1400,53 +1349,6 @@ def getGenerationEvents(loadAtoms, finAtomsAtoms):
             # never an atom.
             genData = np.append(genData, [0])
     return genData
-
-def getTransferEvents(pic1Atoms, pic2Atoms):
-    """
-    It returns a raw array that includes every survival data point, including points where the the atom doesn't get
-    loaded at all.
-    """
-    # this will include entries for when there is no atom in the first picture.
-    pic1Atoms = arr(arr(pic1Atoms).tolist())
-    pic2Atoms = arr(arr(pic2Atoms).tolist())
-    # -1 = no atom in the first place.
-    transferData = np.zeros(pic1Atoms.shape) - 1
-    # convert to 1 if atom and atom survived
-    transferData += 2 * pic1Atoms * pic2Atoms
-    # convert to 0 if atom and atom didn't survive. This and the above can't both evaluate to non-zero.
-    transferData += pic1Atoms * (~pic2Atoms)
-    return transferData.flatten()
-
-def getTransferStats(transList, repsPerVar):
-    # Take the previous data, which includes entries when there was no atom in the first picture, and convert it to
-    # an array of just loaded and survived or loaded and died.
-    numVars = int(transList.size / repsPerVar)
-    transferAverages = np.array([])
-    loadingProbability = np.array([])
-    #transferErrors = np.array([])
-    transferErrors = np.zeros([numVars,2])
-    if transList.size < repsPerVar:
-        # probably a single variation that has been sliced to cut out bad data.
-        repsPerVar = transList.size
-    for variationInc in range(0, numVars):
-        transVarList = arr([x for x in transList[variationInc * repsPerVar:(variationInc+1) * repsPerVar] if x != -1])
-        if transVarList.size == 0:
-            # catch the case where there's no relevant data, typically if laser becomes unlocked.
-            #transferErrors = np.append(transferErrors, [(0,0)])
-            transferErrors[variationInc] = [0,0]
-            loadingProbability = np.append(loadingProbability, [0])
-            transferAverages = np.append(transferAverages, [0])
-        else:
-            # normal case
-            meanVal = np.average(transVarList)
-            #print('i',jeffreyInterval(meanVal, len(transVarList)))
-            #transferErrors = np.append(transferErrors, jeffreyInterval(meanVal, len(transVarList)))
-            transferErrors[variationInc] = jeffreyInterval(meanVal, len(transVarList))
-            # old method
-            # transferErrors = np.append(transferErrors, np.std(transVarList)/np.sqrt(transVarList.size))
-            loadingProbability = np.append(loadingProbability, transVarList.size / repsPerVar)
-            transferAverages = np.append(transferAverages, meanVal)    
-    return transferAverages, transferErrors, loadingProbability
 
 def groupEventsIntoVariations(bareList, repsPerVar):
     varList = [None for _ in range(int(bareList.size / repsPerVar))]

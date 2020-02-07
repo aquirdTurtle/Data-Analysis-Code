@@ -1,7 +1,8 @@
 import time
 from pandas import DataFrame
 import MainAnalysis as ma
-from MainAnalysis import standardPopulationAnalysis, analyzeNiawgWave, standardTransferAnalysis, standardAssemblyAnalysis, AnalyzeRearrangeMoves
+from MainAnalysis import standardPopulationAnalysis, analyzeNiawgWave, standardAssemblyAnalysis, AnalyzeRearrangeMoves
+import TransferAnalysis
 from numpy import array as arr
 from random import randint
 from Miscellaneous import getColors, getMarkers, errString
@@ -14,7 +15,7 @@ import mpl_toolkits.axes_grid1
 from scipy.optimize import curve_fit as fit
 from LoadingFunctions import loadDataRay, loadCompoundBasler, loadDetailedKey
 from AnalysisHelpers import (processSingleImage, orderData,
-                             normalizeData, getBinData, getTransferStats, getTransferEvents, fitDoubleGaussian,
+                             normalizeData, getBinData, fitDoubleGaussian,
                              guessGaussianPeaks, calculateAtomThreshold, getAvgPic, getEnsembleHits,
                              getEnsembleStatistics, processImageData,
                              fitPictures, fitGaussianBeamWaist, integrateData, 
@@ -408,7 +409,7 @@ def Transfer( fileNumber, atomLocs1_orig, atomLocs2_orig, show=True, legendOptio
     """
     avgColor='w'
     tt = TimeTracker()
-    res = standardTransferAnalysis( fileNumber, atomLocs1_orig, atomLocs2_orig, fitModules=fitModules, tt=tt,
+    res = TransferAnalysis.standardTransferAnalysis( fileNumber, atomLocs1_orig, atomLocs2_orig, fitModules=fitModules, tt=tt,
                                     indvVariationThresholds=indvVariationThresholds,expFile_version=expFile_version, **standardTransferArgs )
     tt.clock('After-Standard-Analysis')
     (atomLocs1, atomLocs2, transferData, transferErrs, initPopulation, pic1Data, keyName, key,

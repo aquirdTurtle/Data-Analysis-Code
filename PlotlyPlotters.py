@@ -1,4 +1,5 @@
 __version__ = "1.6"
+
 """
 Most recent changes:
 - separated loading and survival pics in the average pics in transfer
@@ -11,8 +12,8 @@ from Miscellaneous import transpose, getColors, errString
 import plotly.graph_objs as go
 from plotly.offline import iplot, plot as plotlyplot
 from plotly.tools import make_subplots
-from MainAnalysis import standardAssemblyAnalysis, standardPopulationAnalysis, standardTransferAnalysis, \
-    AnalyzeRearrangeMoves, analyzeScatterData
+from MainAnalysis import standardAssemblyAnalysis, standardPopulationAnalysis, AnalyzeRearrangeMoves, analyzeScatterData
+import TransferAnalysis
 import FittingFunctions as fitFunc
 from pandas import DataFrame
 from fitters import linear
@@ -81,7 +82,7 @@ def Transfer(fileNumber, atomLocs1, atomLocs2, show=True, fitModules=[None], sho
     Standard data analysis package for looking at survival rates throughout an experiment.
     """
     avgColor = '#FFFFFF'
-    res = standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, fitModules=fitModules,
+    res = TransferAnalysis.standardTransferAnalysis(fileNumber, atomLocs1, atomLocs2, fitModules=fitModules,
                                    **standardTransferArgs)
     (atomLocs1, atomLocs2, transferData, transferErrs, initPopulation, pic1Data, keyName, key,
      repetitions, initThresholds, fits, avgTransferData, avgTransferErr, avgFit, avgPics, otherDimValues,
