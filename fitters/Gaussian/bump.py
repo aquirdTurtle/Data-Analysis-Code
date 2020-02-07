@@ -4,7 +4,7 @@ import uncertainties.unumpy as unp
 from fitters.Gaussian import gaussian
 
 def fitCharacter(args):
-    return args[2]
+    return args[1]
 
 def getFitCharacterString(fitVals):
     return "Fit-Center"
@@ -42,6 +42,6 @@ def guess(key, values):
     """
     return [max(values) - min(values), key[np.argmax(values)], (max(key)-min(key))/8, min(values)]
 
-def area_under(A1, x01, sig1, offset):
+def area_under(A1, sig1):
     # ignoring the offset.
     return A1 * sig1 * np.sqrt(2 * np.pi)

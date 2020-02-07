@@ -47,6 +47,8 @@ import matplotlib as mpl
 import matplotlib.cm
 from IPython.display import Image, HTML, display
 
+def windowImage(image, window):
+    return image[window[0]:window[1], window[2]:window[3]]
 
 def makeVid(pics, gifAddress, videoType, fileAddress=None, dur=1, lim=None, includeCount=True, lowLim=None, 
             finLabels=[], finTxt="Atom Reservoir Depleted", vidMap='inferno', maxMult=1, offset=0,
@@ -105,16 +107,18 @@ def makeVid(pics, gifAddress, videoType, fileAddress=None, dur=1, lim=None, incl
     pics = [np.repeat(np.repeat(pic, resolutionMult, axis=0), resolutionMult, axis=1) for pic in pics]
     imageio.mimsave(gifAddress, images, format=videoType, duration=dur)
 
-def collapseImage(im):
+def collapseImage(im, avg=True):
     vAvg = np.zeros(len(im[0]))
     for r in im:
         vAvg += r
-    vAvg /= len(im)
+    if avg:
+        vAvg /= len(im)
     
     hAvg = np.zeros(len(im))
     for c in misc.transpose(im):
         hAvg += c
-    hAvg /= len(im[0])
+    if avg:
+        hAvg /= len(im[0])
     return hAvg, vAvg
 
 def jeffreyInterval(m,num):
@@ -309,6 +313,7 @@ def organizeTransferData( fileNumber, initLocs, transLocs, key=None, window=None
     if removePics is not None:
         for index in reversed(sorted(removePics)):
             rawData = np.delete(rawData, index, 0)
+            # add zero pics to the end to keep the total number consistent.
             rawData = np.concatenate((rawData, [np.zeros(rawData[0].shape)]), 0 )
     if repRange is not None:
         repetitions = repRange[1] - repRange[0]
@@ -976,6 +981,7 @@ def newCalcMotTemperature(times, sigmas):
 
 def orderData(data, key, keyDim=None, otherDimValues=None):
     """
+        return arr(data), arr(key), arr(otherDimValues)
     """
     zipObj = (zip(key, data, otherDimValues) if otherDimValues is not None else zip(key, data))
     if keyDim is not None:
@@ -1242,18 +1248,19 @@ def getMaxFidelityThreshold(fitVals):
     fidelity = getFidelity(threshold, fitVals)
     return threshold, fidelity
 
-def postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic, connected=False):
-    ensembleHits = getEnsembleHits(pic1Atoms, postSelectionPic, requireConsecutive=connected)
+def postSelectOnAssembly(pic1AtomData, pic2AtomData, postSelectionCondition, connected=False):
+    # see getEnsembleHits for more discussion on how the post-selection is working here. 
+    ensembleHits = getEnsembleHits(pic1AtomData, postSelectionCondition, requireConsecutive=connected)
     # ps for post-selected
-    psPic1Atoms, psPic2Atoms = [[[] for _ in pic1Atoms] for _ in range(2)]
+    psPic1AtomData, psPic2AtomData = [[[] for _ in pic1AtomData] for _ in range(2)]
     for i, hit in enumerate(ensembleHits):
         if hit:
-            for atom1, orig1, atom2, orig2 in zip(psPic1Atoms, pic1Atoms, psPic2Atoms, pic2Atoms):
+            for atom1, orig1, atom2, orig2 in zip(psPic1AtomData, pic1AtomData, psPic2AtomData, pic2AtomData):
                 atom1.append(orig1[i])
                 atom2.append(orig2[i])
             # else nothing!
-    print('Post-Selecting on assembly condition:', postSelectionPic, '. Number of hits:', len(psPic1Atoms[0]))
-    return psPic1Atoms, psPic2Atoms
+    print('Post-Selecting on assembly condition:', postSelectionCondition, '. Number of hits:', len(psPic1AtomData[0]))
+    return psPic1AtomData, psPic2AtomData, ensembleHits
 
 def getAvgBorderCount(data, p, ppe):
     """
@@ -1821,21 +1828,42 @@ def getEnhancement(loadAtoms, assemblyAtoms, normalized=False):
             enhancement[-1] /= len(assembled)
     return enhancement
 
-def getEnsembleHits(atomsList, hitCondition=None, requireConsecutive=False, partialCredit=False):
+def getEnsembleHits(atomPresenceData, hitCondition=None, requireConsecutive=False, partialCredit=False):
     """
     This function determines whether an ensemble of atoms was hit in a given picture. Give it whichever
     picture data you need.
 
     NEW: this function is now involved in post-selection work
 
-    atomsList should be a 2 dimensional array. 1 Dim for each atom location, one for each picture.
+    Args:
+        atomPresenceData (2D Array of bool): atomPresenceData[whichAtom][whichPicture]
+            First dimension is atom index, second dimension is the picture, and the value is whether the
+            given atom was present in the given picture. 
+        hitCondition (1D array of bool or int):
+            if 1D array of bool:
+                The picture of the expected configuration which counts as a hit.
+            if int:
+                In this case, the number of atoms in the atomPresenceData which must be present to count as a hit.
+        requireConsecutive (bool): 
+            (only relevant for int hitCondition.) An option which specifies if the number of atoms 
+            specified by the hit condition must be consequtive in the list in order to count as a hit. 
+        partialCredit (bool):
+            (only relevant for array hitCondition). An option which specifies if the user wants a relative
+            measurement of how many atoms made it to the given configuration. Note: currently doesn't 
+            actually use the hit condition for some reason?
+    
+    Returns:
+        ensembleHits (1D array of bool or int): ensembleHits[whichPicture] one to one with each picture in the 
+        atomList. This list is the answer to whether a given picture matched the hit condition or not.
+        If partial credit, it is instead of a bool an int which records the number of aotms in the picture. 
+        
     """
     if hitCondition is None:
-        hitCondition = np.ones(atomsList.shape[0])
+        hitCondition = np.ones(atomPresenceData.shape[0])
     ensembleHits = []
     if type(hitCondition) is int:
-        # condition is, e.g, 5 out of 6 of the ref pic.
-        for inc, atoms in enumerate(misc.transpose(atomsList)):
+        # condition is, e.g, 5 out of 6 of the ref pic, and if consecutive, all atoms should be connected somehow.
+        for atoms in misc.transpose(atomPresenceData):
             matches = 0
             consecutive = True
             for atom in atoms:
@@ -1850,17 +1878,17 @@ def getEnsembleHits(atomsList, hitCondition=None, requireConsecutive=False, part
             else:
                 ensembleHits.append(matches == hitCondition)
     else:
-        if not partialCredit:
-            for inc, atoms in enumerate(misc.transpose(atomsList)):
+        if partialCredit:
+            for inc, atoms in enumerate(misc.transpose(atomPresenceData)):
+                ensembleHits.append(sum(atoms)) # / len(atoms))
+        else:
+            for inc, atoms in enumerate(misc.transpose(atomPresenceData)):
                 ensembleHits.append(True)
                 for atom, needAtom in zip(atoms, hitCondition):
                     if not atom and needAtom:
                         ensembleHits[inc] = False
                     if atom and not needAtom:
                         ensembleHits[inc] = False
-        else:
-            for inc, atoms in enumerate(misc.transpose(atomsList)):
-                ensembleHits.append(sum(atoms))# / len(atoms))
     return ensembleHits
 
 def getEnsembleStatistics(ensembleData, reps):

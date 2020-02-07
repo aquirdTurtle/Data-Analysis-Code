@@ -354,9 +354,27 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, th
             transAtoms[i] += Tatoms
             transPicCounts[i] += list(transCounts)
             initPicCounts[i] += list(initCounts)
+    initAtomImages = [np.zeros(rawData[0].shape) for _ in range(int(numOfPictures/picsPerRep))]
+    transAtomImages = [np.zeros(rawData[0].shape) for _ in range(int(numOfPictures/picsPerRep))]
+    transImagesInc, initImagesInc = [0,0]
+    print(arr(initAtomImages).shape, arr(initAtoms).shape)
+    for picInc in range(int(numOfPictures)):
+        if picInc % picsPerRep == initPic:
+            for locInc, loc in enumerate(atomLocs1):
+                initAtomImages[initImagesInc][loc[0]][loc[1]] = initAtoms[locInc][initImagesInc]            
+            initImagesInc += 1
+        elif picInc % picsPerRep == transPic:
+            for locInc, loc in enumerate(atomLocs2):
+                transAtomImages[transImagesInc][loc[0]][loc[1]] = transAtoms[locInc][transImagesInc]
+            transImagesInc += 1
     if postSelectionCondition is not None:
-        initAtoms, transAtoms = ah.postSelectOnAssembly( initAtoms, transAtoms, postSelectionCondition,
-                                                         connected=postSelectionConnected )
+        print('bef',arr(initAtoms).shape)
+        initAtoms, transAtoms, ensembleHits = ah.postSelectOnAssembly( initAtoms, transAtoms, postSelectionCondition,
+                                                                       connected=postSelectionConnected )
+        print('aft',arr(initAtoms).shape)
+    else:
+        ensembleHits = None
+    print('init/transfAtoms shapes:', arr(initAtoms).shape, arr(transAtoms).shape)
     for i in range(len(atomLocs1)):
         transList[i] = ah.getTransferEvents(initAtoms[i], transAtoms[i])
         transAtomsVarAvg[i], transAtomsVarErrs[i], initPopulation[i] = ah.getTransferStats(transList[i], repetitions)
@@ -408,28 +426,16 @@ def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, th
             fits[i], _ = ah.fitWithModule(module, key, transAtomsVarAvg[i], guess=fitguess[i], getF_args=getFitterArgs[i])
         avgFit, _ = ah.fitWithModule(fitModules[-1], key, avgTransData, guess=fitguess[-1], getF_args=getFitterArgs[-1])
     
-    initAtomImages = [np.zeros(rawData[0].shape) for _ in range(int(numOfPictures/picsPerRep))]
-    transAtomImages = [np.zeros(rawData[0].shape) for _ in range(int(numOfPictures/picsPerRep))]
-    transImagesInc, initImagesInc = [0,0]
-    for picInc in range(int(numOfPictures)):
-        if picInc % picsPerRep == initPic:
-            for locInc, loc in enumerate(atomLocs1):
-                initAtomImages[initImagesInc][loc[0]][loc[1]] = initAtoms[locInc][initImagesInc]            
-            initImagesInc += 1
-        elif picInc % picsPerRep == transPic:
-            for locInc, loc in enumerate(atomLocs2):
-                transAtomImages[transImagesInc][loc[0]][loc[1]] = transAtoms[locInc][transImagesInc]
-            transImagesInc += 1
     return (atomLocs1, atomLocs2, transAtomsVarAvg, transAtomsVarErrs, initPopulation, initPicCounts, keyName, key,
             repetitions, initThresholds, fits, avgTransData, avgTransErr, avgFit, avgPics, otherDims, locationsList,
             genAvgs, genErrs, tt, transVarAvg, transVarErr, initAtomImages, transAtomImages, transPicCounts, 
-            transThresholds, fitModules, transThresholdSame, basicInfoStr)
+            transThresholds, fitModules, transThresholdSame, basicInfoStr, ensembleHits)
 
 
 def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, analyzeTogether=False, 
                                 thresholdOptions=None, fitModules=[None], keyInput=None, fitIndv=False, subtractEdges=True,
                                 keyConversion=None, quiet=False, dataRange=None, picSlice=None, keyOffset=0, softwareBinning=None,
-                                window=None, yMin=None, yMax=None, xMin=None, xMax=None ):
+                                window=None, yMin=None, yMax=None, xMin=None, xMax=None, expFileVer=3 ):
     """
     keyConversion should be a calibration which takes in a single value as an argument and converts it.
         It needs a calibration function f() and a units function units()
@@ -437,7 +443,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
              fitModule, keyName, totalAtomData, rawData, atomLocations, avgFits, atomImages, threshFitVals )
     """
     atomLocations = ah.unpackAtomLocations(atomLocations)
-    with ExpFile(fileNum) as f:
+    with ExpFile(fileNum, expFile_version=expFileVer) as f:
         rawData, keyName, hdf5Key, repetitions = f.pics, f.key_name, f.key, f.reps 
         if not quiet:
             f.get_basic_info()

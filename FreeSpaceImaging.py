@@ -8,6 +8,7 @@ import ExpFile as exp
 import AnalysisHelpers as ah
 import scipy.optimize as opt
 from fitters.Gaussian import bump3, bump
+import IPython.display as disp
 
 viridis = cm.get_cmap('viridis', 256)
 dark_viridis = []
@@ -41,15 +42,20 @@ def photonCounting(pics, threshold):
     return np.array(pcPics)
 
 def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcInput=None, shapes=None, zeroCorrection=0, zeroCorrectionPC=0,
-                            keys = None, fitModule=bump, extraPicDictionaries=None):
+                            keys = None, fitModule=bump, extraPicDictionaries=None, newAnnotation=False, onlyThisPic=None, pltVSize=5,
+                            plotWaists=False):
     if keys is None:
         keys = [None for _ in fids]
     sortedStackedPics = {}
     for filenum, fid in enumerate(fids):
-        with exp.ExpFile(fid) as f:
-            allpics = f.get_pics()
-            kn, key = f.get_key()
-            f.get_basic_info()
+        if type(fid) == int:
+            with exp.ExpFile(fid) as f:
+                allpics = f.get_pics()
+                kn, key = f.get_key()
+                f.get_basic_info()
+        else:
+            allpics = fid
+            print("Assuming input is list of all pics.")
         if keys[filenum] is not None:
             key = keys[filenum]
         allpics = np.reshape(allpics, (len(key), int(allpics.shape[0]/len(key)), allpics.shape[1], allpics.shape[2]))
@@ -94,10 +100,10 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             print('no bg photon', expAvg.shape)
             bgPhotonCount = np.zeros(photonCountImage.shape)
         s_ = [0,-1,0,-1] if shapes[vari] is None else shapes[vari]
-        avg_mbg = expAvg[s_[0]:s_[1], s_[2]:s_[3]] - bgAvg[s_[0]:s_[1], s_[2]:s_[3]]# - zeroCorrection
-        avg_mbgpc = expPhotonCountImage[s_[0]:s_[1], s_[2]:s_[3]] - bgPhotonCountImage[s_[0]:s_[1], s_[2]:s_[3]]# - zeroCorrectionPC        
-        images[keyV] = [expAvg[s_[0]:s_[1], s_[2]:s_[3]], expPhotonCountImage[s_[0]:s_[1], s_[2]:s_[3]], avg_mbg, avg_mbgpc]
-        avgFitWaists[keyV], fitParams[keyV], fitCovs[keyV] = [[] for _ in range(3)]
+        avg_mbg = ah.windowImage(expAvg, s_) - ah.windowImage(bgAvg, s_)
+        avg_mbgpc = ah.windowImage(expPhotonCountImage, s_) - ah.windowImage(bgPhotonCountImage, s_)
+        images[keyV] = [ah.windowImage(expAvg, s_), ah.windowImage(expPhotonCountImage, s_), avg_mbg, avg_mbgpc]
+        fitParams[keyV], fitCovs[keyV] = [[] for _ in range(2)]
         for im, guess in zip(images[keyV], guesses[vari]):
             hAvg, vAvg = ah.collapseImage(im)
             if fit:
@@ -110,23 +116,74 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
                     print('fit failed!')
                 fitParams[keyV].append(params)
                 fitCovs[keyV].append(cov)
-                avgFitWaists[keyV].append(fitModule.fitCharacter(params))
-            else:
-                avgFitWaists[keyV].append(None)
-    cf = 16e-6/50
+
+    cf = 16e-6/40
     mins, maxes = [[], []]
     imgs_ = np.array(list(images.values()))
     for imgInc in range(4):
         mins.append(min(imgs_[:,imgInc].flatten()))
         maxes.append(max(imgs_[:,imgInc].flatten()))
-    for vari, ((keyV,ims), (_,param_set)) in enumerate(zip(images.items(), fitParams.items())):
-        fig, axs = plt.subplots(1,4, figsize=(20,3))
-        for which, (im, ax, params, title, min_, max_) in enumerate(zip(ims, axs, param_set, titles, mins, maxes)):
-            ax, _, _, _, hAvg, vAvg = mp.fancyImshow(fig, ax, im, imageArgs={'cmap':dark_viridis_cmap, 'vmin':min_, 'vmax':max_}, hFitParams=params, fitModule=fitModule)
-            ax.set_title(title + ': ' + misc.round_sig_str(avgFitWaists[keyV][which]*cf*2e6) + r'$\mu m$ waist, ' + misc.round_sig_str(np.sum(im.flatten()),5))
-        fig.subplots_adjust(left=0,right=1,bottom=0,top=0.95, wspace=0.3, hspace=0)
-        fig.suptitle(keyV + ': ' + str(datalen[keyV]), fontsize=26)
-    return avgFitWaists, images, fitParams, fitCovs, sortedStackedPics
+    numVariations = len(images)
+    if onlyThisPic is None:
+        fig, axs = plt.subplots(numVariations, 4, figsize=(20, pltVSize*numVariations))
+    else:
+        numRows = int(np.ceil(numVariations/4))
+        fig, axs = plt.subplots(numRows, 4, figsize=(20, pltVSize*numRows))
+    if numVariations == 1:
+        axs = [axs]
+    waists = np.zeros((len(images), 4))
+    waistErrs = np.zeros((len(images), 4))
+    keyPlt = np.zeros(len(images))
+    for vari, ((keyV,ims), (_,param_set), (_, cov_set)) in enumerate(zip(images.items(), fitParams.items(), fitCovs.items())):
+        if onlyThisPic is None:
+            for which, (im, ax, params, title, min_, max_, covs) in enumerate(zip(ims, axs[vari], param_set, titles, mins, maxes, cov_set)):
+                waists[vari][which] = params[2]*cf*2e6
+                waistErrs[vari][which] = np.sqrt(np.diag(covs))[2]*cf*2e6
+                keyPlt[vari] = keyV
+                res = mp.fancyImshow(fig, ax, im, imageArgs={'cmap':dark_viridis_cmap, 'vmin':min_, 'vmax':max_}, hFitParams=params, fitModule=fitModule)
+                ax, hAvg, vAvg = [res[0], res[4], res[5]]
+                ax.set_title(keyV + ': ' + str(datalen[keyV]) + ';\n' 
+                             + title + ': ' + misc.errString(waists[vari][which],waistErrs[vari][which]) + r'$\mu m$ waist, ' + misc.round_sig_str(np.sum(im.flatten()),5), fontsize=12)
+            fig.subplots_adjust(left=0,right=1,bottom=0.1,top=0.9, wspace=0.3, hspace=0.5)
+        else:
+            ax = axs.flatten()[vari]
+            waists[vari][onlyThisPic] = param_set[onlyThisPic][2]*cf*2e6
+            waistErrs[vari][onlyThisPic] = np.sqrt(np.diag(cov_set[onlyThisPic]))[2]*cf*2e6
+            keyPlt[vari] = keyV
+            res = mp.fancyImshow(fig, ax, ims[onlyThisPic], imageArgs={'cmap':dark_viridis_cmap, 'vmin':mins[onlyThisPic], 
+                                                                       'vmax':maxes[onlyThisPic]}, hFitParams=param_set[onlyThisPic], fitModule=fitModule)
+            ax, hAvg, vAvg = [res[0], res[4], res[5]]
+            ax.set_title(keyV + ': ' + str(datalen[keyV]) + ';\n' 
+                         + titles[onlyThisPic] + ': ' + misc.errString(param_set[onlyThisPic][2]*cf*2e6, np.sqrt(np.diag(cov_set[onlyThisPic]))[2]*cf*2e6) 
+                         + r'$\mu m$ waist, ' + misc.round_sig_str(np.sum(ims[onlyThisPic].flatten()),5), 
+                         fontsize=12)
+            fig.subplots_adjust(left=0,right=1,bottom=0.1,top=0.9, wspace=0.3, hspace=0.5)
+    disp.display(fig)
+    if plotWaists:
+        fig2, ax = plt.subplots()
+        if onlyThisPic is not None:
+            ax.errorbar(keyPlt, waists[:,onlyThisPic], waistErrs[:,onlyThisPic], marker='o', linestyle='', capsize=3, label=titles[onlyThisPic]);
+        else:
+            for whichPic in range(4):
+                ax.errorbar(keyPlt, waists[:,whichPic], waistErrs[:,whichPic], marker='o', linestyle='', capsize=3, label=titles[whichPic]);
+        fig.legend()
+        ax.set_ylabel(r'Fit Waist ($\mu m$)')
+    disp.display(fig2)
+    for fid in fids:
+        if type(fid) == int:
+            if newAnnotation or not exp.checkAnnotation(fid, force=False, quiet=True):
+                exp.annotate(fid)
+    disp.clear_output()
+    for fid in fids:
+        if type(fid) == int:
+            expTitle, _, lev = exp.getAnnotation(fid)
+            expTitle = ''.join('#' for _ in range(lev)) + ' File ' + str(fid) + ': ' + expTitle
+            disp.display(disp.Markdown(expTitle))
+            with exp.ExpFile(fid) as file:
+                file.get_basic_info()
+    
+    
+    return {'images':images, 'fits':fitParams, 'cov':fitCovs, 'pics':sortedStackedPics}
 
 def getBgImgs(fid):
     with exp.ExpFile(fid) as file:

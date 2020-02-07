@@ -10,9 +10,10 @@ currentVersion = 3
 def annotate(fileID=None, expFile_version=currentVersion):
     title = input("Run Title: ")
     hashNum = int(input("Title-Level: "))
-    titleStr = ''.join('#' for _ in range(hashNum)) + ' ' + title
+    #titleStr = ''.join('#' for _ in range(hashNum)) + ' ' + title     
     notes = input("Experiment Notes:")
     with ExpFile(expFile_version=expFile_version) as f:
+        print('annotating file ' + str(fileID));
         f.open_hdf5(fileID, openFlag='a')        
         if 'Experiment_Notes' in f.f['Miscellaneous'].keys():
             del f.f['Miscellaneous']['Experiment_Notes']
@@ -21,15 +22,20 @@ def annotate(fileID=None, expFile_version=currentVersion):
         
         if 'Experiment_Title' in f.f['Miscellaneous'].keys():
             del f.f['Miscellaneous']['Experiment_Title']
-        dset3 = f.f['Miscellaneous'].create_dataset("Experiment_Title", shape=(1,), dtype="S"+str(len(titleStr))) 
-        dset3[0] = np.string_(titleStr)
+        dset3 = f.f['Miscellaneous'].create_dataset("Experiment_Title", shape=(1,), dtype="S"+str(len(title))) 
+        dset3[0] = np.string_(title)
+        
+        if 'Experiment_Title_Level' in f.f['Miscellaneous'].keys():
+            del f.f['Miscellaneous']['Experiment_Title_Level']
+        dset4 = f.f['Miscellaneous'].create_dataset("Experiment_Title_Level", shape=(1,), dtype="i8") 
+        dset4[0] = hashNum
         
 
 def checkAnnotation(fileNum, force=True, quiet=False, expFile_version=currentVersion):
     try:
         with ExpFile(fileNum, expFile_version=expFile_version) as f:
             if (   'Experiment_Notes' not in f.f['Miscellaneous']
-                or 'Experiment_Title'     not in f.f['Miscellaneous']):
+                or 'Experiment_Title' not in f.f['Miscellaneous']):
                 #pass
                 if force:
                     raise RuntimeError('HDF5 File number ' + str(fileNum) + ' Has not been annotated. Please call exp.annotate() to annotate the file.')
@@ -44,14 +50,20 @@ def checkAnnotation(fileNum, force=True, quiet=False, expFile_version=currentVer
         return False
     return True
 
+
 def getAnnotation(fileNum, expFile_version=currentVersion):
     with ExpFile(fileNum, expFile_version=expFile_version) as f:
         f_misc = f.f['Miscellaneous']
         if (   'Experiment_Notes' not in f_misc
             or 'Experiment_Title' not in f_misc):
             raise RuntimeError('HDF5 File number ' + str(fileNum) + ' Has not been annotated. Please call exp.annotate() to annotate the file.')
+        if 'Experiment_Title_Level' not in f_misc:
+            expTitleLevel = 0
+        else:
+            expTitleLevel = f_misc['Experiment_Title_Level'][0]
         return (f_misc['Experiment_Title'][0].decode("utf-8"), 
-                f_misc['Experiment_Notes'][0].decode("utf-8"))
+                f_misc['Experiment_Notes'][0].decode("utf-8"),
+                expTitleLevel)
 
 def setPath(day, month, year, repoAddress="J:\\Data repository\\New Data Repository"):
     """

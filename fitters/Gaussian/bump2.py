@@ -36,10 +36,10 @@ def round_sig_str(x, sig=3):
 
 def fitCharacter(params):
     # for raman spectra, return the nbar, assuming correct orientation of the 2 gaussians
-    #r = params[4]/params[1]
-    #return r/(1-r) if not (r>=1) else 5
+    r = params[4]/params[1]
+    return r/(1-r) if not (r>=1) else 5
     # return the diff/2
-    return (params[5] + params[2])/2
+    #return (params[5] + params[2])/2
 
 def getFitCharacterString(params):
     r = params[4]/params[1]
