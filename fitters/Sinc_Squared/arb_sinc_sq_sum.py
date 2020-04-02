@@ -1,6 +1,6 @@
 import numpy as np
 import uncertainties.unumpy as unp
-
+from fitters.Sinc_Squared import sinc_sq
 
 def center():
     return None # or the arg-number of the center.
@@ -11,7 +11,7 @@ def getCenter(args):
     return (args[1] + args[4] + args[7])/3
 
 
-def f(x, A, c, scale, offset):
+def f(x, offset, *params):
     """
     The normal function call for this function. Performs checks on valid arguments, then calls the "raw" function.
     :return:
@@ -20,7 +20,7 @@ def f(x, A, c, scale, offset):
 #        return x * 10**10
 #    if A < 0:
 #        return x * 10**10
-    return f_raw(x, A, c, scale, offset)
+    return f_raw(x, offset, *params)
 
 
 def args():
@@ -43,13 +43,13 @@ def f_raw(xpts, offset, *params):
     return res
 
 
-def f_unc(x, A, c, scale, offset):
+def f_unc(x,offset, *params):
     if len(params) % 3 != 0:
         raise ValueError("Error: invlaid number of arguments passed to arb 2d gaussian sum. must be multiple of 5.")
     sincParams = np.reshape(params, (int(len(params)/3), 3))
     res = 0
     for p in sincParams:
-        res += sinc_sq.f_unc(xpts, *p, 0)
+        res += sinc_sq.f_unc(x, *p, 0)
     res += offset
     return res
 

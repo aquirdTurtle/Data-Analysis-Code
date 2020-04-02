@@ -5,6 +5,7 @@ from os import linesep
 import pandas as pd
 
 from astropy.io import fits
+import matplotlib.pyplot as plt
 
 from numpy import array as arr
 import h5py as h5
@@ -19,13 +20,13 @@ import scipy.optimize as opt
 import scipy.special as special
 import scipy.interpolate as interp
 
-import MarksConstants as consts
-from Miscellaneous import transpose, round_sig, round_sig_str
+import MarksConstants as mc
 import Miscellaneous as misc
 from copy import copy, deepcopy
-from fitters import ( cython_poissonian as poissonian, 
+from fitters import ( #cython_poissonian as poissonian, 
+                      poissonian as poissonian,
                       FullBalisticMotExpansion, LargeBeamMotExpansion, exponential_saturation )
-from fitters.Gaussian import double as double_gaussian, gaussian_2d, arb_2d_sum
+from fitters.Gaussian import double as double_gaussian, gaussian_2d, arb_2d_sum, bump
 
 import dataclasses as dc
 import MainAnalysis as ma
@@ -39,15 +40,88 @@ import scipy.ndimage.filters as filters
 
 from statsmodels.stats.proportion import proportion_confint as confidenceInterval
 
+import imageio
+import numpy as np
+from numpy import array as arr
+import matplotlib as mpl
+import matplotlib.cm
+from IPython.display import Image, HTML, display
 
 
+def makeVid(pics, gifAddress, videoType, fileAddress=None, dur=1, lim=None, includeCount=True, lowLim=None, 
+            finLabels=[], finTxt="Atom Reservoir Depleted", vidMap='inferno', maxMult=1, offset=0,
+            resolutionMult=1):
+    infernoMap = [mpl.cm.inferno(i)[:-1] for i in range(256)]
+    viridisMap = [mpl.cm.viridis(i)[:-1] for i in range(256)]
+    magmaMap = [mpl.cm.magma(i)[:-1] for i in range(256)]
+    hotMap = [mpl.cm.hot(i)[:-1] for i in range(256)]
+    cividisMap = [mpl.cm.cividis(i)[:-1] for i in range(256)]
+    if vidMap == 'inferno':
+        vidMap = infernoMap
+    if vidMap == 'viridis':
+        vidMap = viridisMap
+    if vidMap == 'cividisMap':
+        vidMap = cividisMap
+    
+    # global count
+    # select subsection
+    if lim is None:
+        lim = len(pics)
+    if lowLim is None:
+        lowLim = 0
+    pics = pics[lowLim:lim]
+    # normalize to rgb scale
+    pics = pics - min(pics.flatten())
+    pics = np.uint16(pics / max(pics.flatten()) * 256 * maxMult)
+    pics = arr([[[int(elem) for elem in row] for row in pic] for pic in pics])
+    pics = arr(pics-min(pics.flatten()) - offset)
+    pics = [[[vidMap[elem] if elem < 256 and elem >= 0 else vidMap[255] if elem >= 256 else vidMap[0] 
+              for elem in row] for row in pic] for pic in pics]
+    images = []
+    sequenceCount = 1
+    offset = 0
+    for picCount, pic in enumerate(pics):
+        fig = plt.figure()
+        fig.set_size_inches([9,9])
+        ax = plt.Axes(fig, [0., 0., 1., 1.])
+        ax.set_axis_off()
+        fig.add_axes(ax)
+        plt.grid(False)
+        ax.imshow(pic, aspect='equal')
+        if includeCount:
+            ax.text(-0.1, 0.1, str(picCount+1-offset), color='white', fontsize=40)
+        if picCount+1 in finLabels:
+            ax.text(1.5, 14, finTxt, color='r', fontsize=40)
+        name = "temp"+str(picCount+1)+".png"
+        plt.savefig(name)
+        images.append(imageio.imread(name))
+        if picCount+1 in finLabels:
+            sequenceCount += 1
+            offset = picCount+1
+            for _ in range(4):
+                images.append(imageio.imread(name))
+        plt.close('all')
+    # make bigger
+    pics = [np.repeat(np.repeat(pic, resolutionMult, axis=0), resolutionMult, axis=1) for pic in pics]
+    imageio.mimsave(gifAddress, images, format=videoType, duration=dur)
+
+def collapseImage(im):
+    vAvg = np.zeros(len(im[0]))
+    for r in im:
+        vAvg += r
+    vAvg /= len(im)
+    
+    hAvg = np.zeros(len(im))
+    for c in misc.transpose(im):
+        hAvg += c
+    hAvg /= len(im[0])
+    return hAvg, vAvg
 
 def jeffreyInterval(m,num):
     # sigma = 1-0.6827 gives the standard "1 sigma" intervals.
     #print(round(m*num),end='')
     i1, i2 = confidenceInterval(round(m*num), num, method='jeffreys', alpha=1-0.6827)
     return (m - i1, i2 - m)
-
 
 def findImageMaxima(im, neighborhood_size=20, threshold=1):
     data_max = filters.maximum_filter(im, neighborhood_size)
@@ -65,7 +139,6 @@ def findImageMaxima(im, neighborhood_size=20, threshold=1):
         y.append(y_center)
     print('Found ' + str(len(x)) + ' Maxima.')
     return [p for p in zip([int(x_) for x_ in x],[int(y_) for y_ in y])]
-
 
 def fitManyGaussianImage(im, numGauss, neighborhood_size=20, threshold=1, direct=True, widthGuess=1):
     """
@@ -98,17 +171,19 @@ def fitManyGaussianImage(im, numGauss, neighborhood_size=20, threshold=1, direct
     ax[4].set_title('Fit-Diff')
     return optParam
 
-
 def temperatureAnalysis( data, magnification, **standardImagesArgs ):
     res = ma.standardImages(data, scanType="Time(ms)", majorData='fits', fitPics=True, manualAccumulation=True, quiet=True, **standardImagesArgs)
-    (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, fitCov) = res
-    # convert to meters
-    waists = 2 * consts.baslerScoutPixelSize * np.sqrt((pictureFitParams[:, 3]**2+pictureFitParams[:, 4]**2)/2) * magnification
+    (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, fitCov, plottedData, v_params, v_errs, h_params, h_errs, intRawData) = res
+    # convert to meters, convert from sigma to waist
+    waists = 2 * mc.baslerScoutPixelSize * np.sqrt((pictureFitParams[:, 3]**2+pictureFitParams[:, 4]**2)/2) * magnification
+    #waists_1D = 2 * mc.baslerScoutPixelSize * np.sqrt((v_params[:, 2]**2+h_params[:, 2]**2)/2) * magnification
+    waists_1D = 2 * mc.baslerScoutPixelSize * v_params[:, 2] * magnification
     # convert to s
     times = key / 1000
     temp, fitVals, fitCov = newCalcMotTemperature(times, waists / 2)
-    return temp, fitVals, fitCov, times, waists, rawData, pictureFitParams, key
-
+    temp_1D, fitVals_1D, fitCov_1D = newCalcMotTemperature(times, waists_1D / 2)
+    return (temp, fitVals, fitCov, times, waists, rawData, pictureFitParams, key, plottedData, dataMinusBg, v_params, v_errs, h_params, h_errs,
+            waists_1D, temp_1D, fitVals_1D, fitCov_1D)
 
 def motFillAnalysis( dataSetNumber, motKey, exposureTime, window=(0,0,0,0), sidemotPower=2.05, diagonalPower=8, motRadius=8 * 8e-6,
                      imagingLoss=0.8, detuning=10e6, **standardImagesArgs ):
@@ -117,7 +192,7 @@ def motFillAnalysis( dataSetNumber, motKey, exposureTime, window=(0,0,0,0), side
     intRawData = integrateData(rawData)
     try:
         fitParams, pcov = opt.curve_fit( exponential_saturation.f, motKey, intRawData,
-                                   p0=[np.min(intRawData) - np.max(intRawData), 1 / 2, np.max(intRawData)] )
+                                         p0=[np.min(intRawData) - np.max(intRawData), 1 / 2, np.max(intRawData)] )
     except RuntimeError:
         print('MOT # Fit failed!')
         # probably failed because of a bad guess. Show the user the guess fit to help them debug.
@@ -126,12 +201,10 @@ def motFillAnalysis( dataSetNumber, motKey, exposureTime, window=(0,0,0,0), side
                               detuning=detuning)
     return rawData, intRawData, motNum, fitParams, fluorescence, motKey
 
-
 def getTodaysTemperatureData():
     path = dataAddress + 'Temperature_Data.csv'
     df = pd.read_csv(path, header=None, sep=',| ', engine='python')
     return df
-
 
 def Temperature(show=True):
     df = getTodaysTemperatureData()
@@ -163,7 +236,6 @@ def Temperature(show=True):
 def splitData(data, picsPerSplit, picsPerRep, runningOverlap=0):
     data = np.reshape(data, (picsPerSplit, int(data.shape[1]/picsPerSplit), data.shape[2], data.shape[3]))
     return data, int(picsPerSplit/picsPerRep), np.arange(0,int(data.shape[1]))
-
 
 def parseRearrangeInfo(addr, limitedMoves=-1):
     moveList = []
@@ -205,7 +277,6 @@ def parseRearrangeInfo(addr, limitedMoves=-1):
                 readyForAtomList = False
     return moveList
 
-
 def handleKeyModifications(hdf5Key, numVariations, keyInput=None, keyOffset=0, groupData=False, keyConversion=None ):
     key = None
     key = hdf5Key if keyInput is None else keyInput
@@ -224,20 +295,30 @@ def handleKeyModifications(hdf5Key, numVariations, keyInput=None, keyOffset=0, g
                          len(key), "vars:", numVariations)
     return key
 
-
 def organizeTransferData( fileNumber, initLocs, transLocs, key=None, window=None, xMin=None, xMax=None, yMin=None,
                           yMax=None, dataRange=None, keyOffset=0, dimSlice=None, varyingDim=None, groupData=False,
-                          quiet=False, picsPerRep=2, repRange=None, initPic=0, transPic=1, keyConversion=None ):
+                          quiet=False, picsPerRep=2, repRange=None, initPic=0, transPic=1, keyConversion=None, softwareBinning=None,
+                          removePics=None, expFile_version=3):
     """
     Unpack inputs, properly shape the key, picture array, and run some initial checks on the consistency of the settings.
     """
-    with ExpFile(fileNumber) as f:
-        rawData, keyName, hdf5Key, repetitions = f.pics, f.key_name, f.key, f.reps 
+    with ExpFile(fileNumber, expFile_version=expFile_version) as f:
+        rawData, keyName, hdf5Key, repetitions = f.pics, f.key_name, f.key, f.reps
         if not quiet:
             basicInfoStr = f.get_basic_info()
+    if removePics is not None:
+        for index in reversed(sorted(removePics)):
+            rawData = np.delete(rawData, index, 0)
+            rawData = np.concatenate((rawData, [np.zeros(rawData[0].shape)]), 0 )
     if repRange is not None:
         repetitions = repRange[1] - repRange[0]
         rawData = rawData[repRange[0]*picsPerRep:repRange[1]*picsPerRep]
+        
+    if softwareBinning is not None:
+        sb = softwareBinning
+        rawData = rawData.reshape(rawData.shape[0], rawData.shape[1]//sb[0], sb[0], rawData.shape[2]//sb[1], sb[1]).sum(4).sum(2)
+    
+    
     # window the images images.
     if window is not None:
         xMin, yMin, xMax, yMax = window
@@ -266,13 +347,11 @@ def organizeTransferData( fileNumber, initLocs, transLocs, key=None, window=None
     atomLocs2 = unpackAtomLocations(transLocs, avgPic=avgPics[1])
     return rawData, groupedData, atomLocs1, atomLocs2, keyName, repetitions, key, numOfPictures, avgPics, basicInfoStr
 
-
 def modFitFunc(sign, hBiasIn, vBiasIn, depthIn, *testBiases):
     newDepths = extrapolateModDepth(sign, hBiasIn, vBiasIn, depthIn, testBiases)
     if newDepths is None:
         return 1e9
     return np.std(newDepths)
-
 
 def genAvgDiscrepancyImage(data, shape, locs):
     """
@@ -293,8 +372,6 @@ def genAvgDiscrepancyImage(data, shape, locs):
         vmax = ma
     return pic, vmin, vmax
 
-
-
 def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias, sign=1, hFreqs=None, vFreqs=None, hPhases=None, vPhases=None):
     for d in prevDepth.flatten():
         if d < 0:
@@ -304,6 +381,7 @@ def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias, sign=1, hFreqs=None, vF
     print('Please note that if using the outputted centers from Survival(), then you need to reshape the data'
           ' into a 2D numpy array correctly to match the ordering of the V and H biases. This is normally done'
           ' via a call to np.reshape() and a transpose to match the comments above.')
+    print('Sign Argument should be -1 if numbers are pushout resonance locations.')
     if type(prevDepth) is not type(arr([])) or type(prevDepth[0]) is not type(arr([])):
         raise TypeError('ERROR: previous depth array must be 2D numpy array')
     result, modDepth = extrapolateEveningBiases(prev_H_Bias, prev_V_Bias, prevDepth, sign=sign);
@@ -311,13 +389,13 @@ def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias, sign=1, hFreqs=None, vF
     new_V_Bias = result['x'][len(prev_H_Bias):]
     print('Horizontal Changes')
     for prev, new in zip(prev_H_Bias, new_H_Bias):
-        print(round_sig(prev,4), '->', round_sig(new,4), str(round_sig(100 * (new - prev) / prev, 2)) + '%')
+        print(misc.round_sig(prev,4), '->', misc.round_sig(new,4), str(misc.round_sig(100 * (new - prev) / prev, 2)) + '%')
     print('Vertical Changes')
     for prev, new in zip(prev_V_Bias, new_V_Bias):
-        print(round_sig(prev,4), '->', round_sig(new,4), str(round_sig(100 * (new - prev) / prev, 2)) + '%')
-    print('Previous Depth Relative Variation:', round_sig(np.std(prevDepth),4), '/', 
-          round_sig(np.mean(prevDepth),4), '=', round_sig(100 * np.std(prevDepth)/np.mean(prevDepth)), '%')
-    print('Expected new Depth Relative Variation:', round_sig(100*np.std(modDepth)/np.mean(prevDepth),4),'%')
+        print(misc.round_sig(prev,4), '->', misc.round_sig(new,4), str(misc.round_sig(100 * (new - prev) / prev, 2)) + '%')
+    print('Previous Depth Relative Variation:', misc.round_sig(np.std(prevDepth),4), '/', 
+          misc.round_sig(np.mean(prevDepth),4), '=', misc.round_sig(100 * np.std(prevDepth)/np.mean(prevDepth)), '%')
+    print('Expected new Depth Relative Variation:', misc.round_sig(100*np.std(modDepth)/np.mean(prevDepth),4),'%')
     print('New Vertical Biases \n[',end='')
     for v in new_V_Bias:
         print(v, ',', end=' ')
@@ -338,8 +416,6 @@ def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias, sign=1, hFreqs=None, vF
         file.write('VERTICAL:\n')
         for f, b, p in zip(vFreqs, reversed(new_V_Bias), vPhases):
             file.write(str(f) + '\t' + str(b) + '\t' + str(p) + '\n')
-    
-    
 
 def extrapolateEveningBiases(hBiasIn, vBiasIn, depthIn, sign=1):
     """
@@ -352,7 +428,6 @@ def extrapolateEveningBiases(hBiasIn, vBiasIn, depthIn, sign=1):
     f = lambda g: modFitFunc(sign, hBiasIn, vBiasIn, depthIn, *g, )
     result = opt.minimize(f, guess)
     return result, extrapolateModDepth(sign, hBiasIn, vBiasIn, depthIn, result['x'])
-
 
 def extrapolateModDepth(sign, hBiasIn, vBiasIn, depthIn, testBiases):
     """
@@ -378,73 +453,43 @@ def extrapolateModDepth(sign, hBiasIn, vBiasIn, depthIn, testBiases):
     for rowInc, _ in enumerate(depthIn):
         dif = (vBiasTest[rowInc] - vBiasIn[rowInc])/vBiasIn[rowInc]
         modDepth[rowInc] = modDepth[rowInc] * (1- sign * dif)
-    for colInc, _ in enumerate(transpose(depthIn)):
+    for colInc, _ in enumerate(misc.transpose(depthIn)):
         dif = (hBiasTest[colInc] - hBiasIn[colInc])/hBiasIn[colInc]
         modDepth[:, colInc] = modDepth[:, colInc] * (1-sign * dif)
     return modDepth
 
-
-def getLabels(plotType):
-    """
-
-    :param plotType:
-    :return:
-    """
-    if plotType == "Detuning":
-        xlabelText = "Detuning (dac value)"
-        titleText = "Detuning Scan"
-    elif plotType == "Field":
-        xlabelText = "Differential Field Change / 2 (dac value)"
-        titleText = "Differential Magnetic Field Scan"
-    elif plotType == "Time(ms)":
-        xlabelText = "Time(ms)"
-        titleText = "Time Scan"
-    elif plotType == "Power":
-        xlabelText = "Power (dac units)"
-        titleText = "Power Scan"
-    else:
-        xlabelText = plotType
-        titleText = ""
-    return xlabelText, titleText
-
-
-def fitWithModule(module, key, vals, errs=None, guess=None):
+def fitWithModule(module, key, vals, errs=None, guess=None, getF_args=[None]):
     """
     """
     key = arr(key)
-    xFit = (np.linspace(min(key), max(key), 1000) if len(key.shape) == 1 else np.linspace(min(transpose(key)[0]),
-                                                                                          max(transpose(key)[0]), 1000))
+    xFit = (np.linspace(min(key), max(key), 1000) if len(key.shape) == 1 else np.linspace(min(misc.transpose(key)[0]),
+                                                                                          max(misc.transpose(key)[0]), 1000))
     fitNom = fitStd = fitValues = fitErrs = fitCovs = fitGuess = None
     from numpy.linalg import LinAlgError
     try:
-        # 3 parameters
-        if len(key) < len(signature(module.f).parameters) - 1:
-            print('Not enough data points to constrain a fit!')
-            raise RuntimeError()
-        #if errs is not None:
-        #    fitValues, fitCovs = opt.curve_fit(module.f, key, vals, p0=[module.guess(key, vals)], sigma=errs,
-        #                             absolute_sigma=True)
-        #else:
+        fitF = module.getF(*getF_args) if hasattr(module, 'getF') else module.f
+        fitF_unc = module.getF_unc(*getF_args) if hasattr(module, 'getF_unc') else module.f_unc
+        if len(key) < len(signature(fitF).parameters) - 1:
+            raise RuntimeError('Not enough data points to constrain a fit!')
         if guess is None:
-            fitValues, fitCovs = opt.curve_fit(module.f, key, vals, p0=[module.guess(key, vals)])
+            fitValues, fitCovs = opt.curve_fit(fitF, key, vals, p0=[module.guess(key, vals)])
         else:
-            fitValues, fitCovs = opt.curve_fit(module.f, key, vals, p0=guess)
+            fitValues, fitCovs = opt.curve_fit(fitF, key, vals, p0=guess)
         fitErrs = np.sqrt(np.diag(fitCovs))
         corr_vals = unc.correlated_values(fitValues, fitCovs)
-        fitUncObject = module.f_unc(xFit, *corr_vals)
+        fitUncObject = fitF_unc(xFit, *corr_vals)
         fitNom = unp.nominal_values(fitUncObject)
         fitStd = unp.std_devs(fitUncObject)
         fitFinished = True
-        fitGuess = module.f(xFit, *module.guess(key, vals))
+        fitGuess = fitF(xFit, *module.guess(key, vals))
     except (RuntimeError, LinAlgError, ValueError) as e:
         warn('Data Fit Failed!')
         print(e)
         fitValues = module.guess(key, vals)
-        fitNom = module.f(xFit, *fitValues)
+        fitNom = fitF(xFit, *fitValues)
         fitFinished = False
     fitInfo = {'x': xFit, 'nom': fitNom, 'std': fitStd, 'vals': fitValues, 'errs': fitErrs, 'cov': fitCovs, 'guess': fitGuess}
     return fitInfo, fitFinished
-
 
 def combineData(data, key):
     """
@@ -472,91 +517,73 @@ def combineData(data, key):
             newData.append(newItem)
     return arr(newData), arr(newKey)
 
-
-def ballisticMotExpansion(t, sigma_y0, sigma_vy, sigma_I):
+def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1, guess_x=None, guess_y=None):
     """
-    You can see a derivation of this in a different notebook for temperature calculations. I don't know why, but
-    this function seems somewhat unstable as a fitting function. It doesn't always work very sensibly.
-
-    :param t:
-    :param sigma_y0:
-    :param sigma_vy:
-    :param sigma_I:
-    :return:
-    """
-    return sigma_I*np.sqrt((sigma_y0**2 + sigma_vy**2 * t**2)/(sigma_y0**2+sigma_vy**2*t**2+sigma_I**2))
-
-
-def simpleMotExpansion(t, sigma_y0, sigma_vy):
-    """
-    For some reason calculations involving this tend to be wildly off... I need to look into this more the next time
-    I need to calculate a temperature.
-
-    this simpler version ignores the size of the beam waist of the atoms.
-
-    :param t:
-    :param sigma_y0:
-    :param sigma_vy:
-    :return:
-
-    """
-    return sigma_y0 + sigma_vy * t
-
-
-def beamWaistExpansion(z, w0, z0, wavelength):
-    """
-    assuming gaussian intensity profile of I~exp{-2z^2/w{z}^2}
-    :param z:
-    :param w0:
-    :param z0:
-    :param wavelength:
-    :return:
-    """
-    return w0 * np.sqrt(1+(wavelength*(z-z0)/(np.pi*w0**2))**2)
-
-
-def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1):
-    """
-
-    :param picture:
-    :param showFit:
-    :param guessSigma_x:
-    :param guessSigma_y:
-    :return:
+    Fit an individual picture with a 2d gaussian, and fit the horizontal and vertical averages with 1d gaussians
     """
     pos = arr(np.unravel_index(np.argmax(picture), picture.shape))
+    pos[1] = guess_x if guess_x is not None else pos[1]
+    pos[0] = guess_y if guess_x is not None else pos[0]
+
     pic = picture.flatten()
-    x = np.linspace(1, picture.shape[1], picture.shape[1])
-    y = np.linspace(1, picture.shape[0], picture.shape[0])
-    x, y = np.meshgrid(x, y)
-    initial_guess = [np.max(pic) - np.min(pic), pos[1], pos[0], guessSigma_x, guessSigma_y, 0, np.min(pic)]
+    x = np.linspace(0, picture.shape[1], picture.shape[1])
+    y = np.linspace(0, picture.shape[0], picture.shape[0])
+    X, Y = np.meshgrid(x, y)
+    ### 2D Fit
+    initial_guess = [(np.max(pic) - np.min(pic)), pos[1], pos[0], guessSigma_x, guessSigma_y, np.min(pic)]
     try:
-        popt, pcov = opt.curve_fit(gaussian_2d.f, (x, y), pic, p0=initial_guess)#, maxfev=2000)
+        popt, pcov = opt.curve_fit(gaussian_2d.f_notheta, (X, Y), pic, p0=initial_guess)#, epsfcn=0.01, ftol=0)
     except RuntimeError:
         popt = np.zeros(len(initial_guess))
         pcov = np.zeros((len(initial_guess), len(initial_guess)))
-        warn('Fit Pic Failed!')
+        warn('2D Gaussian Picture Fitting Failed!')
+    ### Vertical (i.e. collapse in the vertical direction) Average Fit
+    vAvg = np.zeros(len(picture[0]))
+    for r in picture:
+        vAvg += r
+    vAvg /= len(picture)
+    vGuess = [np.max(vAvg) - np.min(vAvg), x[np.argmax(vAvg)], guessSigma_x, np.min(vAvg)]
+    try:
+        popt_v, pcov_v = opt.curve_fit(bump.f, x, vAvg, vGuess)
+    except RuntimeError:
+        popt_v = np.zeros(len(vGuess))
+        pcov_v = np.zeros((len(vGuess), len(vGuess)))
+        warn('Vertical Average Picture Fitting Failed!')
+    
+    ### Horizontal Average Fit
+    hAvg = np.zeros(len(picture))
+    for c in misc.transpose(picture):
+        hAvg += c
+    hAvg /= len(picture[0])
+    hGuess = [np.max(hAvg) - np.min(hAvg), y[np.argmax(hAvg)], guessSigma_y, np.min(hAvg)]
+    try:
+        popt_h, pcov_h = opt.curve_fit(bump.f, y, hAvg, hGuess)
+    except RuntimeError:
+        popt_h = np.zeros(len(hGuess))
+        pcov_h = np.zeros((len(hGuess), len(hGuess)))
+        warn('Horizontal Average Picture Fitting Failed!')
+        
     if showFit:
-        data_fitted = gaussian_2d.f((x, y), *popt)
+        data_fitted = gaussian_2d.f_notheta((x, y), *popt)
         fig, ax = subplots(1, 1)
         grid(False)
         im = ax.pcolormesh(picture)#, extent=(x.min(), x.max(), y.min(), y.max()))
         ax.contour(x, y, data_fitted.reshape(picture.shape[0],picture.shape[1]), 4, colors='w', alpha=0.2)
         fig.colorbar(im)
-    return initial_guess, popt, np.sqrt(np.diag(pcov))
+    return initial_guess, popt, np.sqrt(np.diag(pcov)), popt_v, np.sqrt(np.diag(pcov_v)), popt_h, np.sqrt(np.diag(pcov_h))
 
-
-def fitPictures(pictures, dataRange, guessSigma_x=1, guessSigma_y=1, quiet=False):
+def fitPictures(pictures, dataRange, guessSigma_x=1, guessSigma_y=1, quiet=False, firstIsGuide=True):
     """
-
+    fit an array of pictures with gaussians
+    
+    if firstIsGuide is true then use the fit from the first pic as the guide for the next pictures.
     :param pictures:
     :param dataRange:
     :param guessSigma_x:
     :param guessSigma_y:
     :return:
     """
-    fitParameters = []
-    fitErrors = []
+    fitParameters, fitErrors, vParams, vErrs, hParams, hErrs = [[] for _ in range(6)]
     count = 0
     warningHasBeenThrown = False
     if not quiet:
@@ -565,24 +592,34 @@ def fitPictures(pictures, dataRange, guessSigma_x=1, guessSigma_y=1, quiet=False
         if not quiet:
             print(picInc, ',', end='')
         if count not in dataRange:
-            count += 1
-            fitParameters.append(np.zeros(7))
-            fitErrors.append(np.zeros(7))
-        try:
-            _, parameters, errors = fitPic(picture, showFit=False, guessSigma_x=guessSigma_x, guessSigma_y=guessSigma_y)
-        except RuntimeError:
-            if not warningHasBeenThrown:
-                print("Warning! Not all picture fits were able to fit the picture signal to a 2D Gaussian.\n"
-                      "When the fit fails, the fit parameters are all set to zero.")
-                warningHasBeenThrown = True
-            parameters = np.zeros(7)
-            errors = np.zeros(7)
+            parameters, errors = [np.zeros(7) for _ in range(2)]
+            v_param, v_err, h_param, h_err = [np.zeros(4) for _ in range(4)]
+        else:
+            try:
+                if firstIsGuide and picInc is not 0:
+                    # amplitude, xo, yo, sigma_x, sigma_y, theta, offset
+                    _, parameters, errors, v_param, v_err, h_param, h_err = fitPic(picture, showFit=False, 
+                                                                                   guess_x = fitParameters[0][1], guess_y = fitParameters[0][2], 
+                                                                                   guessSigma_x=fitParameters[0][3], guessSigma_y=fitParameters[0][4])
+                else:
+                    _, parameters, errors, v_param, v_err, h_param, h_err = fitPic(picture, showFit=False, 
+                                                                                   guessSigma_x=guessSigma_x, guessSigma_y=guessSigma_y)
+            except RuntimeError:
+                if not warningHasBeenThrown:
+                    print("Warning! Not all picture fits were able to fit the picture signal to a 2D Gaussian.\n"
+                          "When the fit fails, the fit parameters are all set to zero.")
+                    warningHasBeenThrown = True
+                parameters, errors = [np.zeros(7) for _ in range(2)]
+                v_param, v_err, h_param, h_err = [np.zeros(4) for _ in range(2)]
         # append things regardless of whether the fit succeeds or not in order to keep things the right length.
         fitParameters.append(parameters)
         fitErrors.append(errors)
+        vParams.append(v_param)
+        vErrs.append(v_err)
+        hParams.append(h_param)
+        hErrs.append(h_err)
         count += 1
-    return np.array(fitParameters), np.array(fitErrors)
-
+    return np.array(fitParameters), np.array(fitErrors), np.array(vParams), np.array(vErrs), np.array(hParams), np.array(hErrs)
 
 def fitDoubleGaussian(binCenters, binnedData, fitGuess, quiet=False):
     try:
@@ -599,7 +636,6 @@ def fitDoubleGaussian(binCenters, binnedData, fitGuess, quiet=False):
         fitVals = (0, 0, 0, 0, 0, 0)        
     return [*fitVals,0]
 
-
 def fitGaussianBeamWaist(data, key, wavelength):
     # expects waists as inputs
     initial_guess = [min(data.flatten()), key[int(3*len(key)/4)]]
@@ -612,10 +648,8 @@ def fitGaussianBeamWaist(data, key, wavelength):
         warn('Fit Failed!')
     return popt, pcov
 
-
 # #############################
 # ### Analyzing machine outputs
-
 
 def load_SRS_SR780(fileAddress):
     """
@@ -624,14 +658,12 @@ def load_SRS_SR780(fileAddress):
     data = pd.read_csv(fileAddress, delimiter=',', header=None)
     return data[0], data[1]
 
-
 def load_HP_4395A(fileAddress):
     """
     Analyzing HP 4395A Spectrum & Network Analyzer Data
     """
     data = pd.read_csv(fileAddress, delimiter='\t', header=11)
     return data["Frequency"], data["Data Trace"]
-
 
 def load_RSA_6114A(fileLocation):
     """
@@ -670,7 +702,6 @@ def load_RSA_6114A(fileLocation):
     yData = np.float64(arr(lines))
     xData = np.linspace(xStart, xEnd, xPointNum)
     return xData, yData, yUnits, xUnits
-
 
 # ##########################
 # ### Some AOM Optimizations
@@ -713,9 +744,8 @@ def getOptimalAomBiases(minX, minY, spacing, widthX, widthY):
     #yAmps = [100 / vertAomCurve(yFreq) for yFreq in yFreqs]
     return xFreqs, xAmps, yFreqs, yAmps
 
-
 def maximizeAomPerformance(horCenterFreq, vertCenterFreq, spacing, numTweezersHor, numTweezersVert, iterations=10, paperGuess=True, metric='max',
-                          vertAmps=None, horAmps=None):
+                          vertAmps=None, horAmps=None, carrierFre=255):
     """
     computes the amplitudes and phases to maximize the AOM performance.
     :param horCenterFreq:
@@ -728,6 +758,9 @@ def maximizeAomPerformance(horCenterFreq, vertCenterFreq, spacing, numTweezersHo
     """
     horFreqs  = [horCenterFreq - spacing * (numTweezersHor  - 1) / 2.0 + i * spacing for i in range(numTweezersHor )]
     vertFreqs = [horCenterFreq - spacing * (numTweezersVert - 1) / 2.0 + i * spacing for i in range(numTweezersVert)]
+    actualHFreqs = 255 - arr(horFreqs)
+    actualVFreqs = 255 - arr(vertFreqs)
+    
     if vertAmps is None:
         vertAmps = np.ones(numTweezersVert)
     if horAmps is None:
@@ -748,18 +781,18 @@ def maximizeAomPerformance(horCenterFreq, vertCenterFreq, spacing, numTweezersHo
     def getXMetric(phases):
         x = np.linspace(0, 3e-6, 20000)
         if metric=='max':
-            return max(abs(calcWave(x, phases, horFreqs, horAmps)))
+            return max(abs(calcWave(x, phases, actualHFreqs, horAmps)))
         elif metric == 'std':
-            return np.std(calcWave(x, phases, horFreqs, horAmps))
+            return np.std(calcWave(x, phases, actualHFreqs, horAmps))
 
     def getYMetric(phases):
         x = np.linspace(0, 3e-6, 20000)
         if metric=='max':
-            return max(abs(calcWave(x, phases, vertFreqs, vertAmps)))
+            return max(abs(calcWave(x, phases, actualVFreqs, vertAmps)))
         elif metric == 'std':
-            return np.std(calcWave(x, phases, vertFreqs, vertAmps))
+            return np.std(calcWave(x, phases, actualVFreqs, vertAmps))
 
-    xBounds = [(0, 2 * consts.pi) for _ in range(numTweezersHor-1)]
+    xBounds = [(0, 2 * mc.pi) for _ in range(numTweezersHor-1)]
     #
     if paperGuess:
         xGuess = arr([np.pi * i**2/numTweezersHor for i in range(numTweezersHor-1)])
@@ -770,40 +803,39 @@ def maximizeAomPerformance(horCenterFreq, vertCenterFreq, spacing, numTweezersHo
     xPhases = list(xPhases.x) + [0]
     print('horFreqs', horFreqs)
     print('horAmps', horAmps)
-    print('Hor-Phases:', [round_sig_str(x,10) for x in xPhases])
+    print('Hor-Phases:', [misc.round_sig_str(x,10) for x in xPhases])
 
     if paperGuess:
         yGuess = arr([np.pi * i**2/numTweezersVert for i in range(numTweezersVert-1)])
     else:
         yGuess = arr([0 for _ in range(numTweezersVert-1)])
-    yBounds = [(0, 2 * consts.pi) for _ in range(numTweezersVert-1)]
+    yBounds = [(0, 2 * mc.pi) for _ in range(numTweezersVert-1)]
     minimizer_kwargs = dict(method="L-BFGS-B", bounds=yBounds)
     yPhases = opt.basinhopping(getYMetric, yGuess, minimizer_kwargs=minimizer_kwargs, niter=iterations, stepsize=0.2)
     yPhases = list(yPhases.x) + [0]
     for i, xp in enumerate(yPhases):
-        yPhases[i] = round_sig(xp, 10)
+        yPhases[i] = misc.round_sig(xp, 10)
 
     print('vertFreqs', vertFreqs)
     print('vertAmps', vertAmps)
-    print('Vert-Phases:', [round_sig_str(y,10) for y in yPhases])
+    print('Vert-Phases:', [misc.round_sig_str(y,10) for y in yPhases])
 
     xpts = np.linspace(0, 1e-6, 10000)
-    ypts_x = calcWave(xpts, xPhases, horFreqs, horAmps)
-    yptsOrig = calcWaveCos(xpts, arr([0 for _ in range(numTweezersHor)]), horFreqs, horAmps)
+    ypts_x = calcWave(xpts, xPhases, actualHFreqs, horAmps)
+    yptsOrig = calcWaveCos(xpts, arr([0 for _ in range(numTweezersHor)]), actualHFreqs, horAmps)
     title('X-Axis')
     plot(xpts, ypts_x, ':', label='X-Optimization')
     plot(xpts, yptsOrig, ':', label='X-Worst-Case')
     legend()
 
     figure()
-    yptsOrig = calcWave(xpts, arr([0 for _ in range(numTweezersVert)]), vertFreqs, vertAmps)
-    ypts_y = calcWaveCos(xpts, yPhases, vertFreqs, vertAmps)
+    yptsOrig = calcWave(xpts, arr([0 for _ in range(numTweezersVert)]), actualVFreqs, vertAmps)
+    ypts_y = calcWaveCos(xpts, yPhases, actualVFreqs, vertAmps)
     title('Y-Axis')
     plot(xpts, ypts_y, ':', label='Y-Optimization')
     plot(xpts, yptsOrig, ':', label='Y-Worst-Case')
     legend()
     return xpts, ypts_x, ypts_y, 
-
 
 def integrateData(pictures):
     """
@@ -826,132 +858,6 @@ def integrateData(pictures):
                 integratedData += elem
     return integratedData
 
-
-def fillPlotDataDefaults(plotData):
-    """
-
-    :param plotData:
-    :return:
-    """
-    if 'ax1' not in plotData:
-        raise RuntimeError('plot data must have ax1 defined!')
-    else:
-        if 'data' not in plotData['ax1']:
-            raise RuntimeError('ax1 of plot data must contain data!')
-        if 'ylabel' not in plotData['ax1']:
-            plotData['ax1']['ylabel'] = ''
-        if 'legendLabels' not in plotData['ax1']:
-            if plotData['ax1']['data'].ndim == 2:
-                # create empty labels
-                plotData['ax1']['legendLabels'] = ['' for _ in range(plotData['ax1']['data'].shape[0])]
-            else:
-                plotData['ax1']['legendLabels'] = ''
-    if 'ax2' in plotData:
-        if 'data' not in plotData['ax2']:
-            raise RuntimeError('if ax2 is defined, it must contain data!')
-        if 'ylabel' not in plotData['ax2']:
-            plotData['ax2']['ylabel'] = ''
-        if 'legendLabels' not in plotData['ax2']:
-            if plotData['ax2']['data'].ndim == 2:
-                # create empty labels
-                plotData['ax2']['legendLabels'] = ['' for _ in range(plotData['ax2']['data'].shape[0])]
-            else:
-                plotData['ax2']['legendLabels'] = ''
-    if 'xlabel' not in plotData:
-        plotData['xlabel'] = ""
-    if 'title' not in plotData:
-        plotData['title'] = ""
-
-
-def assemblePlotData(rawData, dataMinusBg, dataMinusAverage, positions, waists, plottedData, scanType,
-                     xLabel, plotTitle, location, waistFits=None, key=None):
-    """
-    take the data and organize it into the appropriate structures.
-
-    :param rawData:
-    :param dataMinusBg:
-    :param dataMinusAverage:
-    :param positions:
-    :param waists:
-    :param plottedData:
-    :param scanType:
-    :param xLabel:
-    :param plotTitle:
-    :param location:
-    :param waistFits:
-    :param key:
-    :return: countData, fitData
-    """
-    if key is None:
-        key = []
-    if waistFits is None:
-        waistFits = []
-    countData = {}
-    countData['xlabel'], countData['title'] = getLabels(scanType)
-    if not xLabel == "":
-        countData['xlabel'] = xLabel
-    if not plotTitle == "":
-        countData['title'] = plotTitle
-    ax1 = {}
-    if location == (-1, -1):
-        data = []
-        legendLabels = []
-        if "raw" in plottedData:
-            data.append(integrateData(rawData))
-            legendLabels.append(['Int(Raw Data)'])
-        if "-bg" in plottedData:
-            data.append(integrateData(dataMinusBg))
-            legendLabels.append('Int(Data - Background)')
-        if "-avg" in plottedData:
-            data.append(integrateData(dataMinusAverage))
-            legendLabels.append('Int(Data - Average)')
-        ax1['data'] = arr(data)
-        ax1['legendLabels'] = arr(legendLabels)
-        ax1['ylabel'] = 'Camera Counts (Integrated over Picture)'
-
-        ax2 = {}
-        data = []
-        legendLabels = []
-        if "raw" in plottedData:
-            data.append([np.max(pic, axis=(1, 0)) for pic in rawData])
-            legendLabels.append(['Max Value in Raw Data'])
-        if "-bg" in plottedData:
-            data.append([np.max(pic, axis=(1, 0)) for pic in dataMinusBg])
-            legendLabels.append('Max Value in Data Without Background')
-        if "-avg" in plottedData:
-            data.append([np.max(pic, axis=(1, 0)) for pic in dataMinusAverage])
-            legendLabels.append('Max Value in Data Without Average')
-        ax2['data'] = arr(data)
-        ax2['legendLabels'] = arr(legendLabels)
-        ax2['ylabel'] = 'Maximum count in picture'
-        countData['ax2'] = ax2
-    else:
-        ax1['data'] = arr([rawData[:, location[0], location[1]]])
-        ax1['ylabel'] = 'Camera Counts (single pixel)'
-    countData['ax1'] = ax1
-    ax1['data'] = {'data': waists}
-    ax1['ylabel'] = r"Waist ($2\sigma$) (pixels)"
-    if len(waistFits) == 0:
-        ax1['legendLabels'] = [r"fit $w_x$", r"fit $w_y$"]
-    else:
-        print('...')
-        ax1['legendLabels'] = [r"fit $w_x$", r"fit $w_y$", 'Fitted X: ' + str(waistFits[0]),
-                               'Fitted Y: ' + str(waistFits[1])]
-        fitYData = []
-        xpts = np.linspace(min(key), max(key), 1000)
-        for fitParams in waistFits:
-            fitYData.append(beamWaistExpansion(xpts, fitParams[0], fitParams[1], 850e-9))
-        ax1['fitYData'] = fitYData
-        ax1['fitXData'] = [xpts, xpts]
-    fitData = {'ax1': ax1}
-    ax2 = {'data': positions, 'ylabel': "position (pixels)", 'legendLabels': ["Center x", "Center y"]}
-    fitData['ax2'] = ax2
-    fitData['title'] = "Fit Information"
-    fitData['xlabel'] = countData['xlabel']
-
-    return countData, fitData
-
-
 def beamIntensity(power, waist, radiusOfInterest=0):
     """
     computes the average beam intensity, in mW/cm^2, of a beam over some radius of interest.
@@ -963,10 +869,9 @@ def beamIntensity(power, waist, radiusOfInterest=0):
         include the reduced form.
     """
     if radiusOfInterest == 0:
-        return 2 * power / (consts.pi * waist ** 2)
+        return 2 * power / (mc.pi * waist ** 2)
     else:
-        return power * (1 - np.exp(-2 * radiusOfInterest ** 2 / waist ** 2)) / (consts.pi * radiusOfInterest ** 2)
-
+        return power * (1 - np.exp(-2 * radiusOfInterest ** 2 / waist ** 2)) / (mc.pi * radiusOfInterest ** 2)
 
 def computeBaslerGainDB(rawGain):
     """
@@ -982,7 +887,6 @@ def computeBaslerGainDB(rawGain):
         warn('raw gain out of range! gainDB set to None/')
     return gainDB
 
-
 def computeScatterRate(totalIntensity, D2Line_Detuning):
     """
     Computes the rate of photons scattering off of a single atom. From steck, equation 48.
@@ -990,16 +894,15 @@ def computeScatterRate(totalIntensity, D2Line_Detuning):
     Assumes 2-Level approximation, good for near resonant light since the near-resonant transition
     will be dominant.
 
-    Assumes D2 Transition.
+    Assumes D2 2 to 3' transition.
 
     :param totalIntensity: the total intensity (from all beams) shining on the atoms.
     :param D2Line_Detuning: the detuning, in Hz, of the light shining on the atoms from the D2 transition.
     """
-    isat = consts.Rb87_I_Sat_ResonantIsotropic_2_to_3
-    rate = (consts.Rb87_D2Gamma / 2) * (totalIntensity / isat) / (1 + 4 * (D2Line_Detuning / consts.Rb87_D2Gamma) ** 2
+    isat = mc.Rb87_I_Sat_ResonantIsotropic_2_to_3
+    rate = (mc.Rb87_D2Gamma / 2) * (totalIntensity / isat) / (1 + 4 * (D2Line_Detuning / mc.Rb87_D2Gamma) ** 2
                                                                   + totalIntensity / isat)
     return rate
-
 
 def computeFlorescence(greyscaleReading, imagingLoss, imagingLensDiameter, imagingLensFocalLength, exposure ):
     """
@@ -1014,11 +917,10 @@ def computeFlorescence(greyscaleReading, imagingLoss, imagingLensDiameter, imagi
     :param exposure:
     :return:
     """
-    term1 = greyscaleReading * consts.cameraConversion / (consts.h * consts.c / consts.Rb87_D2LineWavelength)
+    term1 = greyscaleReading * mc.cameraConversion / (mc.h * mc.c / mc.Rb87_D2LineWavelength)
     term2 = 1 * imagingLoss * (imagingLensDiameter**2 / (16 * imagingLensFocalLength**2)) * exposure
     fluorescence = term1 / term2
     return fluorescence
-
 
 # mot radius is in cm
 def computeMotNumber(sidemotPower, diagonalPower, motRadius, exposure, imagingLoss, greyscaleReading, detuning=10e6):
@@ -1059,14 +961,20 @@ def computeMotNumber(sidemotPower, diagonalPower, motRadius, exposure, imagingLo
     motNumber = fluorescence / rate
     return motNumber, fluorescence
 
-
 def newCalcMotTemperature(times, sigmas):
     """ Small wrapper around a fit 
     return temp, vals, cov
     """
-    fitVals, fitCovariances = opt.curve_fit(LargeBeamMotExpansion.f, times, sigmas, p0=LargeBeamMotExpansion.guess())
+    guess = LargeBeamMotExpansion.guess()
+    try:
+        fitVals, fitCovariances = opt.curve_fit(LargeBeamMotExpansion.f, times, sigmas, p0=guess)
+    except RuntimeError:
+        fitVals = np.zeros(len(guess))
+        fitCovariances = np.zeros((len(guess), len(guess)))
+        warn('Mot Temperature Expansion Fit Failed!')
     return fitVals[2], fitVals, fitCovariances
 
+<<<<<<< HEAD
 
 def calcMotTemperature(times, sigmas):
     # print(sigmas[0])
@@ -1092,14 +1000,10 @@ def calcMotTemperature(times, sigmas):
     return temperature, tempFromSimple, fitVals, fitCovariances, simpleVals, simpleCovariances
 
 
+=======
+>>>>>>> 4b31e1a5f34b949442e207ae8c2e6c25f266b0bb
 def orderData(data, key, keyDim=None, otherDimValues=None):
     """
-
-    :param data:
-    :param key:
-    :param keyDim:
-    :param otherDimValues:
-    :return: data, key, otherDimValues
     """
     zipObj = (zip(key, data, otherDimValues) if otherDimValues is not None else zip(key, data))
     if keyDim is not None:
@@ -1129,7 +1033,6 @@ def orderData(data, key, keyDim=None, otherDimValues=None):
             key, data, otherDimValues = list(zip(*sorted(zipObj, key=lambda x: x[0])))
     return arr(data), arr(key), arr(otherDimValues)
 
-
 def groupMultidimensionalData(key, varyingDim, atomLocations, survivalData, survivalErrs, loadingRate):
     """
     Normally my code takes all the variations and looks at different locations for all those variations.
@@ -1143,7 +1046,7 @@ def groupMultidimensionalData(key, varyingDim, atomLocations, survivalData, surv
     # make list of unique indexes for each dimension
     uniqueSecondaryAxisValues = []
     newKey = []
-    for i, secondaryValues in enumerate(transpose(key)):
+    for i, secondaryValues in enumerate(misc.transpose(key)):
         if i == varyingDim:
             for val in secondaryValues:
                 if val not in newKey:
@@ -1164,11 +1067,11 @@ def groupMultidimensionalData(key, varyingDim, atomLocations, survivalData, surv
         newErr = locErrs[:]
         newLoad = locLoad[:]
         newData.resize(int(len(locData)/extraDimValues), extraDimValues)
-        newData = transpose(newData)
+        newData = misc.transpose(newData)
         newErr.resize(int(len(locData)/extraDimValues), extraDimValues)
-        newErr = transpose(newErr)
+        newErr = misc.transpose(newErr)
         newLoad.resize(int(len(locData)/extraDimValues), extraDimValues)
-        newLoad = transpose(newLoad)
+        newLoad = misc.transpose(newLoad)
         # iterate through all extra dimensions in the locations
         secondIndex = 0
         for val, err, load in zip(newData, newErr, newLoad):
@@ -1180,7 +1083,6 @@ def groupMultidimensionalData(key, varyingDim, atomLocations, survivalData, surv
             secondIndex += 1
     return (arr(newKey), arr(locationsList), arr(newErrorData), arr(newTransferData), arr(newLoadingRate),
             arr(otherDimsList))
-
 
 def getFitsDataFrame(fits, fitModules, avgFit):
     uniqueModules = set(fitModules)
@@ -1227,7 +1129,6 @@ def getFitsDataFrame(fits, fitModules, avgFit):
             fitDataFrames[moduleNum].index = indexStr
     return fitDataFrames
 
-
 @dc.dataclass
 class AtomThreshold:
     """
@@ -1251,6 +1152,10 @@ class AtomThreshold:
     def __copy__(self):
         return type(self)(t=self.t, fidelity=self.fidelity, binCenters=self.binCenters, binHeights=self.binHeights, 
                           fitVals=self.fitVals, rmsResidual=self.rmsResidual, rawData=self.rawData)
+    def __str__(self):
+        return '[AtomThrehsold with t='+str(self.t) + ', fid=' + str(self.fidelity) + ']'
+    def __repr__(self):
+        return self.__str__()
 
     
 def getThresholds( picData, binWidth, manThreshold, rigorous=True ):
@@ -1301,7 +1206,6 @@ def getThresholds( picData, binWidth, manThreshold, rigorous=True ):
     
     return t
 
-
 def getNormalizedRmsDeviationOfResiduals(xdata, ydata, function, fitVals):
     """
     calculates residuals, calculates the rms average of them, and then normalizes by the average of the actual data.
@@ -1309,14 +1213,15 @@ def getNormalizedRmsDeviationOfResiduals(xdata, ydata, function, fitVals):
     residuals = ydata - function(xdata, *fitVals)
     return np.sqrt(sum(residuals**2) / len(residuals)) / np.mean(ydata)
 
-
-def getSurvivalBoolData(loadCounts, transCounts, loadThreshold, transThreshold):
-        loadAtoms, transAtoms = [[] for _ in range(2)]
-        for loadPoint, transPoint in zip(loadCounts, transCounts):
-            loadAtoms.append(loadPoint > loadThreshold)
-            transAtoms.append(transPoint > transThreshold)
-        return loadAtoms, transAtoms
-
+def getSurvivalBoolData(ICounts, TCounts, IThreshold, TThreshold):
+    """    
+    I stands for init, as in initialCounts, T stands for Transfered, as in transfered Counts.
+    """
+    IAtoms, TAtoms = [[] for _ in range(2)]
+    for IPoint, TPoint in zip(ICounts, TCounts):
+        IAtoms.append(IPoint > IThreshold)
+        TAtoms.append(TPoint > TThreshold)
+    return IAtoms, TAtoms
     
 def getAtomBoolData(pic1Data, threshold):
     atomCount = 0
@@ -1329,46 +1234,15 @@ def getAtomBoolData(pic1Data, threshold):
             pic1Atom.append(0)
     return pic1Atom, atomCount
 
-
 def getAtomCountsData( pics, picsPerRep, whichPic, loc, subtractEdges=True ):
     borders = getAvgBorderCount(pics, whichPic, picsPerRep) if subtractEdges else np.zeros(int(len(pics)/picsPerRep))
     pic1Data = normalizeData(pics, loc, whichPic, picsPerRep, borders)
     return list(pic1Data)
 
-
-"""
-def getLoadingData(picSeries, loc, whichPic, picsPerRep, manThreshold, binWidth, subtractEdges=True):
-    borders = getAvgBorderCount(picSeries, whichPic, picsPerRep) if subtractEdges else np.zeros(len(picSeries))
-    pic1Data = normalizeData(picSeries, loc, whichPic, picsPerRep, borders)
-    bins, binnedData = getBinData(binWidth, pic1Data)
-    guess1, guess2 = guessGaussianPeaks(bins, binnedData)
-    guess = arr([max(binnedData), guess1, 30, max(binnedData)*0.75, guess2, 30])
-    if manThreshold is None:
-        gaussianFitVals = fitDoubleGaussian(bins, binnedData, guess)
-        threshold, thresholdFid = calculateAtomThreshold(gaussianFitVals)
-    elif manThreshold=='auto':
-        gaussianFitVals = None
-        threshold, thresholdFid = ((max(pic1Data) + min(pic1Data))/2.0, 0) 
-    else:
-        gaussianFitVals = None
-        threshold, thresholdFid = (manThreshold, 0)
-    atomCount = 0
-    pic1Atom = []
-    for point in pic1Data:
-        if point > threshold:
-            atomCount += 1
-            pic1Atom.append(1)
-        else:
-            pic1Atom.append(0)
-    return list(pic1Data), pic1Atom, threshold, thresholdFid, gaussianFitVals, bins, binnedData, atomCount
-"""
-
-
 def calculateAtomThreshold(fitVals):
     """
     :param fitVals = [Amplitude1, center1, sigma1, amp2, center2, sigma2]
     """
-    # difference between centers divided by sum of sigma?
     if fitVals[5] + fitVals[2] == 0:
         return 200, 0
     else:
@@ -1378,7 +1252,6 @@ def calculateAtomThreshold(fitVals):
         threshold = 200
     fidelity = getFidelity(threshold, fitVals)
     return threshold, fidelity
-
 
 def getFidelity(threshold, fitVals):
     a1, x1, s1, a2, x2, s2, o = fitVals
@@ -1410,7 +1283,6 @@ def postSelectOnAssembly(pic1Atoms, pic2Atoms, postSelectionPic, connected=False
     print('Post-Selecting on assembly condition:', postSelectionPic, '. Number of hits:', len(psPic1Atoms[0]))
     return psPic1Atoms, psPic2Atoms
 
-
 def getAvgBorderCount(data, p, ppe):
     """
     data: the array of pictures
@@ -1429,7 +1301,6 @@ def getAvgBorderCount(data, p, ppe):
     avgBorderCount /= normFactor - 4
     return avgBorderCount
 
-
 def normalizeData(data, atomLocation, picture, picturesPerExperiment, borders):
     """
     :param picturesPerExperiment:
@@ -1440,6 +1311,7 @@ def normalizeData(data, atomLocation, picture, picturesPerExperiment, borders):
     :return: The data at atomLocation with the background subtracted away (commented out at the moment).
     """
     allData = arr([])
+    # if given data separated into different variations, flatten the variation separation.
     dimensions = data.shape
     if len(dimensions) == 4:
         rawData = data.reshape((data.shape[0] * data.shape[1], data.shape[2], data.shape[3]))
@@ -1453,42 +1325,13 @@ def normalizeData(data, atomLocation, picture, picturesPerExperiment, borders):
                 raise TypeError('AtomLocation, which has value ' + str(atomLocation) + ', should be 2 elements.')
             if len(borders) <= count:
                 raise IndexError('borders, of len ' + str(len(borders)), 'is not long enough!')
-            allData = np.append(allData, rawData[imageInc][atomLocation[0]][atomLocation[1]] - borders[count])
+            try:
+                allData = np.append(allData, rawData[imageInc][atomLocation[0]][atomLocation[1]] - borders[count])
+            except IndexError:
+                print(rawData.shape, imageInc, atomLocation, len(borders), count)
+                raise
             count += 1
     return allData
-
-def normalizeData_2(data, atomLocation, picture, picturesPerExperiment, subtractBorders=True):
-    """
-    :param picturesPerExperiment:
-    :param picture:
-    :param subtractBorders:
-    :param data: the array of pictures
-    :param atomLocation: The location to analyze
-    :return: The data at atomLocation with the background subtracted away (commented out at the moment).
-    """
-    allData = arr([])
-    dimensions = data.shape
-    if len(dimensions) == 4:
-        rawData = data.reshape((data.shape[0] * data.shape[1], data.shape[2], data.shape[3]))
-    else:
-        rawData = data
-    dimensions = rawData.shape
-    for imageInc in range(0, dimensions[0]):
-        if (imageInc + picturesPerExperiment - picture) % picturesPerExperiment == 0:
-            pic = rawData[imageInc]
-            border = 0
-            if subtractBorders:
-                normFactor = (2*len(pic[0][:])+2*len(pic[:][0]))
-                border += (np.sum(pic[0][:]) + np.sum(pic[:][0]) + np.sum(pic[dimensions[1] - 1][:])
-                           + np.sum([pic[i][dimensions[2] - 1] for i in range(len(pic))]))
-                corners = (pic[0][0] + pic[dimensions[1]-1][dimensions[2] - 1] + pic[0][dimensions[2] - 1]
-                           + pic[dimensions[1]-1][0])
-                border -= corners
-                # the number of pixels counted in the border
-                border /= normFactor - 4
-            allData = np.append(allData, pic[atomLocation[0]][atomLocation[1]] - border)
-    return allData
-
 
 def guessGaussianPeaks(binCenters, binnedData):
     """
@@ -1520,7 +1363,6 @@ def guessGaussianPeaks(binCenters, binnedData):
     binCenters -= randomOffset
     return guess1Location - randomOffset, guess2Location - randomOffset
 
-
 def getBinData(binWidth, data):
     binBorderLocation = min(data)
     binsBorders = arr([])
@@ -1531,7 +1373,6 @@ def getBinData(binWidth, data):
     binnedData, trash = np.histogram(data, binsBorders)
     binCenters = binsBorders[0:binsBorders.size-1]
     return binCenters, binnedData
-
 
 def getGenStatistics(genData, repetitionsPerVariation):
     # Take the previous data, which includes entries when there was no atom in the first picture, and convert it to
@@ -1554,7 +1395,6 @@ def getGenStatistics(genData, repetitionsPerVariation):
             genErrors = np.append(genErrors, np.std(genList) / np.sqrt(genList.size))
             genAverages = np.append(genAverages, np.average(genList))
     return genAverages, genErrors
-
 
 def getGenerationEvents(loadAtoms, finAtomsAtoms):
     """
@@ -1598,32 +1438,6 @@ def getTransferEvents(pic1Atoms, pic2Atoms):
     transferData += pic1Atoms * (~pic2Atoms)
     return transferData.flatten()
 
-def getTransferEvents_slow(pic1Atoms, pic2Atoms):
-    """
-    It returns a raw array that includes every survival data point, including points where the the atom doesn't get
-    loaded at all.
-    """
-    # this will include entries for when there is no atom in the first picture.
-    transferData = np.array([])
-    transferData.astype(int)
-    # flattens variations & locations?
-    # if len(data.shape) == 4:
-    #     data.reshape((data.shape[0] * data.shape[1], data.shape[2], data.shape[3]))
-
-    # this doesn't take into account loss, since these experiments are feeding-back on loss.
-    for atom1, atom2 in zip(pic1Atoms, pic2Atoms):
-        if atom1 and atom2:
-            # atom survived
-            transferData = np.append(transferData, [1])
-        elif atom1 and not atom2:
-            # atom didn't survive
-            transferData = np.append(transferData, [0])
-        else:
-            # no atom in the first place
-            transferData = np.append(transferData, [-1])
-    return transferData
-
-
 def getTransferStats(transList, repsPerVar):
     # Take the previous data, which includes entries when there was no atom in the first picture, and convert it to
     # an array of just loaded and survived or loaded and died.
@@ -1655,42 +1469,11 @@ def getTransferStats(transList, repsPerVar):
             transferAverages = np.append(transferAverages, meanVal)    
     return transferAverages, transferErrors, loadingProbability
 
-
 def groupEventsIntoVariations(bareList, repsPerVar):
     varList = [None for _ in range(int(bareList.size / repsPerVar))]
     for varInc in range(0, int(bareList.size / repsPerVar)):
         varList[varInc] = arr([x for x in bareList[varInc * repsPerVar:(varInc+1) * repsPerVar] if x != -1])
     return varList
-
-
-def getTransferStats_fast(transferData, repetitionsPerVariation):
-    # Take the previous data, which includes entries when there was no atom in the first picture, and convert it to
-    # an array of just loaded and survived or loaded and died.
-    transferAverages = np.array([])
-    loadingProbability = np.array([])
-    transferErrors = np.array([])
-    if transferData.size < repetitionsPerVariation:
-        repetitionsPerVariation = transferData.size
-    for variationInc in range(0, int(transferData.size / repetitionsPerVariation)):
-        transferList = np.array([])
-        for repetitionInc in range(0, repetitionsPerVariation):
-            if transferData[variationInc * repetitionsPerVariation + repetitionInc] != -1:
-                transferList = np.append(transferList,
-                                         transferData[variationInc * repetitionsPerVariation + repetitionInc])
-        if transferList.size == 0:
-            # catch the case where there's no relevant data, typically if laser becomes unlocked.
-            transferErrors = np.append(transferErrors, [0])
-            loadingProbability = np.append(loadingProbability, [0])
-            transferAverages = np.append(transferAverages, [0])
-        else:
-            # normal case
-            meanVal = np.average(transferList)
-            transferErrors = np.append(transferErrors, jeffreyInterval(meanVal, len(transVarList)))
-            #transferErrors = np.append(transferErrors, np.std(transferList)/np.sqrt(transferList.size))
-            loadingProbability = np.append(loadingProbability, transferList.size / repetitionsPerVariation)
-            transferAverages = np.append(transferAverages, meanVal)
-    return transferAverages, transferErrors, loadingProbability
-
 
 def getAvgPic(picSeries):
     if len(picSeries.shape) == 3:
@@ -1727,8 +1510,6 @@ def getAvgPics(pics, picsPerRep=2):
         return avgPics
     else:
         raise ValueError(pics.shape)
-    
-    
 
 def processSingleImage(rawData, bg, window, xMin, xMax, yMin, yMax, accumulations, zeroCorners, smartWindow,
                        manuallyAccumulate=True):
@@ -1812,7 +1593,6 @@ def processSingleImage(rawData, bg, window, xMin, xMax, yMin, yMax, accumulation
         normData -= cornerAvg
     return normData, dataMinusBg, xPts, yPts
 
-
 def processImageData(key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulations, dataRange, zeroCorners,
                      smartWindow, manuallyAccumulate=False):
     """
@@ -1864,7 +1644,8 @@ def processImageData(key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulat
             for picNum in range(accumulations):
                 var += rawData[varCount * accumulations + picNum]
             varCount += 1
-        rawData = avgPics
+        rawData = avgPics    
+    
     if rawData.shape[0] != len(key):
         raise ValueError("ERROR: number of pictures (after manual accumulations) " + str(rawData.shape[0]) + 
                          " data doesn't match length of key " + str(len(key)) + "!")
@@ -1922,181 +1703,7 @@ def processImageData(key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulat
         for pic in normData:
             cornerAvg = (pic[0, 0] + pic[0, -1] + pic[-1, 0] + pic[-1, -1]) / 4
             pic -= cornerAvg
-
     return key, normData, dataMinusBg, dataMinusAvg, avgPic
-
-
-def handleFitting(fitType, key, data):
-    """
-
-    :param fitType:
-    :param key:
-    :param data:
-    :return: returns fitInfo, fitType, where fitInfo = {'x': xFit, 'nom': fitNom, 'std': fitStd, 'center': centerIndex,
-            'vals': fitValues, 'errs': fitErrs, 'cov': fitCovs}
-    """
-    xFit = (np.linspace(min(key), max(key), 1000) if len(key.shape) == 1 else np.linspace(min(transpose(key)[0]),
-                                                                                          max(transpose(key)[0]), 1000))
-    fitNom = fitStd = centerIndex = fitValues = fitErrs = fitCovs = None
-    if fitType == 'Quadratic-Bump':
-        try:
-            # 3 parameters
-            if len(key) < len(signature(fitFunc.quadraticBump).parameters) - 1:
-                print('Not enough data points to constrain a fit!')
-                raise RuntimeError()
-            widthGuess = np.std(key) / 2
-            centerGuess = key[list(data).index(max(data))]
-            fitValues, fitCovs = opt.curve_fit(fitFunc.quadraticBump, key, data, p0=[max(data), -1/widthGuess, centerGuess])
-            fitErrs = np.sqrt(np.diag(fitCovs))
-            a, b, c = unc.correlated_values(fitValues, fitCovs)
-            fitObject = fitFunc.quadraticBump(xFit, a, b, c)
-            fitNom = unp.nominal_values(fitObject)
-            fitStd = unp.std_devs(fitObject)
-            centerIndex = 2
-        except RuntimeError:
-            warn('Data Fit Failed!')
-            fitType = None
-    elif fitType == 'Gaussian-Bump':
-        try:
-            if len(key) < len(signature(fitFunc.gaussian).parameters) - 1:
-                print('Not enough data points to constrain a fit!')
-                raise RuntimeError()
-            widthGuess = np.std(key) / 2
-            # Get all the atoms
-            centerGuess = key[list(data).index(max(data))]
-            fitValues, fitCovs = opt.curve_fit(fitFunc.gaussian, key, data, p0=[-0.95, centerGuess, widthGuess, 0.95])
-            fitErrs = np.sqrt(np.diag(fitCovs))
-            a, b, c, d = unc.correlated_values(fitValues, fitCovs)
-            fitObject = fitFunc.uncGaussian(xFit, a, b, c, d)
-            fitNom = unp.nominal_values(fitObject)
-            fitStd = unp.std_devs(fitObject)
-            centerIndex = 1
-        except RuntimeError:
-            warn('Data Fit Failed!')
-            fitType=None
-    elif fitType == 'Gaussian-Dip':
-        try:
-            if len(key) < len(signature(fitFunc.gaussian).parameters) - 1:
-                print('Not enough data points to constrain a fit!')
-                raise RuntimeError()
-
-            widthGuess = np.std(key) / 2
-            centerGuess = key[list(data).index(min(data))]
-            fitValues, fitCovs = opt.curve_fit(fitFunc.gaussian, key, data, p0=[-0.95, centerGuess, widthGuess, 0.95])
-            fitErrs = np.sqrt(np.diag(fitCovs))
-            a, b, c, d = unc.correlated_values(fitValues, fitCovs)
-            fitObject = fitFunc.uncGaussian(xFit, a, b, c, d)
-            fitNom = unp.nominal_values(fitObject)
-            fitStd = unp.std_devs(fitObject)
-        except RuntimeError:
-            warn('Data Fit Failed!')
-            fitType = None
-    elif fitType == 'Exponential-Decay':
-        try:
-            if len(key) < len(signature(fitFunc.exponentialDecay).parameters) - 1:
-                print('Not enough data points to constrain a fit!')
-                raise RuntimeError()
-
-            decayConstantGuess = np.std(key)
-            ampGuess = data[0]
-            fitValues, fitCovs = opt.curve_fit(fitFunc.exponentialDecay, key, data, p0=[ampGuess, decayConstantGuess])
-            fitErrs = np.sqrt(np.diag(fitCovs))
-            a, b = unc.correlated_values(fitValues, fitCovs)
-            fitObject = fitFunc.uncExponentialDecay(xFit, a,b)
-            fitNom = unp.nominal_values(fitObject)
-            fitStd = unp.std_devs(fitObject)
-        except RuntimeError:
-            warn('Data Fit Failed!')
-            fitType = None
-    elif fitType == 'Exponential-Saturation':
-        try:
-            if len(key) < len(signature(fitFunc.exponentialSaturation).parameters) - 1:
-                print('Not enough data points to constrain a fit!')
-                fitType=None
-                raise RuntimeError()
-
-            decayConstantGuess = (np.max(key)+np.min(key))/4
-            ampGuess = data[-1]
-            fitValues, fitCovs = opt.curve_fit(fitFunc.exponentialSaturation, key, data,
-                                     p0=[-ampGuess, decayConstantGuess, ampGuess])
-            fitErrs = np.sqrt(np.diag(fitCovs))
-            a, b, c = unc.correlated_values(fitValues, fitCovs)
-            fitObject = fitFunc.uncExponentialSaturation(xFit, a, b, c)
-            fitNom = unp.nominal_values(fitObject)
-            fitStd = unp.std_devs(fitObject)
-        except RuntimeError:
-            warn('Data Fit Failed!')
-            fitType = None
-    elif fitType == 'DecayingSine':
-        try:
-            if len(key) < len(signature(fitFunc.RabiFlop).parameters) - 1:
-                print('Not enough data points to constrain a fit!')
-                raise RuntimeError()
-            ampGuess = 1
-            phiGuess = 0
-            OmegaGuess = np.pi / np.max(key)
-            # Omega is the Rabi rate
-            fitValues, fitCovs = opt.curve_fit(fitFunc.RabiFlop, key, data, p0=[ampGuess, OmegaGuess, phiGuess])
-            fitErrs = np.sqrt(np.diag(fitCovs))
-            a, b, c = unc.correlated_values(fitValues, fitCovs)
-            fitObject = fitFunc.uncRabiFlop(xFit, a, b, c)
-            fitNom = unp.nominal_values(fitObject)
-            fitStd = unp.std_devs(fitObject)
-        except RuntimeError:
-            warn('Data Fit Failed!')
-            fitType = None
-    elif fitType is not None:
-        warn("fitType Not Understood! Not Trying to Fit!")
-        fitType = None
-    # these are None if fit fail
-    fitInfo = {'x': xFit, 'nom': fitNom, 'std': fitStd, 'center': centerIndex, 'vals': fitValues, 'errs': fitErrs,
-               'cov': fitCovs}
-    return fitInfo, fitType
-
-
-def outputDataToMmaNotebook(fileNumber, survivalData, survivalErrs, captureArray, key):
-    """
-
-    :param fileNumber:
-    :param survivalData:
-    :param survivalErrs:
-    :param captureArray:
-    :param key:
-    :return:
-    """
-    runNum = fileNumber
-    try:
-        f = open(dataAddress + '\\run' + str(runNum)+'_key.txt', "w")
-        for item in key:
-            f.write("%s\n" % item)
-        f.close()
-        f = open(dataAddress + '\\run' + str(runNum)+'_survival.txt', "w")
-        for i in survivalData:
-            tmp = ''
-            for j in i:
-                tmp += "%s," % round_sig(j, 9)
-            tmp2 = (tmp.replace("[", "").replace("]", ""))[0:-1]+"\n"
-            f.write(tmp2)
-        f.close()
-        f = open(dataAddress + '\\run' + str(runNum)+'_err.txt', "w")
-        for i in survivalErrs:
-            tmp = ''
-            for j in i:
-                tmp += "%s," % round_sig(j, 9)
-            tmp2 = (tmp.replace("[", "").replace("]", ""))[0:-1]+"\n"
-            f.write(tmp2)
-        f.close()
-        f = open(dataAddress + '\\run' + str(runNum) + '_loading.txt', "w")
-        for i in captureArray:
-            tmp = ''
-            for j in i:
-                tmp += "%s," % round_sig(j, 9)
-            tmp2 = (tmp.replace("[", "").replace("]", ""))[0:-1]+"\n"
-            f.write(tmp2)
-        f.close()
-    except:
-        print("Error while outputting data to mathematica file.")
-
 
 def unpackAtomLocations(locs, avgPic=None):
     """
@@ -2120,11 +1727,9 @@ def unpackAtomLocations(locs, avgPic=None):
         locArray = [x for x in zip(res[0],res[1])]
     return locArray
 
-
 def getGridDims(locs):
     bottomLeftRow, bottomLeftColumn, spacing, width, height = locs
     return width, height
-
 
 def sliceMultidimensionalData(dimSlice, origKey, rawData, varyingDim=None):
     """
@@ -2145,7 +1750,7 @@ def sliceMultidimensionalData(dimSlice, origKey, rawData, varyingDim=None):
                 continue
             tempKey = []
             tempData = []
-            for j, elem in enumerate(transpose(runningKey)[i]):
+            for j, elem in enumerate(misc.transpose(runningKey)[i]):
                 if abs(elem - dimSpec) < 1e-6:
                     tempKey.append(runningKey[j])
                     tempData.append(runningData[j])
@@ -2162,11 +1767,10 @@ def sliceMultidimensionalData(dimSlice, origKey, rawData, varyingDim=None):
                 if not i == varyingDim:
                     otherDimValues[-1] += str(dimVal) + ","
     if dimSlice is not None:
-        key = arr(transpose(key)[varyingDim])
+        key = arr(misc.transpose(key)[varyingDim])
     if varyingDim is None and len(arr(key).shape) > 1:
-        key = arr(transpose(key)[0])
+        key = arr(misc.transpose(key)[0])
     return arr(key), arr(rawData), otherDimValues, varyingDim
-
 
 def applyDataRange(dataRange, groupedDataRaw, key):
     if dataRange is not None:
@@ -2180,7 +1784,6 @@ def applyDataRange(dataRange, groupedDataRaw, key):
     else:
         groupedData = groupedDataRaw
     return key, groupedData
-
 
 def getNetLossStats(netLoss, reps):
     lossAverages = np.array([])
@@ -2201,14 +1804,13 @@ def getNetLossStats(netLoss, reps):
             lossAverages = np.append(lossAverages, np.average(lossList))
     return lossAverages, lossErrors
 
-
 def getNetLoss(pic1Atoms, pic2Atoms):
     """
     Calculates the net loss fraction for every experiment. Assumes 2 pics per experiment.
     Useful for experiments where atoms move around, e.g. rearranging.
     """
     netLoss = []
-    for inc, (atoms1, atoms2) in enumerate(zip(transpose(pic1Atoms), transpose(pic2Atoms))):
+    for inc, (atoms1, atoms2) in enumerate(zip(misc.transpose(pic1Atoms), misc.transpose(pic2Atoms))):
         loadNum, finNum = [0.0 for _ in range(2)]
 
         for atom1, atom2 in zip(atoms1, atoms2):
@@ -2221,7 +1823,6 @@ def getNetLoss(pic1Atoms, pic2Atoms):
         else:
             netLoss.append(1 - float(finNum) / loadNum)
     return netLoss
-
 
 def getAtomInPictureStatistics(atomsInPicData, reps):
     """
@@ -2237,18 +1838,16 @@ def getAtomInPictureStatistics(atomsInPicData, reps):
         stats.append({'avg': avgs, 'err': errs})
     return stats
 
-
 def getEnhancement(loadAtoms, assemblyAtoms, normalized=False):
     """
     determines how many atoms were added to the assembly, another measure of how well the rearranging is working.
     """
     enhancement = []
-    for inc, (loaded, assembled) in enumerate(zip(transpose(loadAtoms), transpose(assemblyAtoms))):
+    for inc, (loaded, assembled) in enumerate(zip(misc.transpose(loadAtoms), misc.transpose(assemblyAtoms))):
         enhancement.append(sum(assembled) - sum(loaded))
         if normalized:
             enhancement[-1] /= len(assembled)
     return enhancement
-
 
 def getEnsembleHits(atomsList, hitCondition=None, requireConsecutive=False, partialCredit=False):
     """
@@ -2264,7 +1863,7 @@ def getEnsembleHits(atomsList, hitCondition=None, requireConsecutive=False, part
     ensembleHits = []
     if type(hitCondition) is int:
         # condition is, e.g, 5 out of 6 of the ref pic.
-        for inc, atoms in enumerate(transpose(atomsList)):
+        for inc, atoms in enumerate(misc.transpose(atomsList)):
             matches = 0
             consecutive = True
             for atom in atoms:
@@ -2280,7 +1879,7 @@ def getEnsembleHits(atomsList, hitCondition=None, requireConsecutive=False, part
                 ensembleHits.append(matches == hitCondition)
     else:
         if not partialCredit:
-            for inc, atoms in enumerate(transpose(atomsList)):
+            for inc, atoms in enumerate(misc.transpose(atomsList)):
                 ensembleHits.append(True)
                 for atom, needAtom in zip(atoms, hitCondition):
                     if not atom and needAtom:
@@ -2288,10 +1887,9 @@ def getEnsembleHits(atomsList, hitCondition=None, requireConsecutive=False, part
                     if atom and not needAtom:
                         ensembleHits[inc] = False
         else:
-            for inc, atoms in enumerate(transpose(atomsList)):
+            for inc, atoms in enumerate(misc.transpose(atomsList)):
                 ensembleHits.append(sum(atoms))# / len(atoms))
     return ensembleHits
-
 
 def getEnsembleStatistics(ensembleData, reps):
     """

@@ -160,3 +160,19 @@ def loadDetailedKey(num):
             count += 1
         keyFile.close()
     return key, varName
+
+def load_Anritsu_MS2721B(file):
+    with open(file) as fid:
+        lines = fid.readlines()
+    powers = []
+    freqs = []
+    traceData = lines[315:]
+    for line in traceData:
+        if line == '\n':
+            break
+        powStr, freqStr = line.split(',')
+        _, power = powStr.split('=')
+        _,freq, _ = freqStr.split(' ')
+        powers.append(float(power))
+        freqs.append(float(freq))
+    return freqs, powers

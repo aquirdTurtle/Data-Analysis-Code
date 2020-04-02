@@ -4,14 +4,11 @@ from fitters.Gaussian import arb_1d_sum
 
 numGauss = 3
 
-def center():
-    return None  # or the arg-number of the center.
-
-
-def getCenter(args):
-    # return the average
-    return (args[1] + args[4] + args[7])/3
-
+def fitCharacter( params ):
+    return (params[2] + params[5] + params[7])/3
+    # for raman spectra, assuming fits are in order from left to right, i.e. first fit is lowest freq
+    #    r = params[7]/params[1]
+    #return r/(1-r) if not (r>=1) else 5
 
 def args():
     arglist = ['Offset']
@@ -27,7 +24,7 @@ def f(x, *params):
     :return:
     """
     if len(params) != 3*numGauss+1:
-        raise ValueError('the bump7 fitting function expects '+str(3*7+1) + ' parameters and got ' + str(len(params)))
+        raise ValueError('the bump'+str(numGauss)+' fitting function expects '+str(3*numGauss+1) + ' parameters and got ' + str(len(params)))
     penalty = 10**10 * np.ones(len(x))
     for i in range(numGauss):
         if params[3*i+1] < 0:
@@ -37,9 +34,9 @@ def f(x, *params):
             # penalize fit centers outside of the data range (assuming if you want to see these that you've
             # at least put the gaussian in the scan)
             return penalty
-    if params[0] < 0:
+    #if params[0] < 0:
         # penalize negative offset
-        return penalty
+    #    return penalty
     return f_raw(x, *params)
 
 
@@ -62,10 +59,11 @@ def guess(key, values):
     """
     Returns guess values for the parameters of this function class based on the input. Used for fitting using this class.
     """
+    a = (max(values)-min(values))/10
     return [min(values),
-            0.4, -150, 10,
-            0.4, 0, 10,
-            0.4, 150, 10]
+            a, -180, 3,
+            a, -20, 3,
+            a, 140, 3]
     
 
 def areas(A1, x01, sig1, A2, x02, sig2):

@@ -3,11 +3,11 @@ import uncertainties.unumpy as unp
 # based on gaussian
 from fitters.Gaussian import gaussian
 
-def center():
-    return 1
+def fitCharacter(args):
+    return args[2]
 
-def getCenter(args):
-    return args[center()]
+def getFitCharacterString(fitVals):
+    return "Fit-Center"
 
 def args():
     return 'Amp', 'Center', r'$\sigma$', 'offset'
@@ -18,8 +18,8 @@ def f(x, A1, x01, sig1, offset):
     The normal function call for this function. Performs checks on valid arguments, then calls the "raw" function.
     :return:
     """
-    if offset < 0:
-        return np.ones(len(x))*10**10
+    #if offset < 0:
+    #    return np.ones(len(x))*10**10
     if A1 < 0:
         return np.ones(len(x)) * 10 ** 10
     return gaussian.f(x,A1,x01,sig1,offset)
@@ -40,7 +40,8 @@ def guess(key, values):
     :param values:
     :return: guess for gaussian parameters
     """
-    return [max(values) - min(values), key[np.argmax(values)], (max(key)-min(key))/4, min(values)]
+    return [max(values) - min(values), key[np.argmax(values)], (max(key)-min(key))/8, min(values)]
 
 def area_under(A1, x01, sig1, offset):
+    # ignoring the offset.
     return A1 * sig1 * np.sqrt(2 * np.pi)
