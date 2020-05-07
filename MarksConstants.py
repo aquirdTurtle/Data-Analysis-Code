@@ -79,6 +79,11 @@ def Rb87_Ground_State_Shift(F):
 # Approximate Lande` G-factors (g_F) in Hz/Gauss
 Rb87_Ground_F2_g_F = 0.70e6
 Rb87_Ground_F1_g_F = -0.70e6
+# lifetimes, in s
+Rb87_D1_Lifetime = 27.70e-9
+Rb87_D1_Lifetime_Uncertainty = 0.04e-9
+Rb87_D2_Lifetime = 26.24e-9
+Rb87_D2_Lifetime_Uncertainty = 0.04e-9
 # linewidths, in s^-1
 Rb87_D1Gamma = 36.10e6
 Rb87_D1Gamma_Uncertainty = 0.05e6
@@ -259,6 +264,24 @@ Rb87_Energies = {
     '8D52':-2468e2 * h * c,
     '9D52':-1868e2 * h * c,
 }
+
+# Scatteing lengths, numbers refer to F levels.
+# From paper "Measurement of s-wave scattering lengths in a two-component Bose-Einstein condensate", M. Egorov et all 2013
+Rb87_a22 = 95.44 * a0
+Rb87_a11 = 98.006 * a0
+Rb87_a12 = 97.66 * a0
+
+# Rubidium Molecule Dissociation Constants (from the paper 
+# "Dispoersion forces and long-range electronic transition dipole moments of alkali-metal dimer excited states" by Marinescu et al.)
+# the number given is in atomic units, once multiplying by Eh and a0 this is in SI units. 
+Eh = 4.35974381e-18
+Rb87_C3 = 9.202*Eh*a0**3
+Rb87_C6Sigma = 12.05e3*Eh*a0**6
+Rb87_C6Pi = 8.047e3*Eh*a0**6
+Rb87_C8Sigma_1 = 2.805e6*Eh*a0**8
+Rb87_C8Sigma_m1 = 9.462e6*Eh*a0**8
+Rb87_C8Pi_1 = 11.32e5*Eh*a0**8
+Rb87_C8Pi_m1 = 4.203e5*Eh*a0**8
 
 # #################
 # ### Lab Constants

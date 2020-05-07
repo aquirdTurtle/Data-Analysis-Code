@@ -928,6 +928,34 @@ def newCalcMotTemperature(times, sigmas):
         warn('Mot Temperature Expansion Fit Failed!')
     return fitVals[2], fitVals, fitCovariances
 
+<<<<<<< HEAD
+
+def calcMotTemperature(times, sigmas):
+    # print(sigmas[0])
+    guess = [sigmas[0], 0.1]
+    # guess = [0.001, 0.1]
+    # in cm...?
+    # sidemotWaist = .33 / (2*np.sqrt(2))
+    # sidemotWaist = 8 / (2*np.sqrt(2))
+    sidemotWaist = 1000 / (2*np.sqrt(2))
+    # sidemotWaist^2/2 = 2 sigma_sidemot^2
+    # different gaussian definitions
+    sigma_I = sidemotWaist / 2
+    # convert to m
+    sigma_I /= 100
+    # modify roughly for angle of sidemot
+    # sigma_I /= np.cos(2*pi/3)
+    sigma_I /= np.cos(consts.pi/4)
+    sigma_I = 100
+    fitVals, fitCovariances = opt.curve_fit(lambda x, a, b: ballisticMotExpansion(x, a, b, sigma_I), times, sigmas, p0=guess)
+    simpleVals, simpleCovariances = opt.curve_fit(simpleMotExpansion, times, sigmas, p0=guess)
+    temperature = consts.Rb87_M / consts.k_B * fitVals[1]**2
+    tempFromSimple = consts.Rb87_M / consts.k_B * simpleVals[1]**2
+    return temperature, tempFromSimple, fitVals, fitCovariances, simpleVals, simpleCovariances
+
+
+=======
+>>>>>>> 4b31e1a5f34b949442e207ae8c2e6c25f266b0bb
 def orderData(data, key, keyDim=None, otherDimValues=None):
     """
         return arr(data), arr(key), arr(otherDimValues)

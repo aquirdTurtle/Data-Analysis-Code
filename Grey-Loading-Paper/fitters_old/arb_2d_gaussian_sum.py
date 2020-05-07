@@ -27,7 +27,7 @@ def f_raw(coordinate, offset, *params):
     :return:
     """
     if len(params) % 5 != 0:
-        raise ValueError("Error: invlaid number of arguments passed to arb 2d gaussian sum. must be multiple of 5.")
+        raise ValueError("Error: invlaid number of arguments passed to arb 2d gaussian sum. must be multiple of 5, num was " + str(len(params)) )
     gaussParams = np.reshape(params, (int(len(params)/5), 5))
     res = 0
     for p in gaussParams:
@@ -38,7 +38,7 @@ def f_raw(coordinate, offset, *params):
 
 def f_raw2(coordinate, packedParams):
     """
-    The raw function call, performs no checks on valid parameters..
+    The raw function call, performs no checks on valid parameters. (old? weird?)
     :return:
     """
     gaussParams = packedParams['pack']
