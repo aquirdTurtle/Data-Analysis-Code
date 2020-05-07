@@ -13,17 +13,18 @@ from TimeTracker import TimeTracker
 import AnalysisHelpers as ah
 import MarksConstants as mc
 import copy
+import PictureWindow as pw
 
 def standardImages( data, 
                     # Cosmetic Parameters
                     scanType="", xLabel="", plotTitle="", convertKey=False, 
                     colorMax=-1, individualColorBars=False, majorData='counts',
                     # Global Data Manipulation Options
-                    loadType='andor', window=(0, 0, 0, 0), smartWindow=False, xMin=0, xMax=0, yMin=0, yMax=0,
-                    accumulations=1, key=arr([]), zeroCorners=False, dataRange=(0, 0), manualAccumulation=False,
+                    loadType='andor', window=pw.PictureWindow(), smartWindow=False,
+                    reps=1, key=arr([]), zeroCorners=False, dataRange=(0, 0), manualAccumulation=False,
                     # Local Data Manipulation Options
                     plottedData=None, bg=arr([0]), location=(-1, -1), fitBeamWaist=False, fitPics=False,
-                    cameraType='dataray', fitWidthGuess=80, quiet=False, avgFits=False ):
+                    cameraType='dataray', fitWidthGuess=80, quiet=False, avgFits=False, lastDataIsBackground=False ):
     """
     """
     if plottedData is None:
@@ -48,16 +49,18 @@ def standardImages( data,
             with exp.ExpFile() as f:
                 f.open_hdf5(data,True)
                 rawData = f.get_pics()
+                reps = f.get_reps()
                 if key is None:
                     _, key = f.get_key()
         elif loadType == 'ace':
             # read old data format from standalone basler programs.
             rawData = loadCompoundBasler(data, loadType)
         elif loadType == 'basler':
-            # This basically assumes scout...
             with exp.ExpFile() as f:
+                print('Opening Basler Images.')
                 f.open_hdf5(data,True)
                 rawData = f.get_basler_pics()
+                reps = f.get_reps()
                 if key is None:
                     _, key = f.get_key()
         elif loadType == 'dataray':
@@ -83,7 +86,12 @@ def standardImages( data,
         rawData = data
     if not quiet:
         print('Data Loaded.')
-    res = ah.processImageData( key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulations, dataRange, zeroCorners,
+    if lastDataIsBackground:
+        bg = np.mean(rawData[-2*reps:],axis=0)
+        rawData = rawData[:-2*reps]
+        key = key[:-2]
+        print('lastdataisbackground:', rawData.shape)
+    res = ah.processImageData( key, rawData, bg, window, reps, dataRange, zeroCorners,
                                smartWindow, manuallyAccumulate=manualAccumulation )
     key, rawData, dataMinusBg, dataMinusAvg, avgPic = res
     if fitPics:

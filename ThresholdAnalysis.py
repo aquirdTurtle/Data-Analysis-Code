@@ -6,8 +6,6 @@ import ExpFile as exp
 
 
 def updateThresholds():
-    # fid, atomLocations, picsPerRep
-    
     with open('ThresholdAnalysisInfo.txt') as f:
         lines = f.readlines()
         dataLines = [l.rstrip() for l in lines[5:]]
@@ -35,6 +33,3 @@ def updateThresholds():
     plt.show(block=False)
 
 updateThresholds()
-
-#plt.plot([0,1,2],[2,1,2],'o:')
-#plt.show()

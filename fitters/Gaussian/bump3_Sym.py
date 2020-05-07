@@ -1,3 +1,5 @@
+#Symmetric Version of Bump3
+
 import numpy as np
 import uncertainties.unumpy as unp
 from fitters.Gaussian import arb_1d_sum
@@ -5,30 +7,30 @@ from fitters.Gaussian import arb_1d_sum
 numGauss = 3
 
 def fitCharacter( params ):
-    #return (params[2] + params[5] + params[7])/3
+    [Offset, Amp1, Sigma1, Amp2, Sigma2, Amp3, Sigma3, Center, Spread] = params
+    params_ = [Offset, Amp1, Center - Spread/2, Sigma1, Amp2, Center, Sigma2, Amp3, Center + Spread/2, Sigma3]
     #for raman spectra, assuming fits are in order from left to right, i.e. first fit is lowest freq
-    r = params[7]/params[1]
-    return r/(1-r) if not (r>=1) else 5
+    r = params_[7] / params_[1]
+    return r / ( 1 - r ) if not ( r >= 1 ) else np.inf
 
 def args():
-    arglist = ['Offset']
-    for i in range(numGauss):
-        j = i+1
-        arglist += ['Amp'+str(j), 'Center'+str(j),'Sigma'+str(j)]
+    arglist = ['Offset', "Amp1", "Sigma1", "Amp2", "Sigma2", "Amp3", "Sigma3", "Center", "Spread"]
     return arglist
+
 
 def getFitCharacterString():
     return r'$\bar{n}$'
 
 
-def f(x, *params):
+def f(x, Offset, Amp1, Sigma1, Amp2, Sigma2, Amp3, Sigma3, Center, Spread):
     """
     The normal function call for this function. Performs checks on valid arguments, then calls the "raw" function.
     :return:
     """
-    if len(params) != 3*numGauss+1:
-        raise ValueError('the bump'+str(numGauss)+' fitting function expects '+str(3*numGauss+1) + ' parameters and got ' + str(len(params)))
     penalty = 10**10 * np.ones(len(x))
+    
+    params = [Offset, Amp1, Center - Spread/2, Sigma1, Amp2, Center, Sigma2, Amp3, Center + Spread/2, Sigma3]
+    
     for i in range(numGauss):
         if params[3*i+1] < 0:
             # Penalize negative amplitude fits.
@@ -51,11 +53,12 @@ def f_raw(x, *params):
     return arb_1d_sum.f(x, *params)
 
 
-def f_unc(x, *params):
+def f_unc(x, Offset, Amp1, Sigma1, Amp2, Sigma2, Amp3, Sigma3, Center, Spread):
     """
     similar to the raw function call, but uses unp instead of np for uncertainties calculations.
     :return:
     """
+    params = [Offset, Amp1, Center - Spread/2, Sigma1, Amp2, Center, Sigma2, Amp3, Center + Spread/2, Sigma3]
     return arb_1d_sum.f_unc(x, *params)
 
 def guess(key, values):
@@ -64,9 +67,10 @@ def guess(key, values):
     """
     a = (max(values)-min(values))/10
     return [min(values),
-            a, -180, 3,
-            a, -20, 3,
-            a, 140, 3]
+            a, 3,
+            a, 3,
+            a, 3, 
+            30, 70]
     
 
 def areas(A1, x01, sig1, A2, x02, sig2):

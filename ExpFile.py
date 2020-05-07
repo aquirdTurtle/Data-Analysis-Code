@@ -29,7 +29,7 @@ def annotate(fileID=None, expFile_version=currentVersion):
             del f.f['Miscellaneous']['Experiment_Title_Level']
         dset4 = f.f['Miscellaneous'].create_dataset("Experiment_Title_Level", shape=(1,), dtype="i8") 
         dset4[0] = hashNum
-        
+
 
 def checkAnnotation(fileNum, force=True, quiet=False, expFile_version=currentVersion):
     try:
@@ -51,12 +51,13 @@ def checkAnnotation(fileNum, force=True, quiet=False, expFile_version=currentVer
     return True
 
 
-def getAnnotation(fileNum, expFile_version=currentVersion):
-    with ExpFile(fileNum, expFile_version=expFile_version) as f:
+def getAnnotation(fid, expFile_version=currentVersion, useBase=True):
+    with ExpFile() as f:
+        f.open_hdf5(fid, useBase=useBase)
         f_misc = f.f['Miscellaneous']
         if (   'Experiment_Notes' not in f_misc
             or 'Experiment_Title' not in f_misc):
-            raise RuntimeError('HDF5 File number ' + str(fileNum) + ' Has not been annotated. Please call exp.annotate() to annotate the file.')
+            raise RuntimeError('HDF5 File number ' + str(fid) + ' Has not been annotated. Please call exp.annotate() to annotate the file.')
         if 'Experiment_Title_Level' not in f_misc:
             expTitleLevel = 0
         else:
@@ -92,7 +93,6 @@ def addNote(fileID=None):
                 break
             else:
                 noteNum += 1
-
 
 # Exp is short for experiment here.
 class ExpFile:
@@ -137,7 +137,7 @@ class ExpFile:
             return
             
     
-    def open_hdf5(self, fileID=None, useBase=False, openFlag='r'):
+    def open_hdf5(self, fileID=None, useBase=True, openFlag='r'):
         
         if type(fileID) == int:
             path = self.data_addr + "data_" + str(fileID) + ".h5"
@@ -146,7 +146,7 @@ class ExpFile:
             path = self.data_addr + fileID + ".h5"
         else:
             path = fileID
-        file = h5.File(path, openFlag)
+        file = h5.File(path, openFlag)            
         self.f = file
         return file
     

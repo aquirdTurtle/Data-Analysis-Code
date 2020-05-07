@@ -6,9 +6,11 @@ from fitters.Gaussian import gaussian
 
 def fitCharacter(args):
     return args[1]
+def getFitCharacterString():
+    return r'$x_0$'
 
 def args():
-    return 'Amp', 'Center', r'$\sigma$', 'offset'
+    return 'A', r'$x_0$', r'$\sigma$', 'offset'
 
 
 def f(x, A1, x01, sig1, offset):

@@ -5,7 +5,34 @@ from numpy import array as arr
 from matplotlib.cm import get_cmap
 from pandas import DataFrame
 import IPython
+import textwrap
+import os
+import ExpFile as exp
 
+
+def printExperimentFileInfo(loc="J:/Data repository/New Data Repository/2020/February/February 20/Raw Data/", includeNotes=False):
+    files = os.listdir(loc)
+    def sortF(fn):
+        try:
+            return int(fn[5:-3])
+        except ValueError:
+            return -1
+    sortedFiles = sorted(files, key = sortF)
+    for filename in sortedFiles:
+        if filename[:4] == "data":
+            try:
+                title, notes, lev = exp.getAnnotation(loc+filename, useBase=False)
+                print(filename[5:-3], title)
+                if includeNotes:
+                    wrapper = textwrap.TextWrapper(initial_indent="\t", subsequent_indent='\t')
+                    print(wrapper.fill(notes))
+                    
+            except RuntimeError:
+                print(filename[5:-3], "FILE NOT ANNOTATED")
+            except OSError:
+                print(filename[5:-3], "Bad File")
+                
+                
 def loopProgress(inc, total):
     IPython.display.clear_output(wait=True)
     print(round_sig_str(inc/total*100), '% Complete...')
@@ -181,7 +208,10 @@ def round_sig_str(x, sig=3):
     if np.isnan(x):
         x = 0
     try:
-        num = round(x, sig-int(np.floor(np.log10(abs(x)+2*np.finfo(float).eps)))-1)
+        res = np.floor(np.log10(abs(x)+2*np.finfo(float).eps))
+        if res == np.inf:
+            res = 0
+        num = round(x, sig-int(res)-1)
         decimals = sig-getExp(num)-1
         if decimals == float('inf'):
             decimals = 3

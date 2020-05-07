@@ -6,6 +6,13 @@ def center():
     return None
 
 
+def fitCharacter(vals):
+    return vals[1]
+
+def getFitCharacterString():
+    return r'$\tau$'
+
+
 def f(x, a, tau, c):
     """
     The normal function call for this function. Performs checks on valid arguments, then calls the "raw" function.

@@ -3,11 +3,14 @@ import uncertainties.unumpy as unp
 # based on gaussian
 from fitters.Gaussian import gaussian
 
+
 def fitCharacter(args):
     return args[1]
 
-def getFitCharacterString(fitVals):
+
+def getFitCharacterString():
     return "Fit-Center"
+
 
 def args():
     return 'Amp', 'Center', r'$\sigma$', 'offset'

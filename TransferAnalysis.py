@@ -2,11 +2,13 @@ import AnalysisHelpers as ah
 import ExpFile as exp
 import numpy as np
 import copy
+import PictureWindow as pw
+import ThresholdOptions as to
+import AnalysisOptions as ao
 
-def organizeTransferData( fileNumber, initLocs, tferLocs, key=None, window=None, xMin=None, xMax=None, yMin=None,
-                          yMax=None, dataRange=None, keyOffset=0, dimSlice=None, varyingDim=None, groupData=False,
-                          quiet=False, picsPerRep=2, repRange=None, initPic=0, tferPic=1, keyConversion=None, softwareBinning=None,
-                          removePics=None, expFile_version=3):
+def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWindow(), dataRange=None, keyOffset=0, 
+                          dimSlice=None, varyingDim=None, groupData=False, quiet=False, picsPerRep=2, repRange=None, 
+                          keyConversion=None, softwareBinning=None, removePics=None, expFile_version=3):
     """
     Unpack inputs, properly shape the key, picture array, and run some initial checks on the consistency of the settings.
     """
@@ -25,10 +27,7 @@ def organizeTransferData( fileNumber, initLocs, tferLocs, key=None, window=None,
     if softwareBinning is not None:
         sb = softwareBinning
         rawData = rawData.reshape(rawData.shape[0], rawData.shape[1]//sb[0], sb[0], rawData.shape[2]//sb[1], sb[1]).sum(4).sum(2)
-    # window the images images.
-    if window is not None:
-        xMin, yMin, xMax, yMax = window
-    rawData = np.copy(np.array(rawData[:, yMin:yMax, xMin:xMax]))
+    rawData = np.array([win.window(pic) for pic in rawData])
     # Group data into variations.
     numberOfPictures = int(rawData.shape[0])
     if groupData:
@@ -45,10 +44,8 @@ def organizeTransferData( fileNumber, initLocs, tferLocs, key=None, window=None,
     numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
     numOfPictures = groupedData.shape[0] * groupedData.shape[1]
     allAvgPics = ah.getAvgPics(groupedData, picsPerRep=picsPerRep)
-    avgPics = [allAvgPics[initPic], allAvgPics[tferPic]]
-    atomLocs1 = ah.unpackAtomLocations(initLocs, avgPic=avgPics[0])
-    atomLocs2 = ah.unpackAtomLocations(tferLocs, avgPic=avgPics[1])
-    return rawData, groupedData, atomLocs1, atomLocs2, keyName, repetitions, key, numOfPictures, avgPics, basicInfoStr
+    avgPics = [allAvgPics[analysisOpts.initPic], allAvgPics[analysisOpts.tferPic]]
+    return rawData, groupedData, keyName, repetitions, key, numOfPictures, avgPics, basicInfoStr, analysisOpts
 
 def getTransferEvents(pic1Atoms, pic2Atoms):
     """
@@ -69,181 +66,180 @@ def getTransferEvents(pic1Atoms, pic2Atoms):
 def getTransferStats(tferList, repsPerVar):
     # Take the previous data, which includes entries when there was no atom in the first picture, and convert it to
     # an array of just loaded and survived or loaded and died.
-    numVars = int(tferList.size / repsPerVar)
-    transferAverages = np.array([])
-    loadingProbability = np.array([])
-    transferErrors = np.zeros([numVars,2])
+    transferErrors = np.zeros([2])
     if tferList.size < repsPerVar:
         # probably a single variation that has been sliced to cut out bad data.
         repsPerVar = tferList.size
-    for variationInc in range(0, numVars):
-        tferVarList = np.array([x for x in tferList[variationInc * repsPerVar:(variationInc+1) * repsPerVar] if x != -1])
-        if tferVarList.size == 0:
-            # catch the case where there's no relevant data, typically if laser becomes unlocked.
-            transferErrors[variationInc] = [0,0]
-            loadingProbability = np.append(loadingProbability, [0])
-            transferAverages = np.append(transferAverages, [0])
-        else:
-            # normal case
-            meanVal = np.average(tferVarList)
-            transferErrors[variationInc] = ah.jeffreyInterval(meanVal, len(tferVarList))
-            # old method
-            loadingProbability = np.append(loadingProbability, tferVarList.size / repsPerVar)
-            transferAverages = np.append(transferAverages, meanVal)    
+    tferVarList = np.array([x for x in tferList if x != -1])
+    if tferVarList.size == 0:
+        # catch the case where there's no relevant data, typically if laser becomes unlocked.
+        transferErrors = [0,0]
+        loadingProbability = 0
+        transferAverages = 0
+    else:
+        # normal case
+        meanVal = np.average(tferVarList)
+        transferErrors = ah.jeffreyInterval(meanVal, len(tferVarList))
+        # old method
+        loadingProbability = tferVarList.size / repsPerVar
+        transferAverages = meanVal
     return transferAverages, transferErrors, loadingProbability
 
 
-def getTransferThresholds(atomLocs1, atomLocs2, rawData, groupedData, thresholdOptions, indvVariationThresholds, picsPerRep, initPic, tferPic, 
-                          subtractEdgeCounts, rigorousThresholdFinding, tferThresholdSame):
+def getTransferThresholds(analysisOpts, rawData, groupedData, picsPerRep, tOptions=[to.ThresholdOptions()]):
     # some initialization...
-    (initThresholds, tferThresholds) =  np.array([[None] * len(atomLocs1)] * 2)
+    (initThresholds, tferThresholds) =  np.array([[None] * len(analysisOpts.initLocs())] * 2)
     for atomThresholdInc, _ in enumerate(initThresholds):
         initThresholds[atomThresholdInc] = np.array([None for _ in range(groupedData.shape[0])])
         tferThresholds[atomThresholdInc] = np.array([None for _ in range(groupedData.shape[0])])
-    if thresholdOptions == None:
-        thresholdOptions = [None for _ in range(len(atomLocs1))]
-    if len(thresholdOptions) == 1:
-        thresholdOptions = [thresholdOptions[0] for _ in range(len(atomLocs1))]
-    # gettubg thresholds
-    for i, (loc1, loc2) in enumerate(zip(atomLocs1, atomLocs2)):
-        if indvVariationThresholds:
+    if len(tOptions) == 1:
+        tOptions = [tOptions[0] for _ in range(len(analysisOpts.initLocs()))]
+    # getting thresholds
+    for i, (loc1, loc2) in enumerate(zip(analysisOpts.initLocs(), analysisOpts.tferLocs())):
+        opt = tOptions[i]
+        if opt.indvVariationThresholds:
             for j, variationData in enumerate(groupedData):
-                initPixelCounts = ah.getAtomCountsData( variationData, picsPerRep, initPic, loc1, subtractEdges=subtractEdgeCounts )
-                initThresholds[i][j] = ah.getThresholds( initPixelCounts, 5, thresholdOptions[i], rigorous=rigorousThresholdFinding )        
+                initPixelCounts = ah.getAtomCountsData( variationData, picsPerRep, analysisOpts.initPic, loc1, subtractEdges=opt.subtractEdgeCounts )
+                initThresholds[i][j] = ah.getThresholds( initPixelCounts, 5, opt )        
         else:
             # calculate once with full raw data and then copy to all slots. 
-            initPixelCounts = ah.getAtomCountsData( rawData, picsPerRep, initPic, loc1, subtractEdges=subtractEdgeCounts )
-            initThresholds[i][0] = ah.getThresholds( initPixelCounts, 5, thresholdOptions[i], rigorous=rigorousThresholdFinding )        
+            initPixelCounts = ah.getAtomCountsData( rawData, picsPerRep, analysisOpts.initPic, loc1, subtractEdges=opt.subtractEdgeCounts )
+            initThresholds[i][0] = ah.getThresholds( initPixelCounts, 5, opt )        
             for j, _ in enumerate(groupedData):
                 initThresholds[i][j] = initThresholds[i][0]
-        if tferThresholdSame:
+        if opt.tferThresholdSame:
             tferThresholds[i] = copy.copy(initThresholds[i])
         else: 
-            if indvVariationThresholds:
+            if opt.indvVariationThresholds:
                 for j, variationData in enumerate(groupedData):
-                    tferPixelCounts = ah.getAtomCountsData( variationData, picsPerRep, tferPic, loc2, subtractEdges=subtractEdgeCounts )
-                    tferThresholds[i][j] = ah.getThresholds( tferPixelCounts, 5, thresholdOptions[i], rigorous=rigorousThresholdFinding )
+                    tferPixelCounts = ah.getAtomCountsData( variationData, picsPerRep, analysisOpts.tferPic, loc2, subtractEdges=opt.subtractEdgeCounts )
+                    tferThresholds[i][j] = ah.getThresholds( tferPixelCounts, 5, opt )
             else:
-                tferPixelCounts = ah.getAtomCountsData( rawData, picsPerRep, initPic, loc1, subtractEdges=subtractEdgeCounts )
-                tferThresholds[i][0] = ah.getThresholds( tferPixelCounts, 5, thresholdOptions[i], rigorous=rigorousThresholdFinding )        
+                tferPixelCounts = ah.getAtomCountsData( rawData, picsPerRep, analysisOpts.tferPic, loc1, subtractEdges=opt.subtractEdgeCounts )
+                tferThresholds[i][0] = ah.getThresholds( tferPixelCounts, 5, opt )        
                 for j, _ in enumerate(groupedData):
                     tferThresholds[i][j] = tferThresholds[i][0]
-    if subtractEdgeCounts:
-        borders_init = ah.getAvgBorderCount(groupedData, initPic, picsPerRep)
-        borders_tfer = ah.getAvgBorderCount(groupedData, tferPic, picsPerRep)
+    if tOptions[0].subtractEdgeCounts:
+        borders_init = ah.getAvgBorderCount(groupedData, analysisOpts.initPic, picsPerRep)
+        borders_tfer = ah.getAvgBorderCount(groupedData, analysisOpts.tferPic, picsPerRep)
     else:
         borders_init = borders_tfer = np.zeros(groupedData.shape[0]*groupedData.shape[1])
     return borders_init, borders_tfer, initThresholds, tferThresholds
 
-def getTransferAtomImages(atomLocs1, atomLocs2, rawData, numOfPictures, picsPerRep, initPic, tferPic, initAtoms, tferAtoms):
-    initAtomImages = [np.zeros(rawData[0].shape) for _ in range(int(numOfPictures/picsPerRep))]
-    tferAtomImages = [np.zeros(rawData[0].shape) for _ in range(int(numOfPictures/picsPerRep))]
-    tferImagesInc, initImagesInc = [0,0]
-    for picInc in range(int(numOfPictures)):
-        if picInc % picsPerRep == initPic:
-            for locInc, loc in enumerate(atomLocs1):
-                initAtomImages[initImagesInc][loc[0]][loc[1]] = initAtoms[locInc][initImagesInc]            
-            initImagesInc += 1
-        elif picInc % picsPerRep == tferPic:
-            for locInc, loc in enumerate(atomLocs2):
-                tferAtomImages[tferImagesInc][loc[0]][loc[1]] = tferAtoms[locInc][tferImagesInc]
-            tferImagesInc += 1
+def getTransferAtomImages( analysisOpts, groupedData, numOfPictures, picsPerRep, initAtoms, tferAtoms ):
+    initAtomImages, tferAtomImages = [np.zeros(groupedData.shape) for _ in range(2)]
+    for varNum, varPics in enumerate(groupedData):
+        tferImagesInc, initImagesInc = [0,0]
+        for picInc in range(len(varPics)):
+            if picInc % picsPerRep == analysisOpts.initPic:
+                for locInc, loc in enumerate(analysisOpts.initLocs()):
+                    initAtomImages[varNum][initImagesInc][loc[0]][loc[1]] = initAtoms[varNum][locInc][initImagesInc]            
+                initImagesInc += 1
+            elif picInc % picsPerRep == analysisOpts.tferPic:
+                for locInc, loc in enumerate(analysisOpts.tferLocs()):
+                    tferAtomImages[varNum][tferImagesInc][loc[0]][loc[1]] = tferAtoms[varNum][locInc][tferImagesInc]
+                tferImagesInc += 1
     return initAtomImages, tferAtomImages
 
-def determineTransferAtomPrescence( atomLocs1, atomLocs2, groupedData, initPic, tferPic, picsPerRep, borders_init, borders_tfer,
-                                    initThresholds, tferThresholds):
+def determineTransferAtomPrescence( analysisOpts, groupedData, picsPerRep, borders_init, borders_tfer, initThresholds, tferThresholds):
     # tferAtomsVarAvg, tferAtomsVarErrs: the given an atom and a variation, the mean of the 
     # tferfer events (mapped to a bernoili distribution), and the error on that mean. 
     # initAtoms (tferAtoms): a list of the atom events in the initial (tfer) picture, mapped to a bernoilli distribution 
-    (initPicCounts, tferPicCounts, bins, binnedData, tferAtomsVarAvg, tferAtomsVarErrs,
-     initPopulation, initAtoms, tferAtoms, genAvgs, genErrs, tferList) = [[[] for _ in range(len(atomLocs1))] for _ in range(12)]
-    for i, (loc1, loc2) in enumerate(zip(atomLocs1, atomLocs2)):
+    #(initAtoms, tferAtoms) = [[[[] for _ in groupedData] for _ in atomLocs1] for _ in range(2)]
+    numAtoms = len(analysisOpts.initLocs())
+    (initAtoms, tferAtoms) = [[[[] for _ in range(numAtoms)] for _ in groupedData] for _ in range(2)]
+    initPicCounts, tferPicCounts = [[[] for _ in range(numAtoms)] for _ in range(2)]
+    for i, (loc1, loc2) in enumerate(zip(analysisOpts.initLocs(), analysisOpts.tferLocs())):
         for j, varData in enumerate(groupedData):
-            initCounts = ah.normalizeData(varData, loc1, initPic, picsPerRep, borders_init )
-            tferCounts = ah.normalizeData(varData, loc2, tferPic, picsPerRep, borders_tfer )
+            initCounts = ah.normalizeData(varData, loc1, analysisOpts.initPic, picsPerRep, borders_init )
+            tferCounts = ah.normalizeData(varData, loc2, analysisOpts.tferPic, picsPerRep, borders_tfer )
             Iatoms, Tatoms = ah.getSurvivalBoolData(initCounts, tferCounts, initThresholds[i][j].t, tferThresholds[i][j].t)
-            initAtoms[i] += Iatoms 
-            tferAtoms[i] += Tatoms
+            initAtoms[j][i] = Iatoms 
+            tferAtoms[j][i] = Tatoms
             tferPicCounts[i] += list(tferCounts)
             initPicCounts[i] += list(initCounts)
-    return initAtoms, tferAtoms, tferList, tferAtomsVarAvg, tferAtomsVarErrs, initPopulation, genAvgs, genErrs, np.array(initPicCounts), np.array(tferPicCounts)
+    return initAtoms, tferAtoms, np.array(initPicCounts), np.array(tferPicCounts)
 
-def handleTransferFits(locationsList, fitModules, key, avgTferData, fitguess, getFitterArgs):
-    fits = [None] * len(locationsList)
+def handleTransferFits(analysisOpts, fitModules, key, avgTferData, fitguess, getFitterArgs, tferAtomsVarAvg):
+    numAtoms = len(analysisOpts.initLocs())
+    fits = [None] * numAtoms
     avgFit = None
     if len(fitModules) == 1: 
-        fitModules = [fitModules[0] for _ in range(len(locationsList)+1)]
+        fitModules = [fitModules[0] for _ in range(numAtoms+1)]
     if fitModules[0] is not None:
         if type(fitModules) != list:
             raise TypeError("ERROR: fitModules must be a list of fit modules. If you want to use only one module for everything,"
                             " then set this to a single element list with the desired module.")
         if len(fitguess) == 1:
-            fitguess = [fitguess[0] for _ in range(len(locationsList)+1) ]
+            fitguess = [fitguess[0] for _ in range(numAtoms+1) ]
         if len(getFitterArgs) == 1:
-            getFitterArgs = [getFitterArgs[0] for _ in range(len(locationsList)+1) ]
-        if len(fitModules) != len(locationsList)+1:
-            raise ValueError("ERROR: length of fitmodules should be" + str(len(locationsList)+1) + "(Includes avg fit)")
-        for i, (loc, module) in enumerate(zip(locationsList, fitModules)):
+            getFitterArgs = [getFitterArgs[0] for _ in range(numAtoms+1) ]
+        if len(fitModules) != numAtoms+1:
+            raise ValueError("ERROR: length of fitmodules should be" + str(numAtoms+1) + "(Includes avg fit)")
+        for i, (loc, module) in enumerate(zip(analysisOpts.initLocs(), fitModules)):
             fits[i], _ = ah.fitWithModule(module, key, tferAtomsVarAvg[i], guess=fitguess[i], getF_args=getFitterArgs[i])
-        avgFit, _ = ah.fitWithModule(fitModules[-1], key, avgtferData, guess=fitguess[-1], getF_args=getFitterArgs[-1])
-    return fits, avgFit
+        avgFit, _ = ah.fitWithModule(fitModules[-1], key, avgTferData, guess=fitguess[-1], getF_args=getFitterArgs[-1])
+    return fits, avgFit, fitModules
 
-def getTransferAvgs(tferAtomsVarAvg, tferAtomsVarErrs, atomLocs1, repetitions, tferList, initAtoms, tferAtoms, initPopulation, getGenerationStats, genAvgs, genErrs):
-    for i in range(len(atomLocs1)):
-        tferList[i] = getTransferEvents(initAtoms[i], tferAtoms[i])
-        tferAtomsVarAvg[i], tferAtomsVarErrs[i], initPopulation[i] = getTransferStats(tferList[i], repetitions)
-        if getGenerationStats:
-            genList = getGenerationEvents(initAtoms[i], tferAtoms[i])
-            genAvgs[i], genErrs[i] = getGenStatistics(genList, repetitions)
-        else:
-            genAvgs[i], genErrs[i] = [None, None]
-
+def getTransferAvgs(analysisOpts, repetitions, initAtoms, tferAtoms, getGenerationStats):
+    genAvgs, genErrs, initPopulation, tferList, tferAtomsVarAvg, tferAtomsVarErrs = [[[None for _ in initAtoms] for _ in range(len(analysisOpts.initLocs()))] for _ in range(6)]
+    for atomInc in range(len(analysisOpts.initLocs())):
+        for varInc in range(len(initAtoms)):
+            tferList[atomInc][varInc] = getTransferEvents(initAtoms[varInc][atomInc], tferAtoms[varInc][atomInc])
+            tferAtomsVarAvg[atomInc][varInc], tferAtomsVarErrs[atomInc][varInc], initPopulation[atomInc][varInc] = getTransferStats(tferList[atomInc][varInc], repetitions)
+            if getGenerationStats:
+                genList = getGenerationEvents(initAtoms[atomInc][varInc], tferAtoms[atomInc][varInc])
+                genAvgs[atomInc][varInc], genErrs[atomInc][varInc] = getGenStatistics(genList, repetitions)
+            else:
+                genAvgs, genErrs = [None, None]
     # an atom average. The answer to the question: if you picked a random atom for a given variation, 
     # what's the mean [mean value] that you would find (averaging over the atoms), and what is the error on that mean?
     # weight the sum with initial percentage
     avgTferData = np.mean(tferAtomsVarAvg, 0)
-    avgTferErr = np.sqrt(np.sum(np.array(tferAtomsVarErrs)**2,0)/len(atomLocs1))
+    avgTferErr = np.sqrt(np.sum(np.array(tferAtomsVarErrs)**2,0) / len(analysisOpts.initLocs()))
     ### ###
     # averaged over all events, summed over all atoms. this data has very small error bars
     # becaues of the factor of 100 in the number of atoms.
     tferVarAvg, tferVarErr = [[],[]]
-    tferVarList = [ah.groupEventsIntoVariations(atomsList, repetitions) for atomsList in tferList]
-    allAtomsListByVar = [[z for atomList in tferVarList for z in atomList[i]] for i in range(len(tferVarList[0]))]
+    #tferVarList = [ah.groupEventsIntoVariations(atomsList, repetitions) for atomsList in tferList]
+    #allAtomsListByVar = [[z for atomList in tferList for z in atomList[i]] for i in range(len(tferList[0]))]
+    allAtomsListByVar = [[] for _ in tferList[0]]
+    for atomInc, atomList in enumerate(tferList):
+        for varInc, varList in enumerate(atomList):
+            for dp in varList:
+                if dp != -1:
+                    allAtomsListByVar[varInc].append(dp)    
     for varData in allAtomsListByVar:
         p = np.mean(varData)
         tferVarAvg.append(p)
         tferVarErr.append(ah.jeffreyInterval(p, len(np.array(varData).flatten())))
-    return avgTferData, avgTferErr, tferVarAvg, tferVarErr, genAvgs, genErrs
+    return avgTferData, avgTferErr, tferVarAvg, tferVarErr, genAvgs, genErrs, tferAtomsVarAvg, tferAtomsVarErrs, initPopulation
 
-def standardTransferAnalysis( fileNumber, atomLocs1, atomLocs2, picsPerRep=2, thresholdOptions=None,
-                              fitModules=[None], histSecondPeakGuess=None, varyingDim=None,
-                              subtractEdgeCounts=True, initPic=0, tferPic=1, postSelectionCondition=None,
-                              postSelectionConnected=False, getGenerationStats=False, rerng=False, tt=None,
-                              rigorousThresholdFinding=True, tferThresholdSame=True, fitguess=[None], 
-                              forceAnnotation=True, indvVariationThresholds=False, getFitterArgs=[None], 
-                              **organizerArgs ):
+
+def standardTransferAnalysis( fileNumber, analysisOpts, picsPerRep=2, fitModules=[None], varyingDim=None, getGenerationStats=False, 
+                              fitguess=[None], forceAnnotation=True, tOptions=[to.ThresholdOptions()], getFitterArgs=[None], **organizerArgs ):
     """
     "Survival" is a special case of transfer where the initial location and the transfer location are the same location.
     """
-    if rerng:
-        initPic, tferPic, picsPerRep = 1, 2, 3
-    ( rawData, groupedData, atomLocs1, atomLocs2, keyName, repetitions, key, numOfPictures, avgPics, 
-     basicInfoStr ) = organizeTransferData( fileNumber, atomLocs1, atomLocs2,  picsPerRep=picsPerRep, varyingDim=varyingDim,
-                                            initPic=initPic, tferPic=tferPic, **organizerArgs )
-    
-    res = getTransferThresholds( atomLocs1, atomLocs2, rawData, groupedData, thresholdOptions, indvVariationThresholds, picsPerRep, initPic, tferPic,
-                                 subtractEdgeCounts, rigorousThresholdFinding, tferThresholdSame )
+    assert(type(analysisOpts) == ao.AnalysisOptions)
+    ( rawData, groupedData, keyName, repetitions, key, numOfPictures, avgPics, 
+      basicInfoStr, analysisOpts ) = organizeTransferData( fileNumber, analysisOpts, picsPerRep=picsPerRep, varyingDim=varyingDim, **organizerArgs )
+    res = getTransferThresholds( analysisOpts, rawData, groupedData, picsPerRep, tOptions )
     borders_init, borders_tfer, initThresholds, tferThresholds = res
-    res = determineTransferAtomPrescence( atomLocs1, atomLocs2, groupedData, initPic, tferPic, picsPerRep, borders_init, borders_tfer, initThresholds, tferThresholds)
-    initAtoms, tferAtoms, tferList, tferAtomsVarAvg, tferAtomsVarErrs, initPopulation, genAvgs, genErrs, initPicCounts, tferPicCounts = res
-    initAtomImages, tferAtomImages = getTransferAtomImages( atomLocs1, atomLocs2, rawData, numOfPictures, picsPerRep, initPic,
-                                                            tferPic, initAtoms, tferAtoms )
-    initAtoms, tferAtoms, ensembleHits = ah.postSelectOnAssembly( initAtoms, tferAtoms, postSelectionCondition, connected=postSelectionConnected )
-    res = getTransferAvgs(tferAtomsVarAvg, tferAtomsVarErrs, atomLocs1, repetitions, tferList, 
-                          initAtoms, tferAtoms, initPopulation, getGenerationStats, genAvgs, genErrs)
-    avgTferData, avgTferErr, tferVarAvg, tferVarErr, genAvgs, genErrs = res
-    fits, avgFit = handleTransferFits(atomLocs1, fitModules, key, avgTferData, fitguess, getFitterArgs)    
-    return (atomLocs1, atomLocs2, tferAtomsVarAvg, tferAtomsVarErrs, initPopulation, initPicCounts, keyName, key, repetitions, initThresholds, 
-            fits, avgTferData, avgTferErr, avgFit, avgPics, None, atomLocs1, genAvgs, genErrs, tt, tferVarAvg, tferVarErr, initAtomImages, 
-            tferAtomImages, tferPicCounts, tferThresholds, fitModules, tferThresholdSame, basicInfoStr, ensembleHits)
+    
+    res = determineTransferAtomPrescence( analysisOpts, groupedData, picsPerRep, borders_init, borders_tfer, initThresholds, tferThresholds)
+    initAtoms, tferAtoms, initPicCounts, tferPicCounts = res
+    
+    initAtomImages, tferAtomImages = getTransferAtomImages( analysisOpts, groupedData, numOfPictures, picsPerRep, initAtoms, tferAtoms )    
+    ensembleHits = [None for _ in initAtoms]
+    for varInc in range(len(initAtoms)):
+        initAtoms[varInc], tferAtoms[varInc], ensembleHits[varInc] = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], analysisOpts )
+    
+    res = getTransferAvgs(analysisOpts, repetitions, initAtoms, tferAtoms, getGenerationStats)
+    avgTferData, avgTferErr, tferVarAvg, tferVarErr, genAvgs, genErrs, tferAtomsVarAvg, tferAtomsVarErrs, initPopulation = res
+    fits, avgFit, fitModules = handleTransferFits( analysisOpts, fitModules, key, avgTferData, fitguess, getFitterArgs, tferAtomsVarAvg )
+    
+    return (tferAtomsVarAvg, tferAtomsVarErrs, initPopulation, initPicCounts, keyName, key, repetitions, initThresholds, 
+            fits, avgTferData, avgTferErr, avgFit, avgPics, genAvgs, genErrs, tferVarAvg, tferVarErr, initAtomImages, 
+            tferAtomImages, tferPicCounts, tferThresholds, fitModules, basicInfoStr, ensembleHits, tOptions, analysisOpts)
 

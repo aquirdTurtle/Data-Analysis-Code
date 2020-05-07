@@ -28,9 +28,10 @@ from fitters import ( #cython_poissonian as poissonian,
                       FullBalisticMotExpansion, LargeBeamMotExpansion, exponential_saturation )
 from fitters.Gaussian import double as double_gaussian, gaussian_2d, arb_2d_sum, bump
 
-import dataclasses as dc
 import MainAnalysis as ma
 
+import AtomThreshold
+import ThresholdOptions
 import ExpFile as exp
 from ExpFile import ExpFile, dataAddress
 from TimeTracker import TimeTracker
@@ -46,6 +47,7 @@ from numpy import array as arr
 import matplotlib as mpl
 import matplotlib.cm
 from IPython.display import Image, HTML, display
+import PictureWindow as pw
 
 def windowImage(image, window):
     return image[window[0]:window[1], window[2]:window[3]]
@@ -186,10 +188,10 @@ def temperatureAnalysis( data, magnification, **standardImagesArgs ):
     times = key / 1000
     temp, fitVals, fitCov = newCalcMotTemperature(times, waists / 2)
     temp_1D, fitVals_1D, fitCov_1D = newCalcMotTemperature(times, waists_1D / 2)
-    return (temp, fitVals, fitCov, times, waists, rawData, pictureFitParams, key, plottedData, dataMinusBg, v_params, v_errs, h_params, h_errs,
-            waists_1D, temp_1D, fitVals_1D, fitCov_1D)
+    return ( temp, fitVals, fitCov, times, waists, rawData, pictureFitParams, key, plottedData, dataMinusBg, v_params, v_errs, h_params, h_errs,
+             waists_1D, temp_1D, fitVals_1D, fitCov_1D )
 
-def motFillAnalysis( dataSetNumber, motKey, exposureTime, window=(0,0,0,0), sidemotPower=2.05, diagonalPower=8, motRadius=8 * 8e-6,
+def motFillAnalysis( dataSetNumber, motKey, exposureTime, window=pw.PictureWindow(), sidemotPower=2.05, diagonalPower=8, motRadius=8 * 8e-6,
                      imagingLoss=0.8, detuning=10e6, **standardImagesArgs ):
     res = ma.standardImages(dataSetNumber, key=motKey, scanType="time (s)", window=window, quiet=True, **standardImagesArgs)
     motKey, rawData = res[0], res[1]
@@ -1013,6 +1015,7 @@ def getFitsDataFrame(fits, fitModules, avgFit):
     uniqueModules = set(fitModules)
     fitDataFrames = [pd.DataFrame() for _ in uniqueModules]
     for moduleNum, fitModule in enumerate(uniqueModules):
+        # for each column in dataframe.
         for argnum, arg in enumerate(fitModule.args()):
             vals = []
             for fitData, mod in zip(fits, fitModules):
@@ -1025,16 +1028,16 @@ def getFitsDataFrame(fits, fitModules, avgFit):
                         errs.append(fitData['errs'][argnum])
                     else:
                         errs.append(0)
-            meanVal = np.mean(vals)
-            stdVal = np.std(vals)
-            vals.append(meanVal)
-            vals.append(stdVal)
+            vals.append(np.mean(vals))
+            vals.append(np.median(vals))
+            vals.append(np.std(vals))            
+        
             if fitModule == fitModules[-1]:
                 vals.append(avgFit['vals'][argnum])
-            meanErr = np.mean(errs)
-            stdErr = np.std(errs)
-            errs.append(meanErr)
-            errs.append(stdErr)
+            errs.append(np.mean(errs))
+            errs.append(np.median(errs))
+            errs.append(np.std(errs))
+
             if fitModule == fitModules[-1]:
                 if avgFit['errs'] is not None:
                     errs.append(avgFit['errs'][argnum])
@@ -1042,49 +1045,38 @@ def getFitsDataFrame(fits, fitModules, avgFit):
                     errs.append(0)
             fitDataFrames[moduleNum][arg] = vals
             fitDataFrames[moduleNum][arg + '-Err'] = errs
-            indexStr = []
-            for i in range(len(fits)):
-                if fitModules[i] is fitModule:
-                    indexStr.append('fit ' +str(i))
-                    #= ['fit ' + str(i) if fitModules[i] is fitModule for i in range(len(fits))]
-            indexStr.append('Avg Val')
-            indexStr.append('Std Val')
-            if fitModule == fitModules[-1]:
-                indexStr.append('Fit of Avg')
-            fitDataFrames[moduleNum].index = indexStr
+            
+            
+            
+        
+        characters = []
+        for fitData, mod in zip(fits, fitModules):
+            if mod is fitModule:
+                characters.append(fitModule.fitCharacter(fitData['vals']))
+        characters.append(np.mean(characters))
+        characters.append(np.median(characters))
+        characters.append(np.std(characters))
+        if fitModule == fitModules[-1]:
+            characters.append(fitModule.fitCharacter(avgFit['vals']))
+        fitDataFrames[moduleNum][fitModule.getFitCharacterString()] = characters
+        
+        
+        indexStrs = []
+        for i in range(len(fits)):
+            if fitModules[i] is fitModule:
+                indexStrs.append('fit ' +str(i))
+        indexStrs.append('Mean Val')
+        indexStrs.append('Median Val')
+        indexStrs.append('Std Val')
+        if fitModule == fitModules[-1]:
+            indexStrs.append('Fit of Avg')
+        fitDataFrames[moduleNum].index = indexStrs
+        #disp.display(disp.Markdown(fitModules[-1].getFitCharacterString() + ': ' + misc.round_sig_str(fitModules[-1].fitCharacter(avgFit['vals']))))
     return fitDataFrames
 
-@dc.dataclass
-class AtomThreshold:
-    """
-    A structure that holds all of the info relevant for determining thresholds.
-    """
-    # the actual threshold
-    t:float = 0
-    fidelity:float = 0
-    binCenters:tuple = ()
-    binHeights:tuple = ()
-    fitVals:tuple = ()
-    rmsResidual:float = 0
-    rawData:tuple = ()
-    def binWidth(self):
-        return self.binCenters[1] - self.binCenters[0]
-    def binEdges(self):
-        # for step style plotting
-        return arr([self.binCenters[0] - self.binWidth()] + list(self.binCenters) + [self.binCenters[-1] + self.binWidth()]) + self.binWidth()/2
-    def binEdgeHeights(self):
-        return arr([0] + list(self.binHeights) + [0])
-    def __copy__(self):
-        return type(self)(t=self.t, fidelity=self.fidelity, binCenters=self.binCenters, binHeights=self.binHeights, 
-                          fitVals=self.fitVals, rmsResidual=self.rmsResidual, rawData=self.rawData)
-    def __str__(self):
-        return '[AtomThrehsold with t='+str(self.t) + ', fid=' + str(self.fidelity) + ']'
-    def __repr__(self):
-        return self.__str__()
-
     
-def getThresholds( picData, binWidth, manThreshold, rigorous=True ):
-    t = AtomThreshold()
+def getThresholds( picData, binWidth, tOptions=ThresholdOptions.ThresholdOptions()):#manThreshold, rigorous=True ):
+    t = AtomThreshold.AtomThreshold()
     t.rawData = picData
     t.binCenters, t.binHeights = getBinData( binWidth, t.rawData )
     # inner outwards
@@ -1093,13 +1085,13 @@ def getThresholds( picData, binWidth, manThreshold, rigorous=True ):
     # binGuessIteration = list(bins[len(bins)//2:])
     gWidth = 25
     ampFac = 0.35
-    if manThreshold is None:
+    if not tOptions.manualThreshold:
         guess1, guess2 = guessGaussianPeaks( t.binCenters, t.binHeights )
         guess = arr([max(t.binHeights), guess1, gWidth, max(t.binHeights)*ampFac, guess2, gWidth])
         t.fitVals = fitDoubleGaussian(t.binCenters, t.binHeights, guess, quiet=True)
         t.t, t.fidelity = calculateAtomThreshold(t.fitVals)
         t.rmsResidual = getNormalizedRmsDeviationOfResiduals(t.binCenters, t.binHeights, double_gaussian.f, t.fitVals)
-        if rigorous:
+        if tOptions.rigorousThresholdFinding:
             for r in range(len(binGuessIteration)):
                 if  t.fidelity - t.rmsResidual*0.05 > 0.97:
                     break
@@ -1114,11 +1106,11 @@ def getThresholds( picData, binWidth, manThreshold, rigorous=True ):
                     t.t, t.fitVals, t.fidelity, t.rmsResidual = t2.t, t2.fitVals, t2.fidelity, t2.rmsResidual
                 else:
                     pass
-    elif manThreshold=='auto':
+    elif tOptions.autoHardThreshold:
         t.fitVals = None
         t.t, t.fidelity = ((max(t.rawData) + min(t.rawData))/2.0, 0) 
         t.rmsResidual=0
-    elif manThreshold=='auto_guess':
+    elif tOptions.autoThresholdFittingGuess:
         guess = arr([max(t.binHeights), (max(t.rawData) + min(t.rawData))/4.0, gWidth,
                      max(t.binHeights)*0.5, 3*(max(t.rawData) + min(t.rawData))/4.0, gWidth])
         t.fitVals = fitDoubleGaussian(t.binCenters, t.binHeights, guess, quiet=False)
@@ -1126,7 +1118,7 @@ def getThresholds( picData, binWidth, manThreshold, rigorous=True ):
         t.rmsResidual = getNormalizedRmsDeviationOfResiduals(t.binCenters, t.binHeights, double_gaussian.f, t.fitVals)
     else:
         t.fitVals = None
-        t.t, t.fidelity = (manThreshold, 0)
+        t.t, t.fidelity = (tOptions.manualThresholdValue, 0)
         t.rmsResidual=0
     
     return t
@@ -1195,20 +1187,33 @@ def getMaxFidelityThreshold(fitVals):
     fidelity = getFidelity(threshold, fitVals)
     return threshold, fidelity
 
-def postSelectOnAssembly(pic1AtomData, pic2AtomData, postSelectionCondition, connected=False):
-    if postSelectionCondition is None:
+def postSelectOnAssembly( pic1AtomData, pic2AtomData, analysisOpts ):
+    if analysisOpts.postSelectionConditions is None:
         return pic1AtomData, pic2AtomData, None
-    # see getEnsembleHits for more discussion on how the post-selection is working here. 
-    ensembleHits = getEnsembleHits(pic1AtomData, postSelectionCondition, requireConsecutive=connected)
-    # ps for post-selected
-    psPic1AtomData, psPic2AtomData = [[[] for _ in pic1AtomData] for _ in range(2)]
-    for i, hit in enumerate(ensembleHits):
-        if hit:
-            for atom1, orig1, atom2, orig2 in zip(psPic1AtomData, pic1AtomData, psPic2AtomData, pic2AtomData):
-                atom1.append(orig1[i])
-                atom2.append(orig2[i])
-            # else nothing!
-    print('Post-Selecting on assembly condition:', postSelectionCondition, '. Number of hits:', len(psPic1AtomData[0]))
+    if len(np.array(analysisOpts.postSelectionConditions).shape) == 2:
+        # ps for post-selected
+        psPic1AtomData, psPic2AtomData = [[[[] for _ in pic1AtomData] for atom in analysisOpts.postSelectionConditions]for _ in range(2)]
+        for atomInc, psCondition in enumerate(analysisOpts.postSelectionConditions):
+            # see getEnsembleHits for more discussion on how the post-selection is working here. 
+            ensembleHits = getEnsembleHits(pic1AtomData, psCondition, requireConsecutive=analysisOpts.postSelectionConnected)    
+            for i, hit in enumerate(ensembleHits):
+                if hit:
+                    for atom1, orig1, atom2, orig2 in zip(psPic1AtomData[atomInc], pic1AtomData, 
+                                                          psPic2AtomData[atomInc], pic2AtomData):
+                        atom1.append(orig1[i])
+                        atom2.append(orig2[i])
+                    # else nothing!
+    else:
+        # see getEnsembleHits for more discussion on how the post-selection is working here. 
+        ensembleHits = getEnsembleHits(pic1AtomData, analysisOpts.postSelectionConditions, requireConsecutive=analysisOpts.postSelectionConnected)
+        # ps for post-selected
+        psPic1AtomData, psPic2AtomData = [[[] for _ in pic1AtomData] for _ in range(2)]
+        for i, hit in enumerate(ensembleHits):
+            if hit:
+                for atom1, orig1, atom2, orig2 in zip(psPic1AtomData, pic1AtomData, psPic2AtomData, pic2AtomData):
+                    atom1.append(orig1[i])
+                    atom2.append(orig2[i])
+                # else nothing!
     return psPic1AtomData, psPic2AtomData, ensembleHits
 
 def getAvgBorderCount(data, p, ppe):
@@ -1474,7 +1479,7 @@ def processSingleImage(rawData, bg, window, xMin, xMax, yMin, yMax, accumulation
         normData -= cornerAvg
     return normData, dataMinusBg, xPts, yPts
 
-def processImageData(key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulations, dataRange, zeroCorners,
+def processImageData(key, rawData, bg, window, accumulations, dataRange, zeroCorners,
                      smartWindow, manuallyAccumulate=False):
     """
     Process the orignal data, giving back data that has been ordered and windowed as well as two other versions that
@@ -1503,20 +1508,7 @@ def processImageData(key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulat
         xMax += 0.2 * xRange
         yMin -= 0.2 * yRange
         yMax += 0.2 * yRange
-    elif window != (0, 0, 0, 0):
-        xMin = window[0]
-        xMax = window[1]
-        yMin = window[2]
-        yMax = window[3]
-    else:
-        if xMax == 0:
-            xMax = len(rawData[0][0])
-        if yMax == 0:
-            yMax = len(rawData[0])
-        if xMax < 0:
-            xMax = 0
-        if yMax < 0:
-            yMax = 0
+        window = pw.PictureWindow( xMin, xMax, yMin, yMax )
     if manuallyAccumulate:
         # ignore shape[1], which is the number of pics in each variation. These are what are getting averaged.
         avgPics = np.zeros((int(rawData.shape[0] / accumulations), rawData.shape[1], rawData.shape[2]))
@@ -1535,7 +1527,7 @@ def processImageData(key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulat
     rawData, key, _ = orderData(rawData, key)
 
     # window images.
-    rawData = np.copy(arr(rawData[:, yMin:yMax, xMin:xMax]))
+    rawData = np.array([window.window(pic) for pic in rawData])
     # pull out the images to be used for analysis.
     if not dataRange == (0, 0):
         rawData = rawData[dataRange[0]:dataRange[-1]]
@@ -1546,20 +1538,12 @@ def processImageData(key, rawData, bg, window, xMin, xMax, yMin, yMax, accumulat
     # ### -Background Analysis
     # if user just entered a number, assume that it's a file number.
     if type(bg) == int and not bg == 0:
-        bg = loadFits(bg)
-        if manuallyAccumulate:
-            avgPics = np.zeros((bg.shape[1], bg.shape[2]))
-            count = 0
-            for pic in bg:
-                avgPics += pic
-                count += 1
-            bg = avgPics
-
-        bg /= accumulations
+        with exp.ExpFile() as fid:
+            fid.open_hdf5(bg)
+            bg = np.mean(fid.get_basler_pics(),0)
     # window the background
     if not bg.size == 1:
-        bg = np.copy(arr(bg[yMin:yMax, xMin:xMax]))
-
+        bg = np.array(window.window(bg))
     dataMinusBg = np.copy(normData)
     for pic in dataMinusBg:
         pic -= bg

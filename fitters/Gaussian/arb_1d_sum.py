@@ -27,6 +27,7 @@ def f_raw(xpts, offset, *params):
     :return:
     """
     if len(params) % 3 != 0:
+        print(len(params), params)
         raise ValueError("Error: invlaid number of arguments passed to arb 2d gaussian sum. must be multiple of 5.")
     gaussParams = np.reshape(params, (int(len(params)/3), 3))
     res = 0
@@ -42,7 +43,7 @@ def f_unc(xpts, offset, *params):
     :return:
     """
     if len(params) % 3 != 0:
-        raise ValueError("Error: invlaid number of arguments passed to arb 2d gaussian sum. must be multiple of 5.")
+        raise ValueError("Error: invlaid number of arguments passed to arb 1d gaussian sum! Number was " + str(len(params)) + ", but must be multiple of 3.")
     gaussParams = np.reshape(params, (int(len(params)/3), 3))
     res = 0
     for p in gaussParams:
