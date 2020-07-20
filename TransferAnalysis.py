@@ -8,7 +8,7 @@ import AnalysisOptions as ao
 
 def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWindow(), dataRange=None, keyOffset=0, 
                           dimSlice=None, varyingDim=None, groupData=False, quiet=False, picsPerRep=2, repRange=None, 
-                          keyConversion=None, softwareBinning=None, removePics=None, expFile_version=3):
+                          keyConversion=None, softwareBinning=None, removePics=None, expFile_version=4):
     """
     Unpack inputs, properly shape the key, picture array, and run some initial checks on the consistency of the settings.
     """

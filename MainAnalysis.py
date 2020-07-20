@@ -24,9 +24,7 @@ def standardImages( data,
                     reps=1, key=arr([]), zeroCorners=False, dataRange=(0, 0), manualAccumulation=False,
                     # Local Data Manipulation Options
                     plottedData=None, bg=arr([0]), location=(-1, -1), fitBeamWaist=False, fitPics=False,
-                    cameraType='dataray', fitWidthGuess=80, quiet=False, avgFits=False, lastDataIsBackground=False ):
-    """
-    """
+                    cameraType='dataray', fitWidthGuess=80, quiet=False, avgFits=False, lastDataIsBackground=False, expFileV=None ):
     if plottedData is None:
         plottedData = ["raw"]
     # Check for incompatible parameters.
@@ -46,7 +44,7 @@ def standardImages( data,
     if type(data) == int or (type(data) == np.array and type(data[0]) == int):
         # a file index. 
         if loadType == 'andor':
-            with exp.ExpFile() as f:
+            with exp.ExpFile(expFile_version=expFileV) as f:
                 f.open_hdf5(data,True)
                 rawData = f.get_pics()
                 reps = f.get_reps()
@@ -56,7 +54,7 @@ def standardImages( data,
             # read old data format from standalone basler programs.
             rawData = loadCompoundBasler(data, loadType)
         elif loadType == 'basler':
-            with exp.ExpFile() as f:
+            with exp.ExpFile(expFile_version=expFileV) as f:
                 print('Opening Basler Images.')
                 f.open_hdf5(data,True)
                 rawData = f.get_basler_pics()
@@ -71,7 +69,7 @@ def standardImages( data,
             raise ValueError('Bad value for LoadType.')
     elif type(data) == type('a string'):
         # assume a file address for an HDF5 file.
-        with exp.ExpFile() as f:
+        with exp.ExpFile(expFile_version=expFileV) as f:
             f.open_hdf5(data,True)
             if loadType == 'andor':
                 rawData = f.get_pics()

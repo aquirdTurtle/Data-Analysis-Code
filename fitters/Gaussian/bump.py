@@ -7,6 +7,8 @@ from fitters.Gaussian import gaussian
 def fitCharacter(args):
     return args[1]
 
+def fitCharacterErr(args, errs):
+    return errs[1]
 
 def getFitCharacterString():
     return "Fit-Center"

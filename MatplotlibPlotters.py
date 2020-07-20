@@ -304,7 +304,7 @@ def plotMotTemperature(data, key=None, magnification=3, showAllPics=True, **stan
     print("\nTemperture in the Large Laser Beam Approximation (2D Fits):", misc.errString(temp * 1e6, errs[2]*1e6),    'uK')
     print("\nTemperture in the Large Laser Beam Approximation (1D Fits):", misc.errString(temp_1D * 1e6, errs_1D[2]*1e6), 'uK')
     print('Fit-Parameters:', fitVals)
-    return pictureFitParams,rawData
+    return pictureFitParams, rawData, temp * 1e6, errs[2]*1e6
     
     
 def plotMotNumberAnalysis(data, motKey, exposureTime,  *fillAnalysisArgs):
@@ -328,7 +328,7 @@ def plotMotNumberAnalysis(data, motKey, exposureTime,  *fillAnalysisArgs):
     :param imagingLoss: the loss in the imaging path due to filtering, imperfect reflections, etc.
     :param detuning: detuning of the mot beams during the imaging.
     """
-    rawData, intRawData, motnumber, fitParams, fluorescence, motKey = ah.motFillAnalysis(data, motKey, exposureTime, loadType='basler', *fillAnalysisArgs)
+    rawData, intRawData, motnumber, fitParams, fluorescence, motKey, fitErr = ah.motFillAnalysis(data, motKey, exposureTime, loadType='basler', *fillAnalysisArgs)
     fig = plt.figure(figsize=(20,5))
     ax1 = subplot2grid((1, 4), (0, 0), colspan=3)
     ax2 = subplot2grid((1, 4), (0, 3), colspan=1)
@@ -343,7 +343,7 @@ def plotMotNumberAnalysis(data, motKey, exposureTime,  *fillAnalysisArgs):
     print("integrated saturated counts subtracting background =", -fitParams[0])
     print("loading time 1/e =", fitParams[1], "s")
     print('Light Scattered off of full MOT:', fluorescence * mc.h * mc.Rb87_D2LineFrequency * 1e9, "nW")
-    return motnumber, rawData[-1]
+    return motnumber, fitParams[1], rawData[-1], fitErr[1]
 
 
 def singleImage(data, accumulations=1, loadType='andor', bg=arr([0]), title='Single Picture', window=(0, 0, 0, 0),
@@ -405,7 +405,7 @@ def Survival(fileNumber, atomLocs, **TransferArgs):
 def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules=[None], 
               showFitDetails=False, showFitCharacterPlot=False, showImagePlots=None, plotIndvHists=False, 
               timeit=False, outputThresholds=False, plotFitGuess=False, newAnnotation=False, 
-              indvVariationThresholds=False, plotImagingSignal=False, expFile_version=3, plotAvg=True, 
+              indvVariationThresholds=False, plotImagingSignal=False, expFile_version=4, plotAvg=True, 
               flattenKeyDim=None, forceNoAnnotation=False, **standardTransferArgs ):
     """
     Standard data analysis function for looking at survival rates throughout an experiment. I'm very bad at keeping the 
@@ -683,9 +683,21 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
     #avgPlt1.set_position([0.58,0,0.3,0.3])
     #avgPlt2.set_position([0.73,0,0.3,0.3])
     
-    
     if (newAnnotation or not exp.checkAnnotation(fileNumber, force=False, quiet=True, expFile_version=expFile_version)) and not forceNoAnnotation :
         disp.display(fig)
+        if fitModules[-1] is not None:
+            print("Avg Fit R-Squared: " + misc.round_sig_str(avgFit["R-Squared"]))
+            fitInfoString = ""
+            for label, fitVal, err in zip(fitModules[-1].args(), avgFit['vals'], avgFit['errs']):
+                fitInfoString += label+': '+errString(fitVal, err) + "<br>  "
+            fitInfoString += (fitModules[-1].getFitCharacterString() + ': ' 
+                                       + misc.errString(fitModules[-1].fitCharacter(avgFit['vals']), 
+                                                        fitModules[-1].fitCharacterErr(avgFit['vals'], avgFit['errs'])))
+            disp.display(disp.Markdown(fitInfoString))
+            if showFitDetails:
+                for f in getFitsDataFrame(fits, fitModules, avgFit):
+                    display(f)
+
         exp.annotate(fileNumber,expFile_version)
     if not forceNoAnnotation:
         rawTitle, _, lev = exp.getAnnotation(fileNumber,expFile_version=expFile_version)
@@ -698,9 +710,14 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
         fid.get_basic_info()
     
     if fitModules[-1] is not None:
+        print("Avg Fit R-Squared: " + misc.round_sig_str(avgFit["R-Squared"]))
+        fitInfoString = ""
         for label, fitVal, err in zip(fitModules[-1].args(), avgFit['vals'], avgFit['errs']):
-            disp.display(disp.Markdown( label+': '+errString(fitVal, err) ))
-        disp.display(disp.Markdown(fitModules[-1].getFitCharacterString() + ': ' + misc.round_sig_str(fitModules[-1].fitCharacter(avgFit['vals']))))
+            fitInfoString += label+': '+errString(fitVal, err) + "<br>  "
+        fitInfoString += (fitModules[-1].getFitCharacterString() + ': ' 
+                                   + misc.errString(fitModules[-1].fitCharacter(avgFit['vals']), 
+                                                    fitModules[-1].fitCharacterErr(avgFit['vals'], avgFit['errs'])))
+        disp.display(disp.Markdown(fitInfoString))
         if showFitDetails:
             for f in getFitsDataFrame(fits, fitModules, avgFit):
                 display(f)

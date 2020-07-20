@@ -41,6 +41,16 @@ def fitCharacter(params):
     # return the diff/2
     #return (params[5] + params[2])/2
 
+def fitCharacterErr(params, errs):
+    # sqrt(f_x'^2 sig_x^2 + f_y'^2 sig_y^2)
+    # error in r:
+    # sqrt(1/b^2 sig_r^2 + (-r/b^2)^2 sig_b^2)
+    r = params[4]/params[1]
+    errR = np.sqrt(errs[4]**2/params[1]**2 + errs[1]**2 * (r**2/params[1]**2) )
+    # error in nbar: 
+    # sigma_r*((1-r)+r)/(1-r)**2 = 1/(1-r)**2 sigma_r
+    return errR/(1-r)**2
+    
 def getFitCharacterString():
     return r'$\bar{n}$'
 

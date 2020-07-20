@@ -6,6 +6,8 @@ from fitters.Gaussian import gaussian
 
 def fitCharacter(args):
     return args[1]
+def fitCharacterErr(fitV, fitE):
+    return fitE[1]
 def getFitCharacterString():
     return r'$x_0$'
 

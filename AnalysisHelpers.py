@@ -203,9 +203,10 @@ def motFillAnalysis( dataSetNumber, motKey, exposureTime, window=pw.PictureWindo
         print('MOT # Fit failed!')
         # probably failed because of a bad guess. Show the user the guess fit to help them debug.
         popt = [np.min(intRawData) - np.max(intRawData), 1 / 2, np.max(intRawData)]
+    fitErr = np.sqrt(np.diag(pcov))
     motNum, fluorescence = computeMotNumber(sidemotPower, diagonalPower, motRadius, exposureTime, imagingLoss, -fitParams[0],
-                              detuning=detuning)
-    return rawData, intRawData, motNum, fitParams, fluorescence, motKey
+                                            detuning=detuning)
+    return rawData, intRawData, motNum, fitParams, fluorescence, motKey, fitErr
 
 def getTodaysTemperatureData():
     path = dataAddress + 'Temperature_Data.csv'
@@ -363,7 +364,7 @@ def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias, sign=1, hFreqs=None, vF
         raise ValueError('Lengths of horizontal data dont match')
     if not (len(new_V_Bias) == len(vFreqs) == len(vPhases)):
         raise ValueError('Lengths of vertical data dont match')
-    with open('J:/Code_Files/New-Depth-Evening-Config.txt','w') as file:
+    with open('\\\\jilafile.colorado.edu\\scratch\\regal\\common\\LabData\\Quantum Gas Assembly\\Code_Files\\New-Depth-Evening-Config.txt','w') as file:
         file.write('HORIZONTAL:\n')
         for f, b, p in zip(hFreqs, new_H_Bias, hPhases):
             file.write(str(f) + '\t' + str(b) + '\t' + str(p) + '\n')
@@ -418,7 +419,7 @@ def fitWithModule(module, key, vals, errs=None, guess=None, getF_args=[None]):
     key = arr(key)
     xFit = (np.linspace(min(key), max(key), 1000) if len(key.shape) == 1 else np.linspace(min(misc.transpose(key)[0]),
                                                                                           max(misc.transpose(key)[0]), 1000))
-    fitNom = fitStd = fitValues = fitErrs = fitCovs = fitGuess = None
+    fitNom = fitStd = fitValues = fitErrs = fitCovs = fitGuess = rSq = None
     from numpy.linalg import LinAlgError
     try:
         fitF = module.getF(*getF_args) if hasattr(module, 'getF') else module.f
@@ -436,13 +437,17 @@ def fitWithModule(module, key, vals, errs=None, guess=None, getF_args=[None]):
         fitStd = unp.std_devs(fitUncObject)
         fitFinished = True
         fitGuess = fitF(xFit, *module.guess(key, vals))
+        residuals = vals - fitF(key, *fitValues)
+        ss_res = np.sum(residuals**2)
+        ss_tot = np.sum((vals-np.mean(vals))**2)
+        rSq = 1 - (ss_res / ss_tot)
     except (RuntimeError, LinAlgError, ValueError) as e:
         warn('Data Fit Failed!')
         print(e)
         fitValues = module.guess(key, vals)
         fitNom = fitF(xFit, *fitValues)
         fitFinished = False
-    fitInfo = {'x': xFit, 'nom': fitNom, 'std': fitStd, 'vals': fitValues, 'errs': fitErrs, 'cov': fitCovs, 'guess': fitGuess}
+    fitInfo = {'x': xFit, 'nom': fitNom, 'std': fitStd, 'vals': fitValues, 'errs': fitErrs, 'cov': fitCovs, 'guess': fitGuess, 'R-Squared': rSq}
     return fitInfo, fitFinished
 
 def combineData(data, key):
@@ -928,7 +933,6 @@ def newCalcMotTemperature(times, sigmas):
         warn('Mot Temperature Expansion Fit Failed!')
     return fitVals[2], fitVals, fitCovariances
 
-<<<<<<< HEAD
 
 def calcMotTemperature(times, sigmas):
     # print(sigmas[0])
@@ -954,8 +958,6 @@ def calcMotTemperature(times, sigmas):
     return temperature, tempFromSimple, fitVals, fitCovariances, simpleVals, simpleCovariances
 
 
-=======
->>>>>>> 4b31e1a5f34b949442e207ae8c2e6c25f266b0bb
 def orderData(data, key, keyDim=None, otherDimValues=None):
     """
         return arr(data), arr(key), arr(otherDimValues)
