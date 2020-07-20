@@ -7,8 +7,14 @@ def center():
 
 
 def args():
-    return ["Amplitude", "Decay-Constant", "Offset"]
+    return ["A", r"$\tau$", "Offset"]
 
+
+def fitCharacter(params):
+    return params[1]
+
+def getFitCharacterString():
+    return r'$\tau$'
 
 def f(t, A, tau, offset):
     """

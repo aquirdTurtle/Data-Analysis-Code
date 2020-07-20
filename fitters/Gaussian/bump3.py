@@ -5,10 +5,10 @@ from fitters.Gaussian import arb_1d_sum
 numGauss = 3
 
 def fitCharacter( params ):
-    return (params[2] + params[5] + params[7])/3
-    # for raman spectra, assuming fits are in order from left to right, i.e. first fit is lowest freq
-    #    r = params[7]/params[1]
-    #return r/(1-r) if not (r>=1) else 5
+    #return (params[2] + params[5] + params[7])/3
+    #for raman spectra, assuming fits are in order from left to right, i.e. first fit is lowest freq
+    r = params[7]/params[1]
+    return r/(1-r) if not (r>=1) else 5
 
 def args():
     arglist = ['Offset']
@@ -16,6 +16,9 @@ def args():
         j = i+1
         arglist += ['Amp'+str(j), 'Center'+str(j),'Sigma'+str(j)]
     return arglist
+
+def getFitCharacterString():
+    return r'$\bar{n}$'
 
 
 def f(x, *params):

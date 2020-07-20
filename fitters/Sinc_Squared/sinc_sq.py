@@ -17,6 +17,14 @@ def f(x, A, c, scale, offset):
 #        return x * 10**10
     return f_raw(x, A, c, scale, offset)
 
+def fitCharacter(fitV):
+    return fitV[1]
+
+def fitCharacterErr(fitV, fitE):
+    return fitE[1]
+
+def getFitCharacterString():
+    return "Center"
 
 def args():
     return "Amplitude", "Center", "Width-Scale", "Offset" 

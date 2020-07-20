@@ -4,15 +4,17 @@ from colorama import Fore, Style
 from numpy import array as arr
 import numpy as np
 import Miscellaneous as misc
+import datetime
 dataAddress = None
-currentVersion = 3
+currentVersion = 4
 
 def annotate(fileID=None, expFile_version=currentVersion):
     title = input("Run Title: ")
     hashNum = int(input("Title-Level: "))
-    titleStr = ''.join('#' for _ in range(hashNum)) + ' ' + title
+    #titleStr = ''.join('#' for _ in range(hashNum)) + ' ' + title     
     notes = input("Experiment Notes:")
     with ExpFile(expFile_version=expFile_version) as f:
+        print('annotating file ' + str(fileID));
         f.open_hdf5(fileID, openFlag='a')        
         if 'Experiment_Notes' in f.f['Miscellaneous'].keys():
             del f.f['Miscellaneous']['Experiment_Notes']
@@ -21,15 +23,20 @@ def annotate(fileID=None, expFile_version=currentVersion):
         
         if 'Experiment_Title' in f.f['Miscellaneous'].keys():
             del f.f['Miscellaneous']['Experiment_Title']
-        dset3 = f.f['Miscellaneous'].create_dataset("Experiment_Title", shape=(1,), dtype="S"+str(len(titleStr))) 
-        dset3[0] = np.string_(titleStr)
+        dset3 = f.f['Miscellaneous'].create_dataset("Experiment_Title", shape=(1,), dtype="S"+str(len(title))) 
+        dset3[0] = np.string_(title)
         
+        if 'Experiment_Title_Level' in f.f['Miscellaneous'].keys():
+            del f.f['Miscellaneous']['Experiment_Title_Level']
+        dset4 = f.f['Miscellaneous'].create_dataset("Experiment_Title_Level", shape=(1,), dtype="i8") 
+        dset4[0] = hashNum
 
+        
 def checkAnnotation(fileNum, force=True, quiet=False, expFile_version=currentVersion):
     try:
         with ExpFile(fileNum, expFile_version=expFile_version) as f:
             if (   'Experiment_Notes' not in f.f['Miscellaneous']
-                or 'Experiment_Title'     not in f.f['Miscellaneous']):
+                or 'Experiment_Title' not in f.f['Miscellaneous']):
                 #pass
                 if force:
                     raise RuntimeError('HDF5 File number ' + str(fileNum) + ' Has not been annotated. Please call exp.annotate() to annotate the file.')
@@ -44,16 +51,24 @@ def checkAnnotation(fileNum, force=True, quiet=False, expFile_version=currentVer
         return False
     return True
 
-def getAnnotation(fileNum, expFile_version=currentVersion):
-    with ExpFile(fileNum, expFile_version=expFile_version) as f:
+
+def getAnnotation(fid, expFile_version=currentVersion, useBase=True):
+    with ExpFile() as f:
+        f.open_hdf5(fid, useBase=useBase)
         f_misc = f.f['Miscellaneous']
         if (   'Experiment_Notes' not in f_misc
             or 'Experiment_Title' not in f_misc):
-            raise RuntimeError('HDF5 File number ' + str(fileNum) + ' Has not been annotated. Please call exp.annotate() to annotate the file.')
+            raise RuntimeError('HDF5 File number ' + str(fid) + ' Has not been annotated. Please call exp.annotate() to annotate the file.')
+        if 'Experiment_Title_Level' not in f_misc:
+            expTitleLevel = 0
+        else:
+            expTitleLevel = f_misc['Experiment_Title_Level'][0]
         return (f_misc['Experiment_Title'][0].decode("utf-8"), 
-                f_misc['Experiment_Notes'][0].decode("utf-8"))
+                f_misc['Experiment_Notes'][0].decode("utf-8"),
+                expTitleLevel)
 
-def setPath(day, month, year, repoAddress="J:\\Data repository\\New Data Repository"):
+#"J:\\Data repository\\New Data Repository"
+def setPath(day, month, year, repoAddress="\\\\jilafile.colorado.edu\\scratch\\regal\\common\\LabData\\Quantum Gas Assembly\\Data repository\\New Data Repository"):
     """
     This function sets the location of where all of the data files are stored. It is occasionally called more
     than once in a notebook if the user needs to work past midnight.
@@ -65,6 +80,7 @@ def setPath(day, month, year, repoAddress="J:\\Data repository\\New Data Reposit
     """
     global dataAddress
     dataAddress = repoAddress + "\\" + year + "\\" + month + "\\" + month + " " + day + "\\Raw Data\\"
+    #print("Setting new data address:" + dataAddress)
     return dataAddress
 
 
@@ -81,16 +97,25 @@ def addNote(fileID=None):
             else:
                 noteNum += 1
 
-
+def getStartDatetime(fileID):
+    with ExpFile() as file:
+        file.open_hdf5(fileID)
+        file.exp_start_date, file.exp_start_time, file.exp_stop_date, file.exp_stop_time = file.get_experiment_time_and_date()
+        dt = datetime.datetime.strptime(file.exp_start_date + " " + file.exp_start_time[:-1], '%Y-%m-%d %H:%M:%S')
+    return dt
+                
 # Exp is short for experiment here.
 class ExpFile:
     """
     a wrapper around an hdf5 file for easier handling and management.
     """
-    def __init__(self, file_id=None, expFile_version=3):
+    def __init__(self, file_id=None, expFile_version=currentVersion):
         """
         if you give the constructor a file_id, it will automatically fill the relevant member variables.
         """
+        if expFile_version is None:
+            expFile_version = currentVersion
+        #print('expfile version:', expFile_version)
         # copy the current value of the address
         self.version = expFile_version
         self.f = None
@@ -125,8 +150,7 @@ class ExpFile:
             return
             
     
-    def open_hdf5(self, fileID=None, useBase=False, openFlag='r'):
-        
+    def open_hdf5(self, fileID=None, useBase=True, openFlag='r'):        
         if type(fileID) == int:
             path = self.data_addr + "data_" + str(fileID) + ".h5"
         elif useBase:
@@ -134,7 +158,10 @@ class ExpFile:
             path = self.data_addr + fileID + ".h5"
         else:
             path = fileID
-        file = h5.File(path, openFlag)
+        try:
+            file = h5.File(path, openFlag)            
+        except OSError as err:
+            raise OSError("Failed to open file! file address was \"" + path + "\". OSError: " + str(err))
         self.f = file
         return file
     
@@ -144,7 +171,7 @@ class ExpFile:
         return self.reps
     
     def get_params(self):
-        return self.f['Master-Runtime']['Seq #1 Parameters'] if self.version>=3 else self.f['Master-Parameters']['Seq #1 Variables']
+        return self.f['Master-Runtime']['Parameters'] if self.version >= 4 else (self.f['Master-Runtime']['Seq #1 Parameters'] if self.version>=3 else self.f['Master-Parameters']['Seq #1 Variables'])
     
     def get_key(self):
         """
@@ -156,15 +183,26 @@ class ExpFile:
         foundOne = False
         nokeyreturn = 'No-Variation', arr([1])
         try:
-            for var in self.get_params():
-                if not self.get_params()[var].attrs['Constant']:
-                    foundOne = True
-                    keyNames.append(var)
-                    keyValues.append(arr(self.get_params()[var]))
+            params = self.get_params()
+            for var in params:
+                if self.version >= 4:
+                    if not params[var]['Is Constant'][0]:
+                        foundOne = True
+                        keyNames.append(''.join([char.decode('utf-8') for char in params[var]['Name']]))
+                        keyValues.append(arr(params[var]['Key Values']))
+                else:
+                    if not params[var].attrs['Constant']:
+                        foundOne = True
+                        keyNames.append(var)
+                        keyValues.append(arr(params[var]))
             if foundOne:
                 if len(keyNames) > 1:
                     return keyNames, arr(misc.transpose(arr(keyValues)))
                 else:
+                    #if self.version >= 4:
+                    #    print(keyValues, len(keyValues))
+                    #    return keyNames, arr(keyValues)
+                    #else:
                     return keyNames[0], arr(keyValues[0])
             else:
                 return nokeyreturn

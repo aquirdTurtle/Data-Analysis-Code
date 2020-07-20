@@ -36,21 +36,30 @@ def round_sig_str(x, sig=3):
 
 def fitCharacter(params):
     # for raman spectra, return the nbar, assuming correct orientation of the 2 gaussians
-    #r = params[4]/params[1]
-    #return r/(1-r) if not (r>=1) else 5
-    # return the diff/2
-    return (params[5] + params[2])/2
-
-def getFitCharacterString(params):
     r = params[4]/params[1]
-    return round_sig_str(r/(1-r) if not (r>=1) else 5)
+    return r/(1-r) if not (r>=1) else np.inf
+    # return the diff/2
+    #return (params[5] + params[2])/2
+
+def fitCharacterErr(params, errs):
+    # sqrt(f_x'^2 sig_x^2 + f_y'^2 sig_y^2)
+    # error in r:
+    # sqrt(1/b^2 sig_r^2 + (-r/b^2)^2 sig_b^2)
+    r = params[4]/params[1]
+    errR = np.sqrt(errs[4]**2/params[1]**2 + errs[1]**2 * (r**2/params[1]**2) )
+    # error in nbar: 
+    # sigma_r*((1-r)+r)/(1-r)**2 = 1/(1-r)**2 sigma_r
+    return errR/(1-r)**2
+    
+def getFitCharacterString():
+    return r'$\bar{n}$'
 
 
 def args():
     arglist = ['Offset']
     for i in range(numGauss):
         j = i+1
-        arglist += ['Amp'+str(j), 'Center'+str(j),'Sigma'+str(j)]
+        arglist += [r'$A_'+str(j)+'$', r'$x_'+str(j)+'$',r'$\sigma_'+str(j)+'$']
     return arglist
 
 def f(x, *params):

@@ -27,5 +27,13 @@ def f_interp_Aug_30th_2017(volts):
     freqInterp = interpolate(dac20, beatnoteFreq, k=1);
     return freqInterp(volts)
 
+def f_interp_March_2nd_2020(volts):
+    # based on beatnote data, not just vco output
+    volt  = list(reversed([0.5, 0, -0.5, -1, -1.5, -2, -2.5, -3, -3.5, -4, -4.5, -5, -5.5, -6, -6.5]))
+    freq  = list(reversed([181, 194, 203.7, 213.8, 223.4, 234.15, 243.7, 255.06, 267, 279.55, 291.5, 304.64, 315.39, 327.936, 333.9]))
+    freqInterp = interpolate(volt, freq, k=1);
+    return freqInterp(volts)
+
+
 def f_Aug_17th_2018_With_Offset(volts):
     return -linear.f(volts, -22783561.6206, 138789680.435) - 50e6 + 180e6
