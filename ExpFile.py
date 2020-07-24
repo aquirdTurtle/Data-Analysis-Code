@@ -8,14 +8,14 @@ import datetime
 dataAddress = None
 currentVersion = 4
 
-def annotate(fileID=None, expFile_version=currentVersion):
+def annotate(fileID=None, expFile_version=currentVersion, useBaseA=True):
     title = input("Run Title: ")
     hashNum = int(input("Title-Level: "))
     #titleStr = ''.join('#' for _ in range(hashNum)) + ' ' + title     
     notes = input("Experiment Notes:")
     with ExpFile(expFile_version=expFile_version) as f:
         print('annotating file ' + str(fileID));
-        f.open_hdf5(fileID, openFlag='a')        
+        f.open_hdf5(fileID, openFlag='a', useBase=useBaseA)        
         if 'Experiment_Notes' in f.f['Miscellaneous'].keys():
             del f.f['Miscellaneous']['Experiment_Notes']
         dset2 = f.f['Miscellaneous'].create_dataset("Experiment_Notes", shape=(1,), dtype="S"+str(len(notes))) 
@@ -52,9 +52,9 @@ def checkAnnotation(fileNum, force=True, quiet=False, expFile_version=currentVer
     return True
 
 
-def getAnnotation(fid, expFile_version=currentVersion, useBase=True):
+def getAnnotation(fid, expFile_version=currentVersion, useBaseA=True):
     with ExpFile() as f:
-        f.open_hdf5(fid, useBase=useBase)
+        f.open_hdf5(fid, useBase=useBaseA)
         f_misc = f.f['Miscellaneous']
         if (   'Experiment_Notes' not in f_misc
             or 'Experiment_Title' not in f_misc):
@@ -109,7 +109,7 @@ class ExpFile:
     """
     a wrapper around an hdf5 file for easier handling and management.
     """
-    def __init__(self, file_id=None, expFile_version=currentVersion):
+    def __init__(self, file_id=None, expFile_version=currentVersion, useBaseA=True):
         """
         if you give the constructor a file_id, it will automatically fill the relevant member variables.
         """
@@ -129,7 +129,7 @@ class ExpFile:
         self.exp_stop_date = None
         self.data_addr = dataAddress
         if file_id is not None:
-            self.f = self.open_hdf5(fileID=file_id)
+            self.f = self.open_hdf5(fileID=file_id, useBase=useBaseA)
             if self.version==1:
                 self.key_name, self.key = self.__get_old_key()
             else:
@@ -150,7 +150,8 @@ class ExpFile:
             return
             
     
-    def open_hdf5(self, fileID=None, useBase=True, openFlag='r'):        
+    def open_hdf5(self, fileID=None, useBase=True, openFlag='r'):      
+        print("useBase:", useBase)
         if type(fileID) == int:
             path = self.data_addr + "data_" + str(fileID) + ".h5"
         elif useBase:
