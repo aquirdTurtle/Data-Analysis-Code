@@ -1,7 +1,7 @@
 import time
 from pandas import DataFrame
 import MainAnalysis as ma
-from MainAnalysis import standardPopulationAnalysis, analyzeNiawgWave, standardAssemblyAnalysis, AnalyzeRearrangeMoves
+from MainAnalysis import analyzeNiawgWave, standardAssemblyAnalysis, AnalyzeRearrangeMoves
 import TransferAnalysis
 from numpy import array as arr
 from random import randint
@@ -30,7 +30,8 @@ from fitters.Gaussian import gaussian_2d, double as double_gaussian, bump
 import IPython
 import IPython.display as disp
 import ExpFile as exp
-
+import PopulationAnalysis
+from PopulationAnalysis import standardPopulationAnalysis
 
 def addAxColorbar(fig, ax, im):
     cax = mpl_toolkits.axes_grid1.make_axes_locatable(ax).append_axes('right', size='5%', pad=0.05)
@@ -748,7 +749,7 @@ def Loading(fileNum, atomLocations, **PopulationArgs):
 
 def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=True, plotCounts=False, legendOption=None,
                showImagePlots=True, plotIndvHists=False, showFitDetails=False, showFitCharacterPlot=True, show=True, histMain=False,
-               mainAlpha=0.2, avgColor='w', newAnnotation=False, useBaseA=True, **StandardArgs):
+               mainAlpha=0.2, avgColor='w', newAnnotation=False, expFile_version=4, useBaseA=True, **StandardArgs):
     """
     Standard data analysis package for looking at population %s throughout an experiment.
 
@@ -757,9 +758,10 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     This routine is designed for analyzing experiments with only one picture per cycle. Typically
     These are loading exeriments, for example. There's no survival calculation.
     """
+    #print('thresholdoptions:', thresholdOptions)
     atomLocs_orig = atomLocations
     avgColor='w'
-    res = standardPopulationAnalysis(fileNum, atomLocations, whichPic, picsPerRep, useBaseA=useBaseA, **StandardArgs)
+    res = PopulationAnalysis.standardPopulationAnalysis(fileNum, atomLocations, whichPic, picsPerRep, expFile_version=expFile_version, useBaseA=useBaseA, **StandardArgs)
     (locCounts, thresholds, avgPic, key, allPopsErr, allPops, avgPop, avgPopErr, fits,
      fitModules, keyName, atomData, rawData, atomLocations, avgFits, atomImages,
      totalAvg, totalErr) = res
