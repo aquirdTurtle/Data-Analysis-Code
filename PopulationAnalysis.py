@@ -20,7 +20,7 @@ import sys, os
 # Disable printing 
 def blockPrint():
     sys.stdout = open(os.devnull, 'w')
-    return 
+    return close(os.devnull)
 
 
 def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, analyzeTogether=False, 
