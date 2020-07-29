@@ -151,7 +151,7 @@ class ExpFile:
             
     
     def open_hdf5(self, fileID=None, useBase=True, openFlag='r'):      
-        print("useBase:", useBase)
+        
         if type(fileID) == int:
             path = self.data_addr + "data_" + str(fileID) + ".h5"
         elif useBase:
