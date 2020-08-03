@@ -109,7 +109,10 @@ def guess(key, values):
     return [min(values),
             0.2, -150, 5,
             0.1, 95, 5]
-    
 
+def sbcGuess():
+    return [[0,0.3,-150,10, 0.3, 150, 10]]
+    
+    
 def areas(A1, x01, sig1, A2, x02, sig2):
     return np.array([A1*sig1,A2*sig2])*np.sqrt(2*np.pi)

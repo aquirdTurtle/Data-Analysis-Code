@@ -143,7 +143,6 @@ def standardImages( data,
     intRawData = ah.integrateData(rawData)
     return key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, pictureFitErrors, plottedData, v_params, v_errs, h_params, h_errs, intRawData
 
-
 def analyzeCodeTimingData(num, talk=True, numTimes=3):
     """
     Analyzing code timing data. Data is outputted in the following format:
@@ -176,7 +175,6 @@ def analyzeCodeTimingData(num, talk=True, numTimes=3):
             getStats(totalTime)
             print('\n')
         return allTimes
-
 
 def analyzeNiawgWave(fileIndicator, ftPts=None):
     """
@@ -291,8 +289,6 @@ def analyzeScatterData( fileNumber, atomLocs1, connected=False, loadPic=1, trans
     return key, psSurvivals, psErrors, fitInfo, fitFinished, survivalData, survivalErrs, survivalFits, atomLocs1
 
 
-
-
 def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, analyzeTogether=False, 
                                 thresholdOptions=None, fitModules=[None], keyInput=None, fitIndv=False, subtractEdges=True,
                                 keyConversion=None, quiet=False, dataRange=None, picSlice=None, keyOffset=0, softwareBinning=None,
@@ -312,7 +308,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
     numOfVariations = int(numOfPictures / (repetitions * picsPerRep))
     key = ah.handleKeyModifications(hdf5Key, numOfVariations, keyInput=keyInput, keyOffset=keyOffset, groupData=False, keyConversion=keyConversion )
     # ## Initial Data Analysis
-    # window the images images.
+    # window the images.
     if window is not None:
         xMin, yMin, xMax, yMax = window
     rawData = np.copy(arr(rawData[:, yMin:yMax, xMin:xMax]))
@@ -328,7 +324,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
         rawData = rawData[picSlice[0]:picSlice[1]]
         numOfPictures = rawData.shape[0]
         numOfVariations = int(numOfPictures / (repetitions * picsPerRep))
-    print(rawData.shape[0], numOfPictures, numOfVariations,'hi')
+    #print(rawData.shape[0], numOfPictures, numOfVariations,'hi')
     #groupedData, key, _ = orderData(groupedData, key)
     avgPopulation, avgPopulationErr, popFits = [[[] for _ in range(len(atomLocations))] for _ in range(3)]
     allPopulation, allPopulationErr = [[[]] * len(groupedData) for _ in range(2)]

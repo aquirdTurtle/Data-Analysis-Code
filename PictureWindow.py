@@ -7,9 +7,9 @@ class PictureWindow:
     """
     # the actual threshold
     xmin:int = 0
-    xmax:int = -1
+    xmax:int = None
     ymin:int = 0
-    ymax:int = -1
+    ymax:int = None
     def __str__(self):
         return ('[Picture window with xmin: ' + str(self.xmin) + ', xmax:'+str(self.xmax)
                 +', ymin:'+str(self.ymin)+', ymax:'+str(self.ymax)) + ']'

@@ -83,3 +83,6 @@ def guess(key, values):
             a, 3,
             a,  
             30, 70, 3]
+
+def sbcGuess():
+    return [[0, 0.3, 0.3, 20, 0.3, 115, 60, 20]]

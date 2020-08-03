@@ -103,13 +103,13 @@ def getStartDatetime(fileID):
         file.exp_start_date, file.exp_start_time, file.exp_stop_date, file.exp_stop_time = file.get_experiment_time_and_date()
         dt = datetime.datetime.strptime(file.exp_start_date + " " + file.exp_start_time[:-1], '%Y-%m-%d %H:%M:%S')
     return dt
-                
+                 
 # Exp is short for experiment here.
 class ExpFile:
     """
     a wrapper around an hdf5 file for easier handling and management.
     """
-    def __init__(self, file_id=None, expFile_version=currentVersion):
+    def __init__(self, file_id=None, expFile_version=currentVersion, useBase2=True):
         """
         if you give the constructor a file_id, it will automatically fill the relevant member variables.
         """
@@ -129,7 +129,7 @@ class ExpFile:
         self.exp_stop_date = None
         self.data_addr = dataAddress
         if file_id is not None:
-            self.f = self.open_hdf5(fileID=file_id)
+            self.f = self.open_hdf5(fileID=file_id, useBase=useBase2)
             if self.version==1:
                 self.key_name, self.key = self.__get_old_key()
             else:

@@ -1,27 +1,20 @@
 import numpy as np
 import uncertainties.unumpy as unp
 
-
-def center():
-    return None
-
-def getFitCharacterString(vals):
-    return str(vals[0]);
+def getFitCharacterString():
+    return "Amplitude";
 
 def fitCharacter(vals):
     return vals[0];
     
-def getCenter(vals=None):
-    return None
-
-
+def fitCharacterErr(vals, errs):
+    return errs[0];
+    
 def args():
     return 'Amp', 'Decay', 'Freq', 'Phase', 'Offset'
 
-
 def definition():
     return 'offset + A * np.exp(-x / tau) * np.cos(2 * np.pi * freq * x + phi)'
-
 
 def getExtremes(f,phi,tau):
     """

@@ -358,6 +358,11 @@ def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias, sign=1, hFreqs=None, vF
     for h in new_H_Bias:
         print(h, ',', end=' ')
     print(']\n')
+    print(']\nNew Horizontal Biases \n[', end='')
+    for h in new_H_Bias:
+        print(h, ' ', end=' ')
+    print(']\n')
+
     if hFreqs is None:
         return
     if not (len(new_H_Bias) == len(hFreqs) == len(hPhases)):
@@ -414,8 +419,7 @@ def extrapolateModDepth(sign, hBiasIn, vBiasIn, depthIn, testBiases):
     return modDepth
 
 def fitWithModule(module, key, vals, errs=None, guess=None, getF_args=[None]):
-    """
-    """
+    # this also works with class objects which have all the required member functions. 
     key = arr(key)
     xFit = (np.linspace(min(key), max(key), 1000) if len(key.shape) == 1 else np.linspace(min(misc.transpose(key)[0]),
                                                                                           max(misc.transpose(key)[0]), 1000))
@@ -426,17 +430,15 @@ def fitWithModule(module, key, vals, errs=None, guess=None, getF_args=[None]):
         fitF_unc = module.getF_unc(*getF_args) if hasattr(module, 'getF_unc') else module.f_unc
         if len(key) < len(signature(fitF).parameters) - 1:
             raise RuntimeError('Not enough data points to constrain a fit!')
-        if guess is None:
-            fitValues, fitCovs = opt.curve_fit(fitF, key, vals, p0=[module.guess(key, vals)])
-        else:
-            fitValues, fitCovs = opt.curve_fit(fitF, key, vals, p0=guess)
+        guessUsed = guess if guess is not None else module.guess(key,vals)
+        fitValues, fitCovs = opt.curve_fit(fitF, key, vals, p0=guessUsed)
         fitErrs = np.sqrt(np.diag(fitCovs))
         corr_vals = unc.correlated_values(fitValues, fitCovs)
         fitUncObject = fitF_unc(xFit, *corr_vals)
         fitNom = unp.nominal_values(fitUncObject)
         fitStd = unp.std_devs(fitUncObject)
         fitFinished = True
-        fitGuess = fitF(xFit, *module.guess(key, vals))
+        fitGuess = fitF(xFit, *guessUsed)
         residuals = vals - fitF(key, *fitValues)
         ss_res = np.sum(residuals**2)
         ss_tot = np.sum((vals-np.mean(vals))**2)

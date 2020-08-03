@@ -164,6 +164,8 @@ def handleTransferFits(analysisOpts, fitModules, key, avgTferData, fitguess, get
     numAtoms = len(analysisOpts.initLocs())
     fits = [None] * numAtoms
     avgFit = None
+    if type(fitModules) is not list:
+        fitModules = [fitModules]
     if len(fitModules) == 1: 
         fitModules = [fitModules[0] for _ in range(numAtoms+1)]
     if fitModules[0] is not None:

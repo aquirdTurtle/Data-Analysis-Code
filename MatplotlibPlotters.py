@@ -31,14 +31,13 @@ import IPython
 import IPython.display as disp
 import ExpFile as exp
 
-
 def addAxColorbar(fig, ax, im):
     cax = mpl_toolkits.axes_grid1.make_axes_locatable(ax).append_axes('right', size='5%', pad=0.05)
     fig.colorbar(im, cax=cax, orientation='vertical')
 
-
 def fancyImshow( fig, ax, image, avgSize='20%', pad_=0, cb=True, imageArgs={}, hAvgArgs={'color':'orange'}, vAvgArgs={'color':'orange'}, 
-                 ticklabels=True,do_vavg=True, do_havg=True, hFitParams=None, vFitParams=None, subplotsAdjustArgs=dict(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0), 
+                 ticklabels=True,do_vavg=True, do_havg=True, hFitParams=None, vFitParams=None, 
+                 subplotsAdjustArgs=dict(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0), 
                  fitModule=bump):
     """
     Expand a normal image plot of the image input, giving it a colorbar, a horizontal-averaged step plot to the left
@@ -411,7 +410,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
     Standard data analysis function for looking at survival rates throughout an experiment. I'm very bad at keeping the 
     function argument descriptions up to date.
     """
-    avgColor='w'
+    avgColor='k'
     tt = TimeTracker()
     try:
         res = TransferAnalysis.standardTransferAnalysis( fileNumber, anaylsisOpts, fitModules=fitModules, 
@@ -497,7 +496,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
             leg += (typeName + " % = " + misc.asymErrString(transferData[atomInc][0], *reversed(transferErrs[atomInc][0])))
         unevenErrs = [[err[0] for err in transferErrs[atomInc]], [err[1] for err in transferErrs[atomInc]]]
         mainPlot.errorbar ( key, transferData[atomInc], yerr=unevenErrs, color=colors[atomInc], ls='',
-                            capsize=6, elinewidth=3, label=leg, alpha=0.1 if plotAvg else 0.9, marker=markers[atomInc%len(markers)], markersize=10 )
+                            capsize=6, elinewidth=3, label=leg, alpha=0.3 if plotAvg else 0.9, marker=markers[atomInc%len(markers)], markersize=10 )
         if module is not None and showFitDetails and fit['vals'] is not None:
             if module.fitCharacter(fit['vals']) is not None:
                 fitCharacters.append(module.fitCharacter(fit['vals']))
