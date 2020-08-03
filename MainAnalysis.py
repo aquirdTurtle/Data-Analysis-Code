@@ -292,7 +292,7 @@ def analyzeScatterData( fileNumber, atomLocs1, connected=False, loadPic=1, trans
 def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, analyzeTogether=False, 
                                 thresholdOptions=None, fitModules=[None], keyInput=None, fitIndv=False, subtractEdges=True,
                                 keyConversion=None, quiet=False, dataRange=None, picSlice=None, keyOffset=0, softwareBinning=None,
-                                window=None, yMin=None, yMax=None, xMin=None, xMax=None, expFileVer=3 ):
+                                window=None, yMin=None, yMax=None, xMin=None, xMax=None, expFileVer=3, useBaseA=True ):
     """
     keyConversion should be a calibration which takes in a single value as an argument and converts it.
         It needs a calibration function f() and a units function units()
@@ -300,7 +300,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
              fitModule, keyName, totalAtomData, rawData, atomLocations, avgFits, atomImages, threshFitVals )
     """
     atomLocations = ah.unpackAtomLocations(atomLocations)
-    with ExpFile(fileNum, expFile_version=expFileVer) as f:
+    with ExpFile(fileNum, expFile_version=expFileVer, useBaseA=useBaseA) as f:
         rawData, keyName, hdf5Key, repetitions = f.pics, f.key_name, f.key, f.reps 
         if not quiet:
             f.get_basic_info()

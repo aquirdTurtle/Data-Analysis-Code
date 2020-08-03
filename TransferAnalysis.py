@@ -8,11 +8,11 @@ import AnalysisOptions as ao
 
 def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWindow(), dataRange=None, keyOffset=0, 
                           dimSlice=None, varyingDim=None, groupData=False, quiet=False, picsPerRep=2, repRange=None, 
-                          keyConversion=None, softwareBinning=None, removePics=None, expFile_version=4):
+                          keyConversion=None, softwareBinning=None, removePics=None, expFile_version=4, useBaseA=True):
     """
     Unpack inputs, properly shape the key, picture array, and run some initial checks on the consistency of the settings.
     """
-    with exp.ExpFile(fileNumber, expFile_version=expFile_version) as f:
+    with exp.ExpFile(fileNumber, expFile_version=expFile_version, useBaseA=useBaseA) as f:
         rawData, keyName, hdf5Key, repetitions = f.pics, f.key_name, f.key, f.reps
         if not quiet:
             basicInfoStr = f.get_basic_info()
@@ -32,8 +32,11 @@ def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWind
     numberOfPictures = int(rawData.shape[0])
     if groupData:
         repetitions = int(numberOfPictures / picsPerRep)
+    print("repsOTD:", repetitions)
+    print("picsOTD:", picsPerRep)
     numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
     key = ah.handleKeyModifications(hdf5Key, numberOfVariations, keyInput=key, keyOffset=keyOffset, groupData=groupData, keyConversion=keyConversion )
+    print("numvarOTD:", numberOfVariations)
     groupedDataRaw = rawData.reshape((numberOfVariations, repetitions * picsPerRep, rawData.shape[1], rawData.shape[2]))
     res = ah.sliceMultidimensionalData(dimSlice, key, groupedDataRaw, varyingDim=varyingDim)
     (_, slicedData, otherDimValues, varyingDim) = res
@@ -45,6 +48,7 @@ def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWind
     numOfPictures = groupedData.shape[0] * groupedData.shape[1]
     allAvgPics = ah.getAvgPics(groupedData, picsPerRep=picsPerRep)
     avgPics = [allAvgPics[analysisOpts.initPic], allAvgPics[analysisOpts.tferPic]]
+    print("numvarOTD2:", numberOfVariations)
     return rawData, groupedData, keyName, repetitions, key, numOfPictures, avgPics, basicInfoStr, analysisOpts
 
 def getTransferEvents(pic1Atoms, pic2Atoms):
