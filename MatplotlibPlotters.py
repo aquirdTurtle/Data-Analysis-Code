@@ -1,7 +1,7 @@
 import time
 from pandas import DataFrame
 import MainAnalysis as ma
-from MainAnalysis import analyzeNiawgWave, standardAssemblyAnalysis, AnalyzeRearrangeMoves
+from MainAnalysis import standardPopulationAnalysis, analyzeNiawgWave, standardAssemblyAnalysis, AnalyzeRearrangeMoves
 import TransferAnalysis
 from numpy import array as arr
 from random import randint
@@ -30,8 +30,7 @@ from fitters.Gaussian import gaussian_2d, double as double_gaussian, bump
 import IPython
 import IPython.display as disp
 import ExpFile as exp
-import PopulationAnalysis
-from PopulationAnalysis import standardPopulationAnalysis
+
 def addAxColorbar(fig, ax, im):
     cax = mpl_toolkits.axes_grid1.make_axes_locatable(ax).append_axes('right', size='5%', pad=0.05)
     fig.colorbar(im, cax=cax, orientation='vertical')
@@ -406,7 +405,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
               showFitDetails=False, showFitCharacterPlot=False, showImagePlots=None, plotIndvHists=False, 
               timeit=False, outputThresholds=False, plotFitGuess=False, newAnnotation=False, 
               indvVariationThresholds=False, plotImagingSignal=False, expFile_version=4, plotAvg=True, 
-              flattenKeyDim=None, forceNoAnnotation=False, useBaseA=True, **standardTransferArgs ):
+              flattenKeyDim=None, forceNoAnnotation=False, **standardTransferArgs ):
     """
     Standard data analysis function for looking at survival rates throughout an experiment. I'm very bad at keeping the 
     function argument descriptions up to date.
@@ -415,13 +414,13 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
     tt = TimeTracker()
     try:
         res = TransferAnalysis.standardTransferAnalysis( fileNumber, anaylsisOpts, fitModules=fitModules, 
-                                                         expFile_version=expFile_version, useBaseA=useBaseA, **standardTransferArgs )
+                                                         expFile_version=expFile_version, **standardTransferArgs )
     except OSError as err:
         if (str(err) == "Unable to open file (bad object header version number)"):
             print( "Unable to open file! (bad object header version number). This is usually a sign that the experiment "
                    "is still in progress, or that the experiment hasn't closed the hdf5 file.")
         else:
-            print("File doesn't exist! Exception: " + str(err))
+            print("OSError! Exception: " + str(err))
         return
     tt.clock('After-Standard-Analysis')
     (transferData, transferErrs, initPopulation, pic1Data, keyName, key, repetitions, initThresholds, 
@@ -551,6 +550,8 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
         mainPlot.plot(avgFit['x'], avgFit['nom'], color=avgColor, ls=':')
         avgFitCharacter = fitModules[-1].fitCharacter(avgFit['vals'])
         if plotFitGuess:
+            #print('FIT GUESS:',fit['guess'])
+            #return fit['x'], fit['guess']
             mainPlot.plot(fit['x'], fit['guess'], color='r', alpha=0.5)
     if fitModules[0] is not None and showFitCharacterPlot:
         f, ax = subplots()
@@ -706,7 +707,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
         expTitle = ''.join('#' for _ in range(3)) + ' File ' + str(fileNumber)
     disp.clear_output()
     disp.display(disp.Markdown(expTitle))
-    with exp.ExpFile(fileNumber,expFile_version=expFile_version, useBaseA=useBaseA) as fid:
+    with exp.ExpFile(fileNumber,expFile_version=expFile_version) as fid:
         fid.get_basic_info()
     
     if fitModules[-1] is not None:
@@ -748,7 +749,7 @@ def Loading(fileNum, atomLocations, **PopulationArgs):
 
 def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=True, plotCounts=False, legendOption=None,
                showImagePlots=True, plotIndvHists=False, showFitDetails=False, showFitCharacterPlot=True, show=True, histMain=False,
-               mainAlpha=0.2, avgColor='w', newAnnotation=False, expFile_version=4, useBaseA=True, **StandardArgs):
+               mainAlpha=0.2, avgColor='w', newAnnotation=False, **StandardArgs):
     """
     Standard data analysis package for looking at population %s throughout an experiment.
 
@@ -757,10 +758,9 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     This routine is designed for analyzing experiments with only one picture per cycle. Typically
     These are loading exeriments, for example. There's no survival calculation.
     """
-    #print('thresholdoptions:', thresholdOptions)
     atomLocs_orig = atomLocations
     avgColor='w'
-    res = PopulationAnalysis.standardPopulationAnalysis(fileNum, atomLocations, whichPic, picsPerRep, expFile_version=expFile_version, useBaseA=useBaseA, **StandardArgs)
+    res = standardPopulationAnalysis(fileNum, atomLocations, whichPic, picsPerRep, **StandardArgs)
     (locCounts, thresholds, avgPic, key, allPopsErr, allPops, avgPop, avgPopErr, fits,
      fitModules, keyName, atomData, rawData, atomLocations, avgFits, atomImages,
      totalAvg, totalErr) = res
@@ -943,13 +943,13 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     
     disp.display(f_main)
     if newAnnotation or not exp.checkAnnotation(fileNum, force=False, quiet=True):
-        exp.annotate(fileNum, useBaseA=useBaseA)
+        exp.annotate(fileNum)
     disp.clear_output()
     
-    rawTitle, _, lev = exp.getAnnotation(fileNum, useBaseA=useBaseA)
-    expTitle = ''.join('#' for _ in range(lev)) + ' File ' + str(fileNum) + ': ' + rawTitle
+    rawTitle, _, lev = exp.getAnnotation(fileNum)
+    expTitle = ''.join('#' for _ in range(lev)) + ' File ' + str(fuleNum) + ': ' + rawTitle
     disp.display(disp.Markdown(expTitle))
-    with exp.ExpFile(fileNum, useBaseA=useBaseA) as f:
+    with exp.ExpFile(fileNum) as f:
         f.get_basic_info()
     
     if fitModules[-1] is not None:

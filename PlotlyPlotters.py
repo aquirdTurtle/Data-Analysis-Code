@@ -14,7 +14,6 @@ from plotly.offline import iplot, plot as plotlyplot
 from plotly.tools import make_subplots
 from MainAnalysis import standardAssemblyAnalysis, standardPopulationAnalysis, AnalyzeRearrangeMoves, analyzeScatterData
 import TransferAnalysis
-import FittingFunctions as fitFunc
 from pandas import DataFrame
 from fitters import linear
 import AnalysisHelpers as ah

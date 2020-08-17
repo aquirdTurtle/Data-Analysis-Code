@@ -46,10 +46,10 @@ def f(x, Offset, Amp1, Amp2, Sigma2, Amp3, Center, Spread, sidebandSigma):
         if params[3*i+1] < 0:
             # Penalize negative amplitude fits.
             return penalty
-        if not (min(x) < params[3*i+2] < max(x)):
+        #if not (min(x) < params[3*i+2] < max(x)):
             # penalize fit centers outside of the data range (assuming if you want to see these that you've
             # at least put the gaussian in the scan)
-            return penalty
+        #    return penalty
     if params[0] < 0:
         # penalize negative offset
         return penalty
@@ -77,12 +77,13 @@ def guess(key, values):
     """
     Returns guess values for the parameters of this function class based on the input. Used for fitting using this class.
     """
-    a = (max(values)-min(values))/10
-    return [min(values),
-            a, 
-            a, 3,
-            a,  
-            30, 70, 3]
+    return sbcGuess()[0]
+    #a = (max(values)-min(values))/10
+    #return [min(values),
+    #        a, 
+    #        a, 3,
+    #        a,  
+    #        30, 70, 3]
 
 def sbcGuess():
     return [[0, 0.3, 0.3, 20, 0.3, 115, 60, 20]]

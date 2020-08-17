@@ -5,7 +5,6 @@ from Miscellaneous import getStats, round_sig, errString
 from MarksFourierAnalysis import fft
 from matplotlib.pyplot import *
 from scipy.optimize import curve_fit as fit
-import FittingFunctions as fitFunc
 import fitters.linear
 from ExpFile import ExpFile
 import ExpFile as exp

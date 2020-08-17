@@ -53,7 +53,7 @@ def guess(key, vals):
     tau_g = 0.12
     # tau_g = (max(key) - min(key)) * 2
     # assumes starts at zero then goes to max value or so. May need to modify.
-    f_g = 5 #44.554 # 1 / (max(key)-min(key))
-    phi_g = np.pi
+    f_g = 8
+    phi_g = -np.pi/2
     offset_g = 0.3
     return [A_g, tau_g, f_g, phi_g, offset_g]

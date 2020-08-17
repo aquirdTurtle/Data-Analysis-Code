@@ -32,11 +32,8 @@ def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWind
     numberOfPictures = int(rawData.shape[0])
     if groupData:
         repetitions = int(numberOfPictures / picsPerRep)
-    print("repsOTD:", repetitions)
-    print("picsOTD:", picsPerRep)
     numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
     key = ah.handleKeyModifications(hdf5Key, numberOfVariations, keyInput=key, keyOffset=keyOffset, groupData=groupData, keyConversion=keyConversion )
-    print("numvarOTD:", numberOfVariations)
     groupedDataRaw = rawData.reshape((numberOfVariations, repetitions * picsPerRep, rawData.shape[1], rawData.shape[2]))
     res = ah.sliceMultidimensionalData(dimSlice, key, groupedDataRaw, varyingDim=varyingDim)
     (_, slicedData, otherDimValues, varyingDim) = res
@@ -48,7 +45,6 @@ def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWind
     numOfPictures = groupedData.shape[0] * groupedData.shape[1]
     allAvgPics = ah.getAvgPics(groupedData, picsPerRep=picsPerRep)
     avgPics = [allAvgPics[analysisOpts.initPic], allAvgPics[analysisOpts.tferPic]]
-    print("numvarOTD2:", numberOfVariations)
     return rawData, groupedData, keyName, repetitions, key, numOfPictures, avgPics, basicInfoStr, analysisOpts
 
 def getTransferEvents(pic1Atoms, pic2Atoms):

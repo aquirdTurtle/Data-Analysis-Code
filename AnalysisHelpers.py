@@ -125,7 +125,6 @@ def collapseImage(im, avg=True):
 
 def jeffreyInterval(m,num):
     # sigma = 1-0.6827 gives the standard "1 sigma" intervals.
-    #print(round(m*num),end='')
     i1, i2 = confidenceInterval(round(m*num), num, method='jeffreys', alpha=1-0.6827)
     return (m - i1, i2 - m)
 
@@ -160,7 +159,6 @@ def fitManyGaussianImage(im, numGauss, neighborhood_size=20, threshold=1, direct
     xpts = np.arange(len(im[0]))
     ypts = np.arange(len(im))
     X,Y = np.meshgrid(xpts,ypts)
-    print(guess)
     zpts = arb_2d_sum.f((X,Y), *guess).reshape(X.shape)
     f, ax = subplots(1,5,figsize=(20,10))
     ax[0].imshow(im)
@@ -444,11 +442,16 @@ def fitWithModule(module, key, vals, errs=None, guess=None, getF_args=[None]):
         ss_tot = np.sum((vals-np.mean(vals))**2)
         rSq = 1 - (ss_res / ss_tot)
     except (RuntimeError, LinAlgError, ValueError) as e:
+        fitF = module.getF(*getF_args) if hasattr(module, 'getF') else module.f
+        fitF_unc = module.getF_unc(*getF_args) if hasattr(module, 'getF_unc') else module.f_unc
         warn('Data Fit Failed!')
         print(e)
         fitValues = module.guess(key, vals)
         fitNom = fitF(xFit, *fitValues)
-        fitFinished = False
+        fitFinished = False        
+        guessUsed = guess if guess is not None else module.guess(key,vals)
+        fitGuess = fitF(xFit, *guessUsed)
+
     fitInfo = {'x': xFit, 'nom': fitNom, 'std': fitStd, 'vals': fitValues, 'errs': fitErrs, 'cov': fitCovs, 'guess': fitGuess, 'R-Squared': rSq}
     return fitInfo, fitFinished
 
@@ -937,7 +940,6 @@ def newCalcMotTemperature(times, sigmas):
 
 
 def calcMotTemperature(times, sigmas):
-    # print(sigmas[0])
     guess = [sigmas[0], 0.1]
     # guess = [0.001, 0.1]
     # in cm...?
@@ -1223,6 +1225,8 @@ def postSelectOnAssembly( pic1AtomData, pic2AtomData, analysisOpts ):
     if analysisOpts.postSelectionConditions is None:
         return pic1AtomData, pic2AtomData, None
     if len(np.array(analysisOpts.postSelectionConditions).shape) == 2:
+        # 2d conditions... 
+        
         # ps for post-selected
         psPic1AtomData, psPic2AtomData = [[[[] for _ in pic1AtomData] for atom in analysisOpts.postSelectionConditions]for _ in range(2)]
         for atomInc, psCondition in enumerate(analysisOpts.postSelectionConditions):
@@ -1293,7 +1297,6 @@ def normalizeData(data, atomLocation, picture, picturesPerExperiment, borders):
             try:
                 allData = np.append(allData, rawData[imageInc][atomLocation[0]][atomLocation[1]] - borders[count])
             except IndexError:
-                print(rawData.shape, imageInc, atomLocation, len(borders), count)
                 raise
             count += 1
     return allData

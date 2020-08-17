@@ -10,7 +10,6 @@ import textwrap
 import os
 import ExpFile as exp
 
-
 def printExperimentFileInfo(loc="J:/Data repository/New Data Repository/2020/February/February 20/Raw Data/", includeNotes=False):
     files = os.listdir(loc)
     def sortF(fn):
@@ -203,10 +202,17 @@ def round_sig_str(x, sig=3):
     :param sig: the number of significant digits to use in the rounding
     :return the rounded number, as a string.
     """
-    if sig<=0:
-        return "0"
-    if np.isnan(x):
-        x = 0
+    if x is None:
+        return "None"
+    try:
+        if sig<=0:
+            return "0"
+        if np.isnan(x):
+            x = 0
+    except TypeError:
+        print('Type Error! Type was: ' + str(type(x)))
+        return ""
+
     try:
         res = np.floor(np.log10(abs(x)+2*np.finfo(float).eps))
         if res == np.inf:
@@ -235,10 +241,13 @@ def errString(val, err, precision=None):
     :param precision:
     :return:
     """
-    if np.isinf(err) or np.isnan(err):
-        err = 0
-    if np.isinf(val) or np.isnan(val):
-        return "?(?)"
+    try:
+        if np.isinf(err) or np.isnan(err):
+            err = 0
+        if np.isinf(val) or np.isnan(val):
+            return "?(?)"
+    except TypeError:
+        print('Type Error! Type was: ' + type(val) + "," + type(err))
     if err == 0:
         if precision is None:
             precision = 3

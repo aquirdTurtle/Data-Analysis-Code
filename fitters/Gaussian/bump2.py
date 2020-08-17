@@ -68,7 +68,7 @@ def f(x, *params):
     :return:
     """
     if len(params) != 3*numGauss+1:
-        raise ValueError('the bump7 fitting function expects '+str(3*7+1) + ' parameters and got ' + str(len(params)))
+        raise ValueError('the bump2 fitting function expects '+str(3*numGauss+1) + ' parameters and got ' + str(len(params)))
     penalty = 10**10 * np.ones(len(x))
     for i in range(numGauss):
         if params[3*i+3] < 3:
@@ -106,9 +106,10 @@ def guess(key, values):
     """
     Returns guess values for the parameters of this function class based on the input. Used for fitting using this class.
     """
-    return [min(values),
-            0.2, -150, 5,
-            0.1, 95, 5]
+    return sbcGuess()[0]
+    #return [min(values),
+    #        0.2, -150, 5,
+    #        0.1, 95, 5]
 
 def sbcGuess():
     return [[0,0.3,-150,10, 0.3, 150, 10]]

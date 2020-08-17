@@ -9,10 +9,15 @@ dataAddress = None
 currentVersion = 4
 
 def annotate(fileID=None, expFile_version=currentVersion, useBaseA=True):
-    title = input("Run Title: ")
-    hashNum = int(input("Title-Level: "))
+    title = input("Run Title: (q) to quit")
+    if title == 'q':
+        raise RuntimeError("Annotation Quit")
+    #hashNum = int(input("Title-Level: "))
+    hashNum = 3
     #titleStr = ''.join('#' for _ in range(hashNum)) + ' ' + title     
     notes = input("Experiment Notes:")
+    if notes == 'q':
+        raise RuntimeError("Annotation Quit")
     with ExpFile(expFile_version=expFile_version) as f:
         print('annotating file ' + str(fileID));
         f.open_hdf5(fileID, openFlag='a', useBase=useBaseA)        
