@@ -7,7 +7,7 @@ from pandas import read_csv
 import csv
 import numpy as np
 from numpy import array as arr
-import ExpFile as exp
+from . import ExpFile as exp
 
 def read_Tektronics_DPO_3034(fn):
     # for our nicer Oscilloscope

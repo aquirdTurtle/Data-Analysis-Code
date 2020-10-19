@@ -8,16 +8,16 @@ Most recent changes:
 import numpy as np
 from numpy import array as arr
 from IPython.display import display
-from Miscellaneous import transpose, getColors, errString
+from .Miscellaneous import transpose, getColors, errString
 import plotly.graph_objs as go
 from plotly.offline import iplot, plot as plotlyplot
 from plotly.tools import make_subplots
-from MainAnalysis import standardAssemblyAnalysis, standardPopulationAnalysis, AnalyzeRearrangeMoves, analyzeScatterData
-import TransferAnalysis
+from .MainAnalysis import standardAssemblyAnalysis, standardPopulationAnalysis, AnalyzeRearrangeMoves, analyzeScatterData
+from . import TransferAnalysis
 from pandas import DataFrame
-from fitters import linear
-import AnalysisHelpers as ah
-from AnalysisHelpers import getFitsDataFrame
+from .fitters import linear
+from . import AnalysisHelpers as ah
+from .AnalysisHelpers import getFitsDataFrame
 
 
 def ScatterData(fileNumber, atomLocs1, plotfit=True, **scatterOptions):

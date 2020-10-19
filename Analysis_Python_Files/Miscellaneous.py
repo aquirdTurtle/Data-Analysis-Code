@@ -8,7 +8,34 @@ from pandas import DataFrame
 import IPython
 import textwrap
 import os
-import ExpFile as exp
+from . import ExpFile as exp
+import inspect
+
+#def what(obj, callingLocals=locals()):
+def what(obj):
+    """
+    quick function to print name of input and value.
+    If not for the inspect usage, e.g. if I just used locals() here,
+    the function would always get the name as "obj", which is not what I want.
+
+    :param obj: the object to print info for
+    """
+    name = None
+    callingLocals = inspect.currentframe().f_back.f_locals
+    for k, v in list(callingLocals.items()):
+        if v is obj:
+            if name is None:
+                name = k
+            else:
+                if type(name) == str:
+                    name = [name]
+                name.append(k)
+    if type(name) == list:
+        name = "Multiple Matches: " + str(name)
+    if type(obj) == float:
+        print(name, "=", "{:,}".format(obj))
+    else:
+        print(name, "=", obj)
 
 def printExperimentFileInfo(loc="J:/Data repository/New Data Repository/2020/February/February 20/Raw Data/", includeNotes=False):
     files = os.listdir(loc)
@@ -89,26 +116,6 @@ def prefix(num):
     if num2 is not None:
         retStr += '\nor\n' + str(num2) + ' ' + r2
     return retStr
-
-
-def what(obj, callingLocals=locals()):
-    """
-    quick function to print name of input and value.
-    If not for the default-Valued callingLocals, the function would always
-    get the name as "obj", which is not what I want.
-
-    :param obj: the object to print info for
-    :param callingLocals: don't use, always should be locals().
-    """
-    name = "name not found"
-    for k, v in list(callingLocals.items()):
-        if v is obj:
-            name = k
-    if type(obj) == float:
-        print(name, "=", "{:,}".format(obj))
-    else:
-        print(name, "=", obj)
-
 
 def transpose(l):
     """

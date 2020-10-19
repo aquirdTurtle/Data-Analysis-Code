@@ -1,18 +1,17 @@
 from numpy import array as arr
 from pandas import DataFrame
 
-from Miscellaneous import getStats, round_sig, errString
-from MarksFourierAnalysis import fft
+from .Miscellaneous import getStats, round_sig, errString
+from .MarksFourierAnalysis import fft
 from matplotlib.pyplot import *
 from scipy.optimize import curve_fit as fit
-import fitters.linear
-from ExpFile import ExpFile
-import ExpFile as exp
-from TimeTracker import TimeTracker
-import AnalysisHelpers as ah
-import MarksConstants as mc
+from .fitters import linear
+from . import ExpFile as exp
+from .TimeTracker import TimeTracker
+from . import AnalysisHelpers as ah
+from . import MarksConstants as mc
 import copy
-import PictureWindow as pw
+from . import PictureWindow as pw
 
 def standardImages( data, 
                     # Cosmetic Parameters

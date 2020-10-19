@@ -14,6 +14,7 @@ class AtomThreshold:
     fitVals:tuple = ()
     rmsResidual:float = 0
     rawData:tuple = ()
+    
     def binWidth(self):
         return self.binCenters[1] - self.binCenters[0]
     def binEdges(self):

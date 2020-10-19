@@ -1,31 +1,24 @@
 from numpy import array as arr
 from pandas import DataFrame
-
-from Miscellaneous import getStats, round_sig, errString
-from MarksFourierAnalysis import fft
 from matplotlib.pyplot import *
 from scipy.optimize import curve_fit as fit
-import fitters.linear
-from ExpFile import ExpFile
-import ExpFile as exp
-from TimeTracker import TimeTracker
-import AnalysisHelpers as ah
-import MarksConstants as mc
 import copy
-import PictureWindow as pw
-import ThresholdOptions as to
 import sys, os
 
-# Disable printing 
-def blockPrint():
-    sys.stdout = open(os.devnull, 'w')
-    return close(os.devnull)
-
+from .Miscellaneous import getStats, round_sig, errString
+from .MarksFourierAnalysis import fft
+from .fitters import linear
+from . import ExpFile as exp
+from .TimeTracker import TimeTracker
+from . import AnalysisHelpers as ah
+from . import MarksConstants as mc
+from . import PictureWindow as pw
+from . import ThresholdOptions as to
 
 def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, analyzeTogether=False, 
                                 thresholdOptions=to.ThresholdOptions(), fitModules=[None], keyInput=None, fitIndv=False, subtractEdges=True,
                                 keyConversion=None, quiet=False, dataRange=None, picSlice=None, keyOffset=0, softwareBinning=None,
-                                window=None, yMin=None, yMax=None, xMin=None, xMax=None, expFile_version=4, useBaseA=True, **StandardArgs ):
+                                window=None, yMin=None, yMax=None, xMin=None, xMax=None, expFile_version=4, useBaseA=True ):
     """
     keyConversion should be a calibration which takes in a single value as an argument and converts it.
         It needs a calibration function f() and a units function units()
@@ -33,7 +26,7 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
              fitModule, keyName, totalAtomData, rawData, atomLocations, avgFits, atomImages, threshFitVals )
     """
     atomLocations = ah.unpackAtomLocations(atomLocations)
-    with ExpFile(fileNum, expFile_version=expFile_version, useBaseA=useBaseA) as f:
+    with exp.ExpFile(fileNum, expFile_version=expFile_version, useBaseA=useBaseA) as f:
         rawData, keyName, hdf5Key, repetitions = f.pics, f.key_name, f.key, f.reps 
         if not quiet:
             f.get_basic_info()
@@ -58,33 +51,32 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
         rawData = rawData[picSlice[0]:picSlice[1]]
         numOfPictures = rawData.shape[0]
         numOfVariations = int(numOfPictures / (repetitions * picsPerRep))
-    print(rawData.shape[0], numOfPictures, numOfVariations,'hi')
     #groupedData, key, _ = orderData(groupedData, key)
     avgPopulation, avgPopulationErr, popFits = [[[] for _ in range(len(atomLocations))] for _ in range(3)]
     allPopulation, allPopulationErr = [[[]] * len(groupedData) for _ in range(2)]
     totalAtomData = []
-     # get full data... there's probably a better way of doing this...
-    (fullPixelCounts, fullAtomData, thresholds, fullAtomCount) = arr([[None] * len(atomLocations)] * 4)
-    for i, atomLoc in enumerate(atomLocations):
-        fullPixelCounts[i] = ah.getAtomCountsData( rawData, picsPerRep, whichPic, atomLoc, subtractEdges=subtractEdges )
-        thresholds[i] = ah.getThresholds( fullPixelCounts[i], 5, thresholdOptions )
-        fullAtomData[i], fullAtomCount[i] = ah.getAtomBoolData(fullPixelCounts[i], thresholds[i].t)
+     # get full data, i.e. the variation dimension being flattened. There's probably a better way of doing this...
+    (fullPixelCounts, fullAtomData, fullThresholds, fullAtomCount) = arr([[None] * len(atomLocations)] * 4)
+    for atomNum, atomLoc in enumerate(atomLocations):
+        fullPixelCounts[atomNum] = ah.getAtomCountsData( rawData, picsPerRep, whichPic, atomLoc, subtractEdges=subtractEdges )
+        fullThresholds[atomNum] = ah.getThresholds( fullPixelCounts[atomNum], 5, thresholdOptions )
+        fullAtomData[atomNum], fullAtomCount[atomNum] = ah.getAtomBoolData( fullPixelCounts[atomNum], 
+                                                                                    fullThresholds[atomNum].th)
     flatTotal = arr(arr(fullAtomData).tolist()).flatten()
     totalAvg = np.mean(flatTotal)
     totalErr = np.std(flatTotal) / np.sqrt(len(flatTotal))
     fullAtomData = arr(fullAtomData.tolist())
     fullPixelCounts = arr(fullPixelCounts.tolist())
-    if not quiet:
-        #print('Analyzing Variation... ', end='')
-        (variationPixelData, variationAtomData, atomCount) = arr([[[None for _ in atomLocations] for _ in groupedData] for _ in range(3)])
+    (variationCountData, variationAtomData, atomCount, varThresholds) = arr([[[None for _ in atomLocations] for _ in groupedData] for _ in range(4)])
     for dataInc, data in enumerate(groupedData):
-        if not quiet:
-            #print(str(dataInc) + ', ', end='')
-            blockPrint()
-            allAtomPicData = []
+        allAtomPicData = []
         for i, atomLoc in enumerate(atomLocations):
-            variationPixelData[dataInc][i] = ah.getAtomCountsData( data, picsPerRep, whichPic, atomLoc, subtractEdges=subtractEdges )
-            variationAtomData[dataInc][i], atomCount[dataInc][i] = ah.getAtomBoolData(variationPixelData[dataInc][i], thresholds[i].t)            
+            variationCountData[dataInc][i] = ah.getAtomCountsData( data, picsPerRep, whichPic, atomLoc, subtractEdges=subtractEdges )
+            if thresholdOptions.indvVariationThresholds:
+                varThresholds[dataInc][i] = ah.getThresholds( variationCountData[dataInc][i], 5, thresholdOptions )
+            else:
+                varThresholds[dataInc][i] = fullThresholds[i]
+            variationAtomData[dataInc][i], atomCount[dataInc][i] = ah.getAtomBoolData(variationCountData[dataInc][i], varThresholds[dataInc][i].th)            
             totalAtomData.append(variationAtomData[dataInc][i])
             mVal = np.mean(variationAtomData[dataInc][i])
             allAtomPicData.append(mVal)
@@ -121,8 +113,9 @@ def standardPopulationAnalysis( fileNum, atomLocations, whichPic, picsPerRep, an
         for locInc, loc in enumerate(atomLocations):
             atomImages[atomImagesInc][loc[0]][loc[1]] = fullAtomData[locInc][atomImagesInc]
         atomImagesInc += 1
-
-    return ( fullPixelCounts, thresholds, avgPic, key, avgPopulationErr, avgPopulation, allPopulation, allPopulationErr, popFits,
-             fitModules, keyName, totalAtomData, rawData, atomLocations, avgFits, atomImages, totalAvg, totalErr )
+        
+    return ( fullPixelCounts, fullThresholds, avgPic, key, avgPopulationErr, avgPopulation, allPopulation, allPopulationErr, popFits,
+             fitModules, keyName, totalAtomData, rawData, atomLocations, avgFits, atomImages, totalAvg, totalErr, 
+             variationCountData, variationAtomData, varThresholds )
 
 

@@ -3,37 +3,47 @@ import h5py as h5
 from colorama import Fore, Style
 from numpy import array as arr
 import numpy as np
-import Miscellaneous as misc
+from . import Miscellaneous as misc
 import datetime
 dataAddress = None
 currentVersion = 4
 
 def annotate(fileID=None, expFile_version=currentVersion, useBaseA=True):
-    title = input("Run Title: (q) to quit")
-    if title == 'q':
-        raise RuntimeError("Annotation Quit")
     #hashNum = int(input("Title-Level: "))
     hashNum = 3
-    #titleStr = ''.join('#' for _ in range(hashNum)) + ' ' + title     
-    notes = input("Experiment Notes:")
-    if notes == 'q':
-        raise RuntimeError("Annotation Quit")
-    with ExpFile(expFile_version=expFile_version) as f:
+    #titleStr = ''.join('#' for _ in range(hashNum)) + ' ' + title
+    with ExpFile(expFile_version=expFile_version) as file:
         print('annotating file ' + str(fileID));
-        f.open_hdf5(fileID, openFlag='a', useBase=useBaseA)        
-        if 'Experiment_Notes' in f.f['Miscellaneous'].keys():
-            del f.f['Miscellaneous']['Experiment_Notes']
-        dset2 = f.f['Miscellaneous'].create_dataset("Experiment_Notes", shape=(1,), dtype="S"+str(len(notes))) 
+        file.open_hdf5(fileID, openFlag='a', useBase=useBaseA)
+        if checkAnnotation(fileID, force=False, expFile_version=expFile_version):        
+            title, notes, num = getAnnotation(fileID, expFile_version=expFile_version, useBaseA=useBaseA)
+            title = input("Run Title (\"q\" to Quit) (prev was \""+title+"\"):")
+            if title == 'q':
+                raise RuntimeError("Annotation Quit")
+            notes = input("Experiment Notes (\"q\" to Quit)(prev was \""+notes+"\"):")
+            if notes == 'q':
+                raise RuntimeError("Annotation Quit")
+        else:
+            title = input("Run Title (\"q\" to Quit):")
+            if title == 'q':
+                raise RuntimeError("Annotation Quit")
+            notes = input("Experiment Notes (\"q\" to Quit):")
+            if notes == 'q':
+                raise RuntimeError("Annotation Quit")
+
+        if 'Experiment_Notes' in file.f['Miscellaneous'].keys():
+            del file.f['Miscellaneous']['Experiment_Notes']
+        dset2 = file.f['Miscellaneous'].create_dataset("Experiment_Notes", shape=(1,), dtype="S"+str(len(notes))) 
         dset2[0] = np.string_(notes)
         
-        if 'Experiment_Title' in f.f['Miscellaneous'].keys():
-            del f.f['Miscellaneous']['Experiment_Title']
-        dset3 = f.f['Miscellaneous'].create_dataset("Experiment_Title", shape=(1,), dtype="S"+str(len(title))) 
+        if 'Experiment_Title' in file.f['Miscellaneous'].keys():
+            del file.f['Miscellaneous']['Experiment_Title']
+        dset3 = file.f['Miscellaneous'].create_dataset("Experiment_Title", shape=(1,), dtype="S"+str(len(title))) 
         dset3[0] = np.string_(title)
         
-        if 'Experiment_Title_Level' in f.f['Miscellaneous'].keys():
-            del f.f['Miscellaneous']['Experiment_Title_Level']
-        dset4 = f.f['Miscellaneous'].create_dataset("Experiment_Title_Level", shape=(1,), dtype="i8") 
+        if 'Experiment_Title_Level' in file.f['Miscellaneous'].keys():
+            del file.f['Miscellaneous']['Experiment_Title_Level']
+        dset4 = file.f['Miscellaneous'].create_dataset("Experiment_Title_Level", shape=(1,), dtype="i8") 
         dset4[0] = hashNum
 
         
@@ -71,7 +81,15 @@ def getAnnotation(fid, expFile_version=currentVersion, useBaseA=True):
         return (f_misc['Experiment_Title'][0].decode("utf-8"), 
                 f_misc['Experiment_Notes'][0].decode("utf-8"),
                 expTitleLevel)
-
+    
+def getConfiguration(fid, expFile_version=currentVersion, useBaseA=True):
+    with ExpFile() as file:
+        file.open_hdf5(fid, useBase=useBaseA)
+        f_MI = file.f['Master-Input']
+        if ('Configuration' not in f_MI):
+            return ""
+        return ''.join([char.decode('utf-8') for char in f_MI['Configuration']])
+    
 #"J:\\Data repository\\New Data Repository"
 def setPath(day, month, year, repoAddress="\\\\jilafile.colorado.edu\\scratch\\regal\\common\\LabData\\Quantum Gas Assembly\\Data repository\\New Data Repository"):
     """
@@ -174,8 +192,8 @@ class ExpFile:
     def get_reps(self):
         # call this one.
         self.reps = self.f['Master-Parameters']['Repetitions'][0] if self.version<3 else self.f['Master-Runtime']['Repetitions'][0]
-        return self.reps
-    
+        return self.reps      
+
     def get_params(self):
         return self.f['Master-Runtime']['Parameters'] if self.version >= 4 else (self.f['Master-Runtime']['Seq #1 Parameters'] if self.version>=3 else self.f['Master-Parameters']['Seq #1 Variables'])
     

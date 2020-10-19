@@ -4,7 +4,6 @@ import Miscellaneous as misc
 import numpy as np
 import ExpFile as exp
 
-
 def updateThresholds():
     with open('ThresholdAnalysisInfo.txt') as f:
         lines = f.readlines()

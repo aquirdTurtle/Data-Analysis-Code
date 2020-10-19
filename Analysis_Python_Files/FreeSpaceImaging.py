@@ -1,14 +1,15 @@
 from matplotlib.colors import ListedColormap
 from matplotlib import cm
-import Miscellaneous as misc
 import numpy as np
 import matplotlib.pyplot as plt
-import MatplotlibPlotters as mp
-import ExpFile as exp
-import AnalysisHelpers as ah
 import scipy.optimize as opt
-from fitters.Gaussian import bump3, bump
 import IPython.display as disp
+
+from . import Miscellaneous as misc
+from . import MatplotlibPlotters as mp
+from . import ExpFile as exp
+from . import AnalysisHelpers as ah
+from .fitters.Gaussian import bump3, bump
 
 viridis = cm.get_cmap('viridis', 256)
 dark_viridis = []
