@@ -1268,12 +1268,15 @@ def getConditionHits(atomPresenceData, hitCondition, verbose=False):
     for picInc, _ in enumerate(atomPresenceData[0][0]):
         numMatch = 0
         for atomInc, whichAtom in enumerate(hitCondition.whichAtoms):
-            atoms = misc.transpose(atomPresenceData[hitCondition.whichPic[atomInc]])[picInc]
+            #atoms = misc.transpose(atomPresenceData[hitCondition.whichPic[atomInc]])[picInc]
             needAtom = hitCondition.conditions[atomInc]
             if needAtom == None:
-                continue
-            if (atoms[whichAtom] and needAtom) or (not atoms[whichAtom] and not needAtom):
+                continue # no requirement
+            if ((atomPresenceData[hitCondition.whichPic[atomInc]][whichAtom][picInc] and needAtom)
+                or (not atomPresenceData[hitCondition.whichPic[atomInc]][whichAtom][picInc] and not needAtom)):
                 numMatch += 1
+            #if (atoms[whichAtom] and needAtom) or (not atoms[whichAtom] and not needAtom):
+            #    numMatch += 1
         hit = False
         if type(hitCondition.numRequired) == list:
             # interpret a list of numbers as an inclusive "or" condition.
