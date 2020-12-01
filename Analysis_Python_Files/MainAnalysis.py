@@ -21,7 +21,7 @@ def standardImages( data,
                     loadType='andor', window=pw.PictureWindow(), smartWindow=False,
                     reps=1, key=arr([]), zeroCorners=False, dataRange=(0, 0), manualAccumulation=False,
                     # Local Data Manipulation Options
-                    plottedData=None, bg=arr([0]), location=(-1, -1), fitBeamWaist=False, fitPics=False,
+                    plottedData=None, bg=arr([0]), fitBeamWaist=False, fitPics=False,
                     cameraType='dataray', fitWidthGuess=80, quiet=False, avgFits=False, lastDataIsBackground=False, expFileV=None ):
     if plottedData is None:
         plottedData = ["raw"]
