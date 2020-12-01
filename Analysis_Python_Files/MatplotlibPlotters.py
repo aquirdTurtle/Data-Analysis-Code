@@ -404,7 +404,7 @@ def Survival(fileID, atomLocs, **TransferArgs):
     """
     psConditions = [[] for _ in range(len(ah.unpackAtomLocations(atomLocs)))]
     for atomNum in range(len(ah.unpackAtomLocations(atomLocs))):
-        singleLoadCondition = ao.condition(whichPic=[0],whichAtoms=[atomNum],conditions=[True],numRequired=-1)
+        singleLoadCondition = ao.condition(whichPic=[0],whichAtoms=[atomNum],conditions=[True],numRequired=-1, markerWhichPicList=(0,1), markerLocList=(atomNum,atomNum))
         psConditions[atomNum].append(singleLoadCondition)
     return Transfer(fileID, ao.TransferAnalysisOptions(initLocsIn=atomLocs, tferLocsIn=atomLocs, postSelectionConditions=psConditions,
                                                        positiveResultConditions=[None for _ in ah.unpackAtomLocations(atomLocs)]),

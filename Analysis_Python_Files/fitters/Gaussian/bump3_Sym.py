@@ -2,7 +2,8 @@
 
 import numpy as np
 import uncertainties.unumpy as unp
-from .fitters.Gaussian import arb_1d_sum
+#from .Analysis_Python_Files.fitters.Gaussian import arb_1d_sum
+from . import arb_1d_sum
 
 numGauss = 3
 
@@ -12,6 +13,23 @@ def fitCharacter( params ):
     #for raman spectra, assuming fits are in order from left to right, i.e. first fit is lowest freq
     r = params_[7] / params_[1]
     return r / ( 1 - r ) if not ( r >= 1 ) else np.inf
+
+def fitCharacterErr(params, errs):
+    [Offset, Amp1, Sigma1, Amp2, Sigma2, Amp3, Sigma3, Center, Spread] = params
+    [Offset_e, Amp1_e, Sigma1_e, Amp2_e, Sigma2_e, Amp3_e, Sigma3_e, Center_e, Spread_e] = errs
+    #Offset, Amp1, Amp2, Sigma2, Amp3, Center, Spread, sidebandSigma = params
+    #[Offset_e, Amp1_e, Sigma1_e, Amp2_e, Sigma2_e, Amp3_e, Sigma3_e, Center_e, Spread_e] = errs
+    #Offset_e, Amp1_e, Amp2_e, Sigma2_e, Amp3_e, Center_e, Spread_e, sidebandSigma_e = errs
+    r = Amp3 / Amp1
+    errR = np.sqrt(Amp3_e**2/Amp1**2 + Amp1_e**2 * (r**2/Amp1**2) )
+    return errR/(1-r)**2
+    #r = params[4]/params[1]
+    #errR = np.sqrt(errs[4]**2/params[1]**2 + errs[1]**2 * (r**2/params[1]**2) )
+    #return errR/(1-r)**2
+
+def axial_GSBC_guess():
+    #[Offset, Amp1, Sigma1, Amp2, Sigma2, Amp3, Sigma3, Center, Spread] = params
+    return  (0, 0.5, 10, 0.8, 10, 0.1, 10, 120, 60)
 
 def args():
     arglist = ['Offset', "Amp1", "Sigma1", "Amp2", "Sigma2", "Amp3", "Sigma3", "Center", "Spread"]

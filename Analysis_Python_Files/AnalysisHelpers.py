@@ -1109,7 +1109,6 @@ def getFitsDataFrame(fits, fitModules, avgFit):
 
     
 def getThresholds( picData, binWidth, tOptions=ThresholdOptions.ThresholdOptions()):
-    print("getThresholds: getting thresholds here...")
     t = AtomThreshold.AtomThreshold()
     t.rawData = picData
     t.binCenters, t.binHeights = getBinData( binWidth, t.rawData )
