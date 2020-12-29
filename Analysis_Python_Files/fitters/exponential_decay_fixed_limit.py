@@ -1,7 +1,7 @@
 import numpy as np
 import uncertainties.unumpy as unp
 # based on the more general exponential_decay module.
-from fitters import exponential_decay
+from . import exponential_decay
 
 limit = 0
 
@@ -21,6 +21,13 @@ def f_unc(t, A, tau):
     """
     return exponential_decay.f_unc(t,A,tau,limit)
 
+def fitCharacter(params):
+    return params[1]
+def fitCharacterErr(params, Errs):
+    return Errs[1]
+
+def getFitCharacterString():
+    return 'tau'
 
 def guess(key, values):
     """

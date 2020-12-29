@@ -3,7 +3,6 @@ __version__ = "1.4"
 import csv
 import os # for linesep
 import pandas as pd
-from astropy.io import fits
 from numpy import array as arr
 import h5py as h5
 from inspect import signature

@@ -85,10 +85,10 @@ def guess(key, values):
     """
     a = (max(values)-min(values))/10
     return [min(values),
-            a, 3,
-            a, 3,
-            a, 3, 
-            30, 70]
+            0.4, 5,
+            0.6, 5,
+            0.1, 5,
+            97, 60]
     
 
 def areas(A1, x01, sig1, A2, x02, sig2):
