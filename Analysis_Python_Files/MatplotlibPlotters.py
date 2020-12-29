@@ -168,7 +168,7 @@ def plotThresholdHists( thresholds, colors, extra=None, extraname=None, threshol
             minx, maxx = min(th.binCenters), max(th.binCenters)
         maxy = max(th.binHeights)
         if th2 is not None:
-            ax.plot(th2.binEdges(), th2.binEdgeHeights(), color='r', ls='steps')
+            ax.plot(th2.binEdges(), th2.binEdgeHeights(), color='r')
             ax.axvline(th2.t, color='r', ls='-.')
             if localMinMax:
                 minx, maxx = min(list(th2.binCenters) + [minx]), max(list(th2.binCenters) + [maxx])

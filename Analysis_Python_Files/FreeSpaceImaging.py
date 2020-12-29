@@ -169,7 +169,7 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
                 ax.errorbar(keyPlt, waists[:,whichPic], waistErrs[:,whichPic], marker='o', linestyle='', capsize=3, label=titles[whichPic]);
         fig.legend()
         ax.set_ylabel(r'Fit Waist ($\mu m$)')
-    disp.display(fig2)
+        disp.display(fig2)
     for fid in fids:
         if type(fid) == int:
             if newAnnotation or not exp.checkAnnotation(fid, force=False, quiet=True):
