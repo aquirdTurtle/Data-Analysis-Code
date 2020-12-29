@@ -14,6 +14,15 @@ def args():
 def center():
     return None
 
+def fitCharacter(params):
+    return params[1]
+
+def fitCharacterErr(params, errs):
+    return errs[1]
+
+def getFitCharacterString():
+    return "Decay Constant"
+
 def f_unc(t, A, tau):
     """
     similar to the raw function call, but uses unp instead of np for uncertainties calculations.
@@ -21,6 +30,13 @@ def f_unc(t, A, tau):
     """
     return exponential_decay.f_unc(t,A,tau,limit)
 
+def fitCharacter(params):
+    return params[1]
+def fitCharacterErr(params, Errs):
+    return Errs[1]
+
+def getFitCharacterString():
+    return 'tau'
 
 def guess(key, values):
     """

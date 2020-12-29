@@ -19,7 +19,7 @@ def standardImages( data,
                     colorMax=-1, individualColorBars=False, majorData='counts',
                     # Global Data Manipulation Options
                     loadType='andor', window=pw.PictureWindow(), smartWindow=False,
-                    reps=1, key=arr([]), zeroCorners=False, dataRange=(0, 0), manualAccumulation=False,
+                    reps=1, key=arr([]), zeroCorners=False, dataRange=None, manualAccumulation=False,
                     # Local Data Manipulation Options
                     plottedData=None, bg=arr([0]), fitBeamWaist=False, fitPics=False,
                     cameraType='dataray', fitWidthGuess=80, quiet=False, avgFits=False, lastDataIsBackground=False, expFileV=None ):

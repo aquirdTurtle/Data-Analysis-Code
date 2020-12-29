@@ -19,6 +19,10 @@ def f(time, t_0, sigma_x_0, T):
     return  f_raw(time, t_0, sigma_x_0, T)
 
 def f_raw(time, t_0, sigma_x_0, T):
+    if T < 0:
+        return 1e9*np.ones(len(time))
+    #if t_0 < 0:
+    #    return 1e9*np.ones(len(time))
     sigma_v = np.sqrt(mc.k_B * T / mc.Rb87_M)
     sigma_xt = np.sqrt(sigma_v**2*(time+t_0)**2 + sigma_x_0**2)
     return sigma_xt

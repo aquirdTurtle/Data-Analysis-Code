@@ -1,8 +1,7 @@
-#Symmetric Version of Bump3
+# Symmetric Version of Bump3, forcing the two side bumps to be equally spaced from the center bump.
 
 import numpy as np
 import uncertainties.unumpy as unp
-#from .Analysis_Python_Files.fitters.Gaussian import arb_1d_sum
 from . import arb_1d_sum
 
 numGauss = 3
@@ -17,15 +16,9 @@ def fitCharacter( params ):
 def fitCharacterErr(params, errs):
     [Offset, Amp1, Sigma1, Amp2, Sigma2, Amp3, Sigma3, Center, Spread] = params
     [Offset_e, Amp1_e, Sigma1_e, Amp2_e, Sigma2_e, Amp3_e, Sigma3_e, Center_e, Spread_e] = errs
-    #Offset, Amp1, Amp2, Sigma2, Amp3, Center, Spread, sidebandSigma = params
-    #[Offset_e, Amp1_e, Sigma1_e, Amp2_e, Sigma2_e, Amp3_e, Sigma3_e, Center_e, Spread_e] = errs
-    #Offset_e, Amp1_e, Amp2_e, Sigma2_e, Amp3_e, Center_e, Spread_e, sidebandSigma_e = errs
     r = Amp3 / Amp1
     errR = np.sqrt(Amp3_e**2/Amp1**2 + Amp1_e**2 * (r**2/Amp1**2) )
     return errR/(1-r)**2
-    #r = params[4]/params[1]
-    #errR = np.sqrt(errs[4]**2/params[1]**2 + errs[1]**2 * (r**2/params[1]**2) )
-    #return errR/(1-r)**2
 
 def axial_GSBC_guess():
     #[Offset, Amp1, Sigma1, Amp2, Sigma2, Amp3, Sigma3, Center, Spread] = params
@@ -85,10 +78,10 @@ def guess(key, values):
     """
     a = (max(values)-min(values))/10
     return [min(values),
-            a, 3,
-            a, 3,
-            a, 3, 
-            30, 70]
+            0.4, 5,
+            0.6, 5,
+            0.1, 5,
+            97, 60]
     
 
 def areas(A1, x01, sig1, A2, x02, sig2):

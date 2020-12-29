@@ -232,8 +232,14 @@ def standardTransferAnalysis( fileNumber, analysisOpts, picsPerRep=2, fitModules
     avgTferData, avgTferErr, tferVarAvg, tferVarErr, tferAtomsVarAvg, tferAtomsVarErrs, tferList = res
     print("sta: Getting Load Averages...")
     loadConditions = []
-    (avgloadData, avgloadErr, loadVarAvg, loadVarErr, loadAtomsVarAvg, loadAtomsVarErrs, 
-     loadList) = getTransferAvgs(analysisOpts, initAtoms, tferAtoms, [conditions[0] for conditions in analysisOpts.postSelectionConditions])
+    if len(analysisOpts.postSelectionConditions[0]) == 0:
+        # no post-selection, probably loading, in which case this data isn't useful, but okay. 
+        (avgloadData, avgloadErr, loadVarAvg, loadVarErr, loadAtomsVarAvg, loadAtomsVarErrs, 
+         loadList) = getTransferAvgs(analysisOpts, initAtoms, tferAtoms, analysisOpts.positiveResultConditions)
+    else:
+        # assumes that the first post-selection condition is loading somewhere. 
+        (avgloadData, avgloadErr, loadVarAvg, loadVarErr, loadAtomsVarAvg, loadAtomsVarErrs, 
+         loadList) = getTransferAvgs(analysisOpts, initAtoms, tferAtoms, [conditions[0] for conditions in analysisOpts.postSelectionConditions])
     print("sta: Handling Fitting...")
     fits, avgFit, fitModules = handleTransferFits( analysisOpts, fitModules, key, avgTferData, fitguess, getFitterArgs, tferAtomsVarAvg )
     genAvgs, genErrs = [None, None]
