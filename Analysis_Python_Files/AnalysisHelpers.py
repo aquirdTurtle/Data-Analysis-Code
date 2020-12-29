@@ -1262,7 +1262,7 @@ def getConditionHits(atomPresenceData, hitCondition, verbose=False):
         atomList. This list is the answer to whether a given picture matched the hit condition or not.
         If partial credit, it is instead of a bool an int which records the number of aotms in the picture. 
     """
-    assert(type(hitCondition) == type(tao.condition()))
+    #assert(type(hitCondition) == type(tao.condition()))
     ensembleHits = []
     for picInc, _ in enumerate(atomPresenceData[0][0]):
         numMatch = 0
@@ -1668,7 +1668,7 @@ def processImageData(key, rawData, bg, window, accumulations, dataRange, zeroCor
     # window images.
     rawData = np.array([window.window(pic) for pic in rawData])
     # pull out the images to be used for analysis.
-    if not dataRange == (0, 0):
+    if dataRange is not None:
         rawData = rawData[dataRange[0]:dataRange[-1]]
         key = key[dataRange[0]:dataRange[-1]]
         # final normalized data
