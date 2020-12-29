@@ -25,7 +25,7 @@ from .AnalysisHelpers import (processSingleImage, orderData,
                               getEnsembleStatistics, processImageData,
                               fitPictures, fitGaussianBeamWaist, integrateData, 
                               computeMotNumber, getFitsDataFrame, genAvgDiscrepancyImage, getGridDims, newCalcMotTemperature)
-from . import TransferAnalysisOptions as ao
+from . import TransferAnalysisOptions as tao
 from . import ThresholdOptions as to
 from . import AnalysisHelpers as ah
 from . import MarksConstants as mc 
@@ -269,7 +269,7 @@ def plotImages( data, mainPlot='fits', key=None, magnification=3, showAllPics=Tr
     return pictureFitParams, rawData, intRawData
     
     
-def plotMotTemperature(data, key=None, magnification=3, showAllPics=True, **standardImagesArgs):
+def plotMotTemperature(data, key=None, magnification=3, showAllPics=True, plot1D=False, **standardImagesArgs):
     """
     Calculate the mot temperature, and plot the data that led to this.
     :param data:
@@ -285,11 +285,13 @@ def plotMotTemperature(data, key=None, magnification=3, showAllPics=True, **stan
     ax.plot(times, waists, 'bo', label='Fit Waist 2D')
     ax.plot(times, 2 * LargeBeamMotExpansion.f(times, *fitVals), 'c:', label='Balistic Expansion Waist 2D')
     
-    ax.plot(times, waists_1D, 'go', label='x-Fit Waist 1D')
-    ax.plot(times, 2 * LargeBeamMotExpansion.f(times, *fitVals_1D), 'w:', label='X-Balistic Expansion Waist 1D')
+    if plot1D:
+        ax.plot(times, waists_1D, 'go', label='x-Fit Waist 1D')
+        ax.plot(times, 2 * LargeBeamMotExpansion.f(times, *fitVals_1D), 'w:', label='X-Balistic Expansion Waist 1D')
     
     ax.yaxis.label.set_color('c')
     ax.grid(True,color='b')
+
     ax2 = ax.twinx()
     ax2.plot(times, pictureFitParams[:, 0], 'ro:', marker='*', label='Fit Amp (counts)')
     ax2.yaxis.label.set_color('r')
@@ -402,19 +404,14 @@ def Survival(fileID, atomLocs, **TransferArgs):
     :param TransferArgs: See corresponding transfer function for valid TransferArgs.
     :return: see Transfer()
     """
-    psConditions = [[] for _ in range(len(ah.unpackAtomLocations(atomLocs)))]
-    for atomNum in range(len(ah.unpackAtomLocations(atomLocs))):
-        singleLoadCondition = ao.condition(whichPic=[0],whichAtoms=[atomNum],conditions=[True],numRequired=-1, markerWhichPicList=(0,1), markerLocList=(atomNum,atomNum))
-        psConditions[atomNum].append(singleLoadCondition)
-    return Transfer(fileID, ao.TransferAnalysisOptions(initLocsIn=atomLocs, tferLocsIn=atomLocs, postSelectionConditions=psConditions,
-                                                       positiveResultConditions=[None for _ in ah.unpackAtomLocations(atomLocs)]),
-                    atomLocs, **TransferArgs)
+
+    return Transfer(fileID, tao.getStandardSurvivalOptions(atomLocs), atomLocs, **TransferArgs)
 
 def Tunneling( fileID, tunnelPair1Locs, tunnelPair2Locs, dataColor=['#FF0000','#FFAAAA','#AAAAFF','#0000AA', 'k', '#00FF00', '#00AA00'], 
                plotAvg=False, postSelectOnSurvival=True, includeSurvival=True, 
-               showFitDetails=True, includeHOM=True, **transferArgs ):
+               showFitDetails=True, includeHOM=True, includeP11=True, **transferArgs ):
     """
-    A small wrapper for doing tunneling analysis. HOM not included yet.
+    A small wrapper for doing tunneling analysis. 
     :return: see Transfer()
     """
     t1locs = ah.unpackAtomLocations(tunnelPair1Locs)
@@ -428,15 +425,15 @@ def Tunneling( fileID, tunnelPair1Locs, tunnelPair2Locs, dataColor=['#FF0000','#
     psConditions = [[] for _ in range(numConditions)]
     prConditions = [None for _ in range(numConditions)]
     for pairNum in range(numPairs):
-        singleLoadCondition = ao.condition(name="LoadLeft", whichPic=[0,0], whichAtoms=[pairNum,pairNum+numPairs],
+        singleLoadCondition = tao.condition(name="LoadLeft", whichPic=[0,0], whichAtoms=[pairNum,pairNum+numPairs],
                                            conditions=[True,False],numRequired=-1)
-        otherSingleLoadCondition = ao.condition(name="LoadRight", whichPic=[0,0],whichAtoms=[pairNum, pairNum+numPairs],
+        otherSingleLoadCondition = tao.condition(name="LoadRight", whichPic=[0,0],whichAtoms=[pairNum, pairNum+numPairs],
                                                 conditions=[False,True], numRequired=-1)      
-        survivalCondition = ao.condition(name="Survive", whichPic=[1,1],whichAtoms=[pairNum,pairNum+numPairs],
+        survivalCondition = tao.condition(name="Survive", whichPic=[1,1],whichAtoms=[pairNum,pairNum+numPairs],
                                          conditions=[True,True], numRequired=1)
-        loadBothCondition = ao.condition(name="LoadBoth", whichPic=[0,0],whichAtoms=[pairNum,pairNum+numPairs],
+        loadBothCondition = tao.condition(name="LoadBoth", whichPic=[0,0],whichAtoms=[pairNum,pairNum+numPairs],
                                          conditions=[True,True], numRequired=2)
-        bothOrNoneSurvive = ao.condition(name="evenParitySurvival",whichPic=[1,1],whichAtoms=[pairNum,pairNum+numPairs],
+        bothOrNoneSurvive = tao.condition(name="evenParitySurvival",whichPic=[1,1],whichAtoms=[pairNum,pairNum+numPairs],
                                          conditions=[True,True],numRequired=[0,2])
         psConditions[pairNum].append(singleLoadCondition)
         psConditions[pairNum+numPairs].append(singleLoadCondition)
@@ -454,11 +451,9 @@ def Tunneling( fileID, tunnelPair1Locs, tunnelPair2Locs, dataColor=['#FF0000','#
         if includeSurvival:
             psConditions[pairNum+5*numPairs].append(singleLoadCondition)
             psConditions[pairNum+6*numPairs].append(otherSingleLoadCondition)
-            
-        prc1 = ao.condition(name="Finish Left", whichPic=[1],whichAtoms=[pairNum],conditions=[True],numRequired=-1)
-        prc2 = ao.condition(name="Finish Right", whichPic=[1], whichAtoms=[pairNum+numPairs],conditions=[True],numRequired=-1)
-        
-        prcHom = ao.condition(name="HOM",whichPic=[1,1],whichAtoms=[pairNum,pairNum+numPairs],conditions=[True,True],numRequired=2)
+        prc1 = tao.condition(name="Finish Left", whichPic=[1],whichAtoms=[pairNum],conditions=[True],numRequired=-1)
+        prc2 = tao.condition(name="Finish Right", whichPic=[1], whichAtoms=[pairNum+numPairs],conditions=[True],numRequired=-1)        
+        prcHom = tao.condition(name="HOM",whichPic=[1,1],whichAtoms=[pairNum,pairNum+numPairs],conditions=[True,True],numRequired=2)
         assert(pairNum <= 1 and pairNum+numPairs <= 1)
         prConditions[pairNum] = prc1
         prConditions[pairNum+numPairs] = prc2
@@ -470,7 +465,7 @@ def Tunneling( fileID, tunnelPair1Locs, tunnelPair2Locs, dataColor=['#FF0000','#
             prConditions[pairNum+5*numPairs] = survivalCondition
             prConditions[pairNum+6*numPairs] = survivalCondition
     
-    return Transfer(fileID, ao.TransferAnalysisOptions(initLocs, tferLocs, postSelectionConditions=psConditions,
+    return Transfer(fileID, tao.TransferAnalysisOptions(initLocs, tferLocs, postSelectionConditions=psConditions,
                                                        positiveResultConditions=prConditions), 
                     dataColor=dataColor, plotAvg=plotAvg, showFitDetails=showFitDetails, **transferArgs)
     
@@ -556,7 +551,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
         subplt.set_yticks(yTickMin, minor=True)
         subplt.set_xticks(xTickMaj)
         rotateTicks(subplt)
-        subplt.grid(grid, color='#CCCCCC', which='Major', linewidth=2)
+        subplt.grid(grid, color='#909090', which='Major', linewidth=2)
         #subplt.grid(grid, color='#AAAAAA', which='Minor')
         for item in ([subplt.title, subplt.xaxis.label, subplt.yaxis.label] + subplt.get_xticklabels() + subplt.get_yticklabels()):
             item.set_fontsize(fs)
@@ -672,7 +667,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
         fitCharacterPic, vmin, vmax = genAvgDiscrepancyImage(fitCharacters, avgPics[0].shape, analysisOpts.initLocs())
         im = ax.imshow(fitCharacterPic, cmap=cm.get_cmap('seismic_r'), vmin=vmin, vmax=vmax, origin='lower')
         ax.set_title('Fit-Character (white is average)')
-        ax.grid(False)
+        #ax.grid(False)
         f.colorbar(im)
     tt.clock('After-Main-Plots')
     avgTransferPic = None
@@ -715,7 +710,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
                 for ax, lim, title, im in zip(axs.flatten(), lims, titles, ims):
                     ax.set_yticklabels([])
                     ax.set_xticklabels([])
-                    ax.grid(False)
+                    #ax.grid(False)
                     ax.set_title(title, fontsize=12)
                     imageTickedColorbar(fig, im, ax, lim)
                 tt.clock('After-Image-Plots')
@@ -757,7 +752,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
             for ax, lim, title, im in zip(axs.flatten(), lims, titles, ims):
                 ax.set_yticklabels([])
                 ax.set_xticklabels([])
-                ax.grid(False)
+                #ax.grid(False)
                 ax.set_title(title, fontsize=12)
                 imageTickedColorbar(fig, im, ax, lim)
             tt.clock('After-Image-Plots')
@@ -766,7 +761,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
     if plotImagingSignal:
         mainTwinx = mainPlot.twinx();
         mainTwinx.plot(key, imagingSignal, 'ro');
-        mainTwinx.grid(False)
+        #mainTwinx.grid(False)
         mainTwinx.set_ylabel('Imaging Signal (Counts)',color='r');
         mainTwinx.spines['right'].set_color('r')
         mainTwinx.yaxis.label.set_color('r')
@@ -870,11 +865,11 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
             'Ensemble_Hits':ensembleHits, 'InitAtoms':initAtoms, 'TferAtoms':tferAtoms, 'tferList':tferList }
 
 
-def Loading(fileNum, atomLocations, **PopulationArgs):
+def Loading(fileID, atomLocs, **TransferArgs):
     """
     A small wrapper, partially for the extra defaults in this case partially for consistency with old function definitions.
     """
-    return Population(fileNum, atomLocations, 0, 1, **PopulationArgs)
+    return Transfer(fileID, tao.getStandardLoadingOptions(atomLocs), atomLocs, **TransferArgs)
 
 
 def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=True, legendOption=None, showImagePlots=True,
