@@ -24,7 +24,7 @@ from .AnalysisHelpers import (processSingleImage, orderData,
                               guessGaussianPeaks, calculateAtomThreshold, getAvgPic, getEnsembleHits,
                               getEnsembleStatistics, processImageData,
                               fitPictures, fitGaussianBeamWaist, integrateData, 
-                              computeMotNumber, getFitsDataFrame, genAvgDiscrepancyImage, getGridDims, newCalcMotTemperature)
+                              computeMotNumber, getFitsDataFrame, genAvgDiscrepancyImage, getGridDims)
 from . import TransferAnalysisOptions as tao
 from . import ThresholdOptions as to
 from . import AnalysisHelpers as ah
@@ -54,7 +54,7 @@ def fancyImshow( fig, ax, image, avgSize='20%', pad_=0, cb=True, imageArgs={}, h
 
     """
     fig.subplots_adjust(**subplotsAdjustArgs)
-    im = ax.imshow(image, origin='lower', **imageArgs)
+    im = ax.imshow(image, **imageArgs)
     ax.grid(False)
     ax.set_xticklabels([])
     ax.set_yticklabels([])
