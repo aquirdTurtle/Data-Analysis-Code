@@ -292,6 +292,7 @@ baslerScoutPixelSize = 7.4e-6
 baslerAcePixelSize = 4.8e-6
 andorPixelSize = 16e-6
 dataRayPixelSize = 4.4e-6
+magnification = 64
 
 # basler conversion... joules incident per grey-scale count.
 # number from theory of camera operation
