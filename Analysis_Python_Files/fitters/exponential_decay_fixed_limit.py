@@ -30,6 +30,13 @@ def f_unc(t, A, tau):
     """
     return exponential_decay.f_unc(t,A,tau,limit)
 
+def fitCharacter(params):
+    return params[1]
+def fitCharacterErr(params, Errs):
+    return Errs[1]
+
+def getFitCharacterString():
+    return 'tau'
 
 def guess(key, values):
     """
@@ -41,3 +48,11 @@ def guess(key, values):
     """
     return exponential_decay.guess(key,values)[:-1]
 
+def fitCharacter(params):
+    return params[1]
+
+def fitCharacterErr(params, errors):
+    return errors[1]
+
+def getFitCharacterString():
+    return "Decay constant"

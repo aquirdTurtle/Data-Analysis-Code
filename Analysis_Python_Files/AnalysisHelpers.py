@@ -3,7 +3,6 @@ __version__ = "1.4"
 import csv
 import os # for linesep
 import pandas as pd
-from astropy.io import fits
 from numpy import array as arr
 import h5py as h5
 from inspect import signature
@@ -183,8 +182,8 @@ def temperatureAnalysis( data, magnification, **standardImagesArgs ):
     waists_1D = 2 * mc.baslerScoutPixelSize * v_params[:, 2] * magnification
     # convert to s
     times = key / 1000
-    temp, fitVals, fitCov = newCalcMotTemperature(times, waists / 2 )
-    temp_1D, fitVals_1D, fitCov_1D = newCalcMotTemperature(times, waists_1D / 2)
+    temp, fitVals, fitCov = calcBallisticTemperature(times, waists / 2)
+    temp_1D, fitVals_1D, fitCov_1D = calcBallisticTemperature(times, waists_1D / 2)
     return ( temp, fitVals, fitCov, times, waists, rawData, pictureFitParams, key, plottedData, dataMinusBg, v_params, v_errs, h_params, h_errs,
              waists_1D, temp_1D, fitVals_1D, fitCov_1D )
 
@@ -939,41 +938,18 @@ def computeMotNumber(sidemotPower, diagonalPower, motRadius, exposure, imagingLo
     motNumber = fluorescence / rate
     return motNumber, fluorescence
 
-def newCalcMotTemperature(times, sigmas):
+def calcBallisticTemperature(times, sizeSigmas, guess = LargeBeamMotExpansion.guess(), sizeErrors=None):
     """ Small wrapper around a fit 
+    expects time in s, sigma in m
     return temp, vals, cov
     """
-    guess = LargeBeamMotExpansion.guess()
     try:
-        fitVals, fitCovariances = opt.curve_fit(LargeBeamMotExpansion.f, times, sigmas, p0=guess)
+        fitVals, fitCovariances = opt.curve_fit(LargeBeamMotExpansion.f, times, sizeSigmas, p0=guess, sigma = sizeErrors)
     except RuntimeError:
         fitVals = np.zeros(len(guess))
         fitCovariances = np.zeros((len(guess), len(guess)))
         warn('Mot Temperature Expansion Fit Failed!')
     return fitVals[2], fitVals, fitCovariances
-
-
-def calcMotTemperature(times, sigmas):
-    guess = [sigmas[0], 0.1]
-    # guess = [0.001, 0.1]
-    # in cm...?
-    # sidemotWaist = .33 / (2*np.sqrt(2))
-    # sidemotWaist = 8 / (2*np.sqrt(2))
-    sidemotWaist = 1000 / (2*np.sqrt(2))
-    # sidemotWaist^2/2 = 2 sigma_sidemot^2
-    # different gaussian definitions
-    sigma_I = sidemotWaist / 2
-    # convert to m
-    sigma_I /= 100
-    # modify roughly for angle of sidemot
-    # sigma_I /= np.cos(2*pi/3)
-    sigma_I /= np.cos(consts.pi/4)
-    sigma_I = 100
-    fitVals, fitCovariances = opt.curve_fit(lambda x, a, b: ballisticMotExpansion(x, a, b, sigma_I), times, sigmas, p0=guess)
-    simpleVals, simpleCovariances = opt.curve_fit(simpleMotExpansion, times, sigmas, p0=guess)
-    temperature = consts.Rb87_M / consts.k_B * fitVals[1]**2
-    tempFromSimple = consts.Rb87_M / consts.k_B * simpleVals[1]**2
-    return temperature, tempFromSimple, fitVals, fitCovariances, simpleVals, simpleCovariances
 
 
 def orderData(data, key, keyDim=None, otherDimValues=None):
@@ -1792,14 +1768,26 @@ def sliceMultidimensionalData(dimSlice, origKey, rawData, varyingDim=None):
     return arr(key), arr(rawData), otherDimValues, varyingDim
 
 def applyDataRange(dataRange, groupedDataRaw, key):
+    
     if dataRange is not None:
-        groupedData, newKey = [[] for _ in range(2)]
-        for count, variation in enumerate(groupedDataRaw):
-            if count in dataRange:
-                groupedData.append(variation)
-                newKey.append(key[count])
-        groupedData = arr(groupedData)
-        key = arr(newKey)
+        if type(groupedDataRaw) == type({}):
+            
+            groupedData, newKey = {}, []
+            for variNum, keyVal in enumerate(key):
+                keyValStr = misc.round_sig_str(keyVal)
+                if variNum in dataRange:
+                    groupedData[keyValStr] = groupedDataRaw[keyValStr]
+                    newKey.append(key[variNum])
+            key = arr(newKey)
+        else:
+            #Expects a multidimensional array
+            groupedData, newKey = [[] for _ in range(2)]
+            for variNum, varPics in enumerate(groupedDataRaw):
+                if variNum in dataRange:
+                    groupedData.append(varPics)
+                    newKey.append(key[variNum])
+            groupedData = arr(groupedData)
+            key = arr(newKey)
     else:
         groupedData = groupedDataRaw
     return key, groupedData
