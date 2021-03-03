@@ -37,7 +37,7 @@ def guess():
     Returns guess values for the parameters of this function class based on the input. Used for fitting using this
     class.
     """
-    return 0, 0.0005, 100e-6
+    return 0, 2e-4, 100e-6
 
 def args():
     return ['t_0', 'sigma_x', 'T']

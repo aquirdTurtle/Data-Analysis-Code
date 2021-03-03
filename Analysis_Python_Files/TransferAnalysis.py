@@ -10,11 +10,12 @@ from .Miscellaneous import what
 
 def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWindow(), dataRange=None, keyOffset=0, 
                           dimSlice=None, varyingDim=None, groupData=False, quiet=False, picsPerRep=2, repRange=None, 
-                          keyConversion=None, binningParams=None, removePics=None, expFile_version=4, useBaseA=True):
+                          keyConversion=None, binningParams=None, removePics=None, expFile_version=4, useBaseA=True, keyParameter=None):
+                         
     """
     Unpack inputs, properly shape the key, picture array, and run some initial checks on the consistency of the settings.
     """
-    with exp.ExpFile(fileNumber, expFile_version=expFile_version, useBaseA=useBaseA) as f:
+    with exp.ExpFile(fileNumber, expFile_version=expFile_version, useBaseA=useBaseA, keyParameter=keyParameter) as f:
         rawData, keyName, hdf5Key, repetitions = f.pics, f.key_name, f.key, f.reps
         if not quiet:
             basicInfoStr = f.get_basic_info()
