@@ -308,7 +308,7 @@ def plotMotTemperature(data, key=None, magnification=3, showAllPics=True, plot1D
             showPics(dataMinusBg, key, fitParams=pictureFitParams, hFitParams=h_params, vFitParams=v_params)    
     print("\nTemperture in the Large Laser Beam Approximation (2D Fits):", misc.errString(temp * 1e6, errs[2]*1e6),    'uK')
     print("\nTemperture in the Large Laser Beam Approximation (1D Fits):", misc.errString(temp_1D * 1e6, errs_1D[2]*1e6), 'uK')
-    print('Fit-Parameters:', fitVals)
+    print('2D Fit-Parameters:', fitVals)
     return pictureFitParams, rawData, temp * 1e6, errs[2]*1e6
     
     
@@ -425,15 +425,15 @@ def Tunneling( fileID, tunnelPair1Locs, tunnelPair2Locs, dataColor=['#FF0000','#
     psConditions = [[] for _ in range(numConditions)]
     prConditions = [None for _ in range(numConditions)]
     for pairNum in range(numPairs):
-        singleLoadCondition = tao.condition(name="LoadLeft", whichPic=[0,0], whichAtoms=[pairNum,pairNum+numPairs],
-                                           conditions=[True,False],numRequired=-1)
-        otherSingleLoadCondition = tao.condition(name="LoadRight", whichPic=[0,0],whichAtoms=[pairNum, pairNum+numPairs],
-                                                conditions=[False,True], numRequired=-1)      
-        survivalCondition = tao.condition(name="Survive", whichPic=[1,1],whichAtoms=[pairNum,pairNum+numPairs],
+        singleLoadCondition = tao.condition(name="LoadL", whichPic=[0,0], whichAtoms=[pairNum,pairNum+numPairs],
+                                           conditions=[True,False],numRequired=-1, markerWhichPicList=(0,), markerLocList=(pairNum,))
+        otherSingleLoadCondition = tao.condition(name="LoadR", whichPic=[0,0],whichAtoms=[pairNum, pairNum+numPairs],
+                                                conditions=[False,True], numRequired=-1, markerWhichPicList=(0,), markerLocList=(pairNum+numPairs,))      
+        survivalCondition = tao.condition(name="Sv.", whichPic=[1,1],whichAtoms=[pairNum,pairNum+numPairs],
                                          conditions=[True,True], numRequired=1)
-        loadBothCondition = tao.condition(name="LoadBoth", whichPic=[0,0],whichAtoms=[pairNum,pairNum+numPairs],
-                                         conditions=[True,True], numRequired=2)
-        bothOrNoneSurvive = tao.condition(name="evenParitySurvival",whichPic=[1,1],whichAtoms=[pairNum,pairNum+numPairs],
+        loadBothCondition = tao.condition(name="LoadB", whichPic=[0,0],whichAtoms=[pairNum,pairNum+numPairs],
+                                         conditions=[True,True], numRequired=2, markerWhichPicList=(0,0), markerLocList=(pairNum,pairNum+numPairs,))
+        bothOrNoneSurvive = tao.condition(name="evenPSv",whichPic=[1,1],whichAtoms=[pairNum,pairNum+numPairs],
                                          conditions=[True,True],numRequired=[0,2])
         psConditions[pairNum].append(singleLoadCondition)
         psConditions[pairNum+numPairs].append(singleLoadCondition)
@@ -451,9 +451,12 @@ def Tunneling( fileID, tunnelPair1Locs, tunnelPair2Locs, dataColor=['#FF0000','#
         if includeSurvival:
             psConditions[pairNum+5*numPairs].append(singleLoadCondition)
             psConditions[pairNum+6*numPairs].append(otherSingleLoadCondition)
-        prc1 = tao.condition(name="Finish Left", whichPic=[1],whichAtoms=[pairNum],conditions=[True],numRequired=-1)
-        prc2 = tao.condition(name="Finish Right", whichPic=[1], whichAtoms=[pairNum+numPairs],conditions=[True],numRequired=-1)        
-        prcHom = tao.condition(name="HOM",whichPic=[1,1],whichAtoms=[pairNum,pairNum+numPairs],conditions=[True,True],numRequired=2)
+        prc1 = tao.condition(name="FinL", whichPic=[1],whichAtoms=[pairNum],conditions=[True],numRequired=-1,
+                            markerWhichPicList=(1,), markerLocList=(pairNum,))
+        prc2 = tao.condition(name="FinR", whichPic=[1], whichAtoms=[pairNum+numPairs],conditions=[True],numRequired=-1,
+                            markerWhichPicList=(1,), markerLocList=(pairNum+numPairs,))        
+        prcHom = tao.condition(name="P11",whichPic=[1,1],whichAtoms=[pairNum,pairNum+numPairs],conditions=[True,True],numRequired=2,
+                              markerWhichPicList=(1,1), markerLocList=(pairNum, pairNum+numPairs,))
         assert(pairNum <= 1 and pairNum+numPairs <= 1)
         prConditions[pairNum] = prc1
         prConditions[pairNum+numPairs] = prc2
@@ -464,17 +467,44 @@ def Tunneling( fileID, tunnelPair1Locs, tunnelPair2Locs, dataColor=['#FF0000','#
         if includeSurvival:
             prConditions[pairNum+5*numPairs] = survivalCondition
             prConditions[pairNum+6*numPairs] = survivalCondition
-    
-    return Transfer(fileID, tao.TransferAnalysisOptions(initLocs, tferLocs, postSelectionConditions=psConditions,
+    res = Transfer(fileID, tao.TransferAnalysisOptions(initLocs, tferLocs, postSelectionConditions=psConditions,
                                                        positiveResultConditions=prConditions), 
                     dataColor=dataColor, plotAvg=plotAvg, showFitDetails=showFitDetails, **transferArgs)
+    # currently no smarter way of handling this other than doing it manually like this.
+    ax = res['Main_Axis']
+    data = [np.array(dset) for dset in res['All_Transfer']]
+    SP1 = data[0]
+    SP2 = data[3]
+    S1 = data[5]
+    S2 = data[6]
+    
+    term1 = SP1*SP2 + (1-SP1)*(1-SP2)
+    fraction2 = S1*S2/(S1*S2+(1-S1)*(1-S2))
+    
+    hompredict = term1 * fraction2
+    
+    dpdsp1 = (SP2-(1-SP2))*fraction2
+    dpdsp2 = (SP1-(1-SP1))*fraction2
+    dpdp1 = term1*((S1*S2+(1-S1)*(1-S2))*S2-S1*S2*(S2-(1-S2)))/(S1*S2+(1-S1)*(1-S2))**2
+    dpdp2 = term1*((S1*S2+(1-S1)*(1-S2))*S1-S1*S2*(S1-(1-S1)))/(S1*S2+(1-S1)*(1-S2))**2
+    homErrs = []
+    for errnum in range(2):
+        errs = [np.array([err[errnum] for err in dset]) for dset in res['All_Transfer_Errs']]    
+        homErrs.append(np.sqrt(dpdsp1**2*errs[0]**2+dpdsp2**2*errs[3]**2+dpdp1**2*errs[5]**2+dpdp2**2*errs[6]**2))
+    
+    ax.errorbar(res['Key'], hompredict,yerr=[homErrs[0],homErrs[1]], marker='o', linestyle='', 
+                color='purple', markersize=15, label='P11 Pred', capsize=5)
+    #ax.plot(res['Key'], hompredict, marker='o', linestyle='', 
+    #            color='purple', markersize=15, label='P11 Prediction')
+
+    return res
     
 def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules=[None], 
               showFitDetails=False, showFitCharacterPlot=False, showImagePlots=None, plotIndvHists=False, 
               timeit=False, outputThresholds=False, plotFitGuess=False, newAnnotation=False, 
-              plotImagingSignal=False, expFile_version=4, plotAvg=True, 
+              plotImagingSignal=False, expFile_version=4, plotAvg=True, countMain=False, histMain=False,
               flattenKeyDim=None, forceNoAnnotation=False, cleanOutput=True, dataColor='gist_rainbow', dataEdgeColors=None,
-              tOptions=[to.ThresholdOptions()], resInput=None, **standardTransferArgs ):
+              tOptions=[to.ThresholdOptions()], resInput=None, countRunningAvg=None, **standardTransferArgs ):
     """
     Standard data analysis function for looking at survival rates throughout an experiment. I'm very bad at keeping the 
     function argument descriptions up to date.
@@ -509,18 +539,30 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
     fig = figure(figsize=(25.0, 8.0))
     typeName = "Survival" if analysisOpts.initLocs() == analysisOpts.tferLocs() else "Transfer"
     grid1 = mpl.gridspec.GridSpec(12, 16,left=0.05, right=0.95, wspace=1.2, hspace=1)
-    mainPlot = subplot(grid1[:, :11])
+    if countMain:
+        countPlot = subplot(grid1[:, :11])
+    elif histMain:
+        countHist = subplot(grid1[:, :11])
+    else:
+        mainPlot = subplot(grid1[:, :11])
     initPopPlot = subplot(grid1[0:3, 12:16])
     grid1.update( left=0.1, right=0.95, wspace=0, hspace=1000 )
-    countPlot = subplot(grid1[4:8, 12:15])    
-    countHist = subplot(grid1[4:8, 15:16], sharey=countPlot)
+    if countMain:
+        mainPlot = subplot(grid1[4:8, 12:15])
+        countHist = subplot(grid1[4:8, 15:16], sharey=mainPlot)
+    elif histMain:        
+        countPlot = subplot(grid1[4:8, 12:15])
+        mainPlot = subplot(grid1[4:8, 15:16], sharey=countPlot)
+    else:
+        countPlot = subplot(grid1[4:8, 12:15])
+        countHist = subplot(grid1[4:8, 15:16], sharey=mainPlot)
     grid1.update( left=0.001, right=0.95, hspace=1000 )
     
     avgPlt1 = subplot(grid1[8:12, 11:13])
     avgPlt2 = subplot(grid1[8:12, 13:15])
     if type(keyName) is not type("a string"):
         keyName = ' '.join([kn+',' for kn in keyName])
-    titletxt = (keyName + " " + typeName + " Point.\n Avg " + typeName + "% = " 
+    titletxt = (keyName + " " + typeName + ".\n Avg " + typeName + "% = " 
                 + (misc.dblAsymErrString(np.mean(transVarAvg), *avgTransferErr[0], *transVarErr[0]) 
                    if len( transVarAvg ) == 1 else
                    misc.dblErrString(np.mean(transVarAvg),  
@@ -546,7 +588,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
                                                                                  minorYTicks, majorXTicks, fontsizes, grid_options):
         subplt.set_xlabel(xlbl, fontsize=fs)
         subplt.set_ylabel(ylbl, fontsize=fs)
-        subplt.set_title(title, fontsize=fs)
+        subplt.set_title(title, fontsize=fs, loc='left')
         subplt.set_yticks(yTickMaj)
         subplt.set_yticks(yTickMin, minor=True)
         subplt.set_xticks(xTickMaj)
@@ -587,9 +629,13 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
             if module.fitCharacter(fit['vals']) is not None:
                 fitCharacters.append(module.fitCharacter(fit['vals']))
             mainPlot.plot(fit['x'], fit['nom'], color=color, alpha=0.5)
+            if plotFitGuess:
+                mainPlot.plot(fit['x'], fit['guess'], color='r', alpha=1)
+
     mainPlot.xaxis.set_label_coords(0.95, -0.15)
     if legendOption:
-        mainPlot.legend(loc="upper center", bbox_to_anchor=(0.4, -0.1), fancybox=True, ncol = 4 if longLegend else 10, prop={'size': 12})
+        mainPlot.legend(loc="upper right", bbox_to_anchor=(1, 1.1), fancybox=True, 
+                        ncol = 4 if longLegend else 10, prop={'size': 14}, frameon=False)
     # ### Init Population Plot
     for datasetNum, _ in enumerate(analysisOpts.postSelectionConditions):
         print(np.array(initPopulation).shape)
@@ -602,11 +648,15 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
             plot.set_xlim(left = min(key) - r / len(key), right = max(key) + r / len(key))
         plot.set_ylim({0, 1})
     # ### Count Series Plot
-    for i, loc in enumerate(analysisOpts.initLocs()):
-        countPlot.plot(pic1Data[i], color=colors[i], ls='', marker='.', markersize=1, alpha=0.05)
-        for threshInc, thresh in enumerate(initThresholds[i]):
-            picsPerVar = int(len(pic1Data[i])/len(initThresholds[i]))
-            countPlot.plot([picsPerVar*threshInc, picsPerVar*(threshInc+1)], [thresh.t, thresh.t], color=colors[i], alpha=0.3)
+    for locNum, loc in enumerate(analysisOpts.initLocs()):
+        countPlot.plot(pic1Data[locNum], color=colors[locNum], ls='', marker='.', 
+                       markersize=2 if countMain else 1, alpha=1 if countMain else 0.05)
+        if countRunningAvg is not None:
+            countPlot.plot(np.convolve(pic1Data[locNum], np.ones(countRunningAvg)/countRunningAvg, mode='valid'),
+                           color=colors[locNum], alpha=1 if countMain else 0.5)
+        for threshInc, thresh in enumerate(initThresholds[locNum]):
+            picsPerVar = int(len(pic1Data[locNum])/len(initThresholds[locNum]))
+            countPlot.plot([picsPerVar*threshInc, picsPerVar*(threshInc+1)], [thresh.t, thresh.t], color=colors[locNum], alpha=0.3)
     ticksForVis = countPlot.xaxis.get_major_ticks()
     ticksForVis[-1].label1.set_visible(False)
     # Count Histogram Plot
@@ -862,7 +912,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
             'Average_Transfer_Err':avgTransferErr, 'Initial_Atom_Images':initAtomImages, 
             'Transfer_Atom_Images':transAtomImages, 'Picture_2_Data':pic2Data, 'Initial_Thresholds':initThresholds,
             'Transfer_Thresholds':transThresholds, 'Fit_Modules':fitModules, 'Average_Fit_Character':avgFitCharacter,
-            'Ensemble_Hits':ensembleHits, 'InitAtoms':initAtoms, 'TferAtoms':tferAtoms, 'tferList':tferList }
+            'Ensemble_Hits':ensembleHits, 'InitAtoms':initAtoms, 'TferAtoms':tferAtoms, 'tferList':tferList, 'Main_Axis':mainPlot }
 
 
 def Loading(fileID, atomLocs, **TransferArgs):
@@ -875,7 +925,7 @@ def Loading(fileID, atomLocs, **TransferArgs):
 def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=True, legendOption=None, showImagePlots=True,
                plotIndvHists=False, showFitDetails=False, showFitCharacterPlot=True, show=True, histMain=False,
                mainAlpha=0.2, avgColor='w', newAnnotation=False, thresholdOptions=to.ThresholdOptions(), clearOutput=True,
-               dataCmap='gist_rainbow',
+               dataCmap='gist_rainbow', countMain=False,
                **StandardArgs):
     """
     Standard data analysis package for looking at population %s throughout an experiment.
@@ -912,13 +962,19 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     # Main Plot
     typeName = "L"
     popPlot = subplot(grid1[0:3, 12:16])
-    countPlot = subplot(gridRight[4:8, 12:15])    
-    if not histMain:
-        mainPlot = subplot(grid1[:, :12])
-        countHist = subplot(gridLeft[4:8, 15:16], sharey=countPlot)
-    else:
-        countHist = subplot(grid1[:, :12])
+    if countMain:
+        countPlot = subplot(gridRight[:, :11])
         mainPlot = subplot(gridLeft[4:8, 15:16], sharey=countPlot)
+        countHist = subplot(gridRight[:, 11:12])
+    elif histMain:
+        countPlot = subplot(gridRight[:, :1])
+        countHist = subplot(grid1[:, 1:12])
+        mainPlot = subplot(gridLeft[4:8, 15:16], sharey=countPlot)
+    else:
+        mainPlot = subplot(grid1[:, :12])
+        countPlot = subplot(gridRight[:, 12:15])
+        countHist = subplot(gridLeft[4:8, 15:16], sharey=countPlot)    
+        
     fitCharacters = []
     longLegend = len(allPops[0]) == 1
 

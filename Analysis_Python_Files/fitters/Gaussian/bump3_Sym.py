@@ -9,7 +9,7 @@ numGauss = 3
 def fitCharacter( params ):
     [Offset, Amp1, Sigma1, Amp2, Sigma2, Amp3, Sigma3, Center, Spread] = params
     params_ = [Offset, Amp1, Center - Spread/2, Sigma1, Amp2, Center, Sigma2, Amp3, Center + Spread/2, Sigma3]
-    #for raman spectra, assuming fits are in order from left to right, i.e. first fit is lowest freq
+    # for raman spectra, assuming fits are in order from left to right, i.e. first fit is lowest freq
     r = params_[7] / params_[1]
     return r / ( 1 - r ) if not ( r >= 1 ) else np.inf
 
@@ -21,8 +21,7 @@ def fitCharacterErr(params, errs):
     return errR/(1-r)**2
 
 def axial_GSBC_guess():
-    #[Offset, Amp1, Sigma1, Amp2, Sigma2, Amp3, Sigma3, Center, Spread] = params
-    return  (0, 0.5, 10, 0.8, 10, 0.1, 10, 120, 60)
+    return  (0, 0.5, 10, 0.8, 10, 0.1, 10, 120, 50)
 
 def args():
     arglist = ['Offset', "Amp1", "Sigma1", "Amp2", "Sigma2", "Amp3", "Sigma3", "Center", "Spread"]
@@ -76,12 +75,12 @@ def guess(key, values):
     """
     Returns guess values for the parameters of this function class based on the input. Used for fitting using this class.
     """
-    a = (max(values)-min(values))/10
-    return [min(values),
+    #a = (max(values)-min(values))/10
+    return [0,
             0.5, 3,
             0.4, 3,
             0.2, 3, 
-            85, 70]
+            85, 55]
     
 
 def areas(A1, x01, sig1, A2, x02, sig2):

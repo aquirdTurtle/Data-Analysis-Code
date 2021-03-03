@@ -27,7 +27,7 @@ def getExtremes(f,phi,tau):
 
 def f(x, A, tau, f, phi, offset):
     # Just for sanity. Keep some numbers positive.
-    if A < 0:
+    if A < 0 or A > 1.2:
         return x * 10 ** 10
     #if phi < 0:
     #    return x * 10 ** 10
@@ -48,7 +48,7 @@ def f_unc(x, A, tau, freq, phi, offset):
 
 
 def guess(key, vals):
-    A_g = 0.8
+    A_g = 0.3
     # A_g = (max(vals) - min(vals)) / 2
     tau_g = 10
     # tau_g = (max(key) - min(key)) * 2
@@ -56,4 +56,4 @@ def guess(key, vals):
     f_g = 0.65
     phi_g = 1
     offset_g = 0.5
-    return [0.8, 10, 0.07, 1, 0.5]
+    return [0.8, 10, 0.45, 1, 0.5]

@@ -183,7 +183,7 @@ def temperatureAnalysis( data, magnification, **standardImagesArgs ):
     waists_1D = 2 * mc.baslerScoutPixelSize * v_params[:, 2] * magnification
     # convert to s
     times = key / 1000
-    temp, fitVals, fitCov = newCalcMotTemperature(times, waists / 2)
+    temp, fitVals, fitCov = newCalcMotTemperature(times, waists / 2 )
     temp_1D, fitVals_1D, fitCov_1D = newCalcMotTemperature(times, waists_1D / 2)
     return ( temp, fitVals, fitCov, times, waists, rawData, pictureFitParams, key, plottedData, dataMinusBg, v_params, v_errs, h_params, h_errs,
              waists_1D, temp_1D, fitVals_1D, fitCov_1D )
@@ -221,21 +221,36 @@ def Temperature(show=True):
     ax1 = fig.add_subplot(2,1,1)
     ax2 = fig.add_subplot(2,1,2, sharex=ax1)
     ax1.clear()
-    for i, l in zip(np.arange(3,13,3), legends):
-        ax1.plot(xpts, df[i], label=l)
+    for ind, leg in zip(np.arange(3,13,3), legends):
+        pltx, data = [], []
+        for num, dp in enumerate(df[ind]):
+            try:
+                data.append(float(dp))
+                pltx.append(xpts[num])
+            except ValueError:
+                print('Bad Value!', dp, xpts[num])
+                pass
+        ax1.plot(pltx, data, label=leg)
     ax1.legend(loc='upper center', bbox_to_anchor=(0.5,1.2),ncol=4, fontsize=10)
     ax1.set_ylabel('Temperature (C)')
     plt.setp(ax1.get_xticklabels(), visible=False)
 
     ax2.clear()
-    for i, l in zip(np.arange(4,14,3), legends):
-        ax2.plot(xpts, df[i], label=l)
+    for ind, leg in zip(np.arange(4,14,3), legends):
+        pltx, data = [], []
+        for num, dp in enumerate(df[ind]):
+            try:
+                data.append(float(dp))
+                pltx.append(xpts[num])
+            except ValueError:
+                print('Bad Value!', dp, xpts[num])
+        ax2.plot(pltx, data, label=leg)
     ax2.set_ylabel('Humidity (%)')
     incr = int(len(xpts)/20)+1
     ax2.set_xticks(xpts[::incr])
     plt.xlabel('Time (hour:minute)')
     plt.xticks(rotation=75);
-    return xpts, df
+    return xpts, df, ax1, ax2
 
 def splitData(data, picsPerSplit, picsPerRep, runningOverlap=0):
     data = np.reshape(data, (picsPerSplit, int(data.shape[1]/picsPerSplit), data.shape[2], data.shape[3]))
