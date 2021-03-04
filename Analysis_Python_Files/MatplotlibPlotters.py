@@ -562,7 +562,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
     avgPlt2 = subplot(grid1[8:12, 13:15])
     if type(keyName) is not type("a string"):
         keyName = ' '.join([kn+',' for kn in keyName])
-    titletxt = (keyName + " " + typeName + ".\n Avg " + typeName + "% = " 
+    titletxt = (keyName + " " + typeName + "; Avg. " + typeName + "% = " 
                 + (misc.dblAsymErrString(np.mean(transVarAvg), *avgTransferErr[0], *transVarErr[0]) 
                    if len( transVarAvg ) == 1 else
                    misc.dblErrString(np.mean(transVarAvg),  
@@ -584,11 +584,11 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
     majorXTicks = [xtickKey, xtickKey, np.linspace(0,len(pic1Data[0]),10), [],[]]
     grid_options = [True,True,True,False,False]
     fontsizes = [20,10,10,10,10]
-    for subplt, xlbl, ylbl, title, yTickMaj, yTickMin, xTickMaj, fs, grid in zip(plotList, xlabels, ylabels, titles, majorYTicks, 
-                                                                                 minorYTicks, majorXTicks, fontsizes, grid_options):
+    for pltNum, (subplt, xlbl, ylbl, title, yTickMaj, yTickMin, xTickMaj, fs, grid) in \
+                enumerate(zip(plotList, xlabels, ylabels, titles, majorYTicks, minorYTicks, majorXTicks, fontsizes, grid_options)):
         subplt.set_xlabel(xlbl, fontsize=fs)
         subplt.set_ylabel(ylbl, fontsize=fs)
-        subplt.set_title(title, fontsize=fs, loc='left')
+        subplt.set_title(title, fontsize=fs, loc='left', pad=50 if pltNum==0 else 0)
         subplt.set_yticks(yTickMaj)
         subplt.set_yticks(yTickMin, minor=True)
         subplt.set_xticks(xTickMaj)

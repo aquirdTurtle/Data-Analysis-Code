@@ -179,7 +179,7 @@ def getTransferAvgs(analysisOpts, initAtomsPs, tferAtomsPs, prConditions=None):
             print('using default positive result condition...')
         for varInc in range(len(initAtomsPs)):
             if prConditions[dsetInc] is None:
-                prConditions[dsetInc] = ao.condition(name='Default Survival Condition', whichPic=[1],
+                prConditions[dsetInc] = ao.condition(name='Def. Sv', whichPic=[1],
                                                      whichAtoms=[dsetInc],conditions=[True],numRequired=-1);
             tferList[dsetInc][varInc] = getGeneralEvents(misc.transpose(initAtomsPs[varInc][dsetInc]), misc.transpose(tferAtomsPs[varInc][dsetInc]),
                                                          prConditions[dsetInc])
