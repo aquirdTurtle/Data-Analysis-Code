@@ -46,9 +46,32 @@ import matplotlib as mpl
 import matplotlib.cm
 from IPython.display import Image, HTML, display
 
+def softwareBinning(binningParams, rawData):
+    if binningParams is not None:
+        sb = binningParams
+        if len(np.array(rawData).shape) == 3: 
+            if not ((rawData.shape[1]/sb[0]).is_integer()): 
+                raise ValueError('Vertical size ' + str(rawData.shape[1]) +  ' not divisible by binning parameter ' + str(sb[0]))
+            if not ((rawData.shape[2]/sb[1]).is_integer()):
+                raise ValueError('Horizontal size ' + str(rawData.shape[2]) +  ' not divisible by binning parameter ' + str(sb[1]))
+            rawData = rawData.reshape(rawData.shape[0], rawData.shape[1]//sb[0], sb[0], rawData.shape[2]//sb[1], sb[1]).sum(4).sum(2)
+        elif len(np.array(rawData).shape) == 2:
+            if not ((rawData.shape[0]/sb[0]).is_integer()): 
+                raise ValueError('Vertical size ' + str(rawData.shape[0]) +  ' not divisible by binning parameter ' + str(sb[0]))
+            if not ((rawData.shape[1]/sb[1]).is_integer()):
+                raise ValueError('Horizontal size ' + str(rawData.shape[1]) +  ' not divisible by binning parameter ' + str(sb[1]))
+            rawData = rawData.reshape(rawData.shape[0]//sb[0], sb[0], rawData.shape[1]//sb[1], sb[1]).sum(3).sum(1)
+        else:
+            raise ValueError('Raw data must either 2 or 3 dimensions')
+            
+    return rawData
+    
 
 def windowImage(image, window):
-    return image[window[0]:window[1], window[2]:window[3]]
+    if len(np.array(image).shape) == 2:
+        return image[window[0]:window[1], window[2]:window[3]]
+    else: 
+        return image[:,window[0]:window[1], window[2]:window[3]]
 
 def makeVid(pics, gifAddress, videoType, fileAddress=None, dur=1, lim=None, includeCount=True, lowLim=None, 
             finLabels=[], finTxt="Atom Reservoir Depleted", vidMap='inferno', maxMult=1, offset=0,

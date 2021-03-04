@@ -42,7 +42,7 @@ def addAxColorbar(fig, ax, im):
 def fancyImshow( fig, ax, image, avgSize='20%', pad_=0, cb=True, imageArgs={}, hAvgArgs={'color':'orange'}, vAvgArgs={'color':'orange'}, 
                  ticklabels=True,do_vavg=True, do_havg=True, hFitParams=None, vFitParams=None, 
                  subplotsAdjustArgs=dict(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0), 
-                 fitModule=bump):
+                 fitModule=bump, flipVAx = False):
     """
     Expand a normal image plot of the image input, giving it a colorbar, a horizontal-averaged step plot to the left
     and a vertically-averaged step plot below.
@@ -69,7 +69,6 @@ def fancyImshow( fig, ax, image, avgSize='20%', pad_=0, cb=True, imageArgs={}, h
         vAvg = [vAvg[0]] + list(vAvg)
         vax = divider.append_axes('bottom', size=avgSize, pad=pad_)
         vline = vax.step(np.arange(len(vAvg)), vAvg, **vAvgArgs)
-        vax.set_xlim(0,len(vAvg)-1)
         vax.set_yticks([])
         if not ticklabels:
             vax.set_xticks([])
@@ -77,6 +76,7 @@ def fancyImshow( fig, ax, image, avgSize='20%', pad_=0, cb=True, imageArgs={}, h
             fxpts = np.linspace(0, len(vAvg), 1000)
             fypts = fitModule.f(fxpts, *vFitParams)
             vax.plot(fxpts+0.5,fypts)
+        vax.set_xlim(0,len(vAvg)-1)
     if do_havg:
         # subtle difference here from the vAvg case
         hAvg = list(hAvg) + [hAvg[-1]]
@@ -90,6 +90,8 @@ def fancyImshow( fig, ax, image, avgSize='20%', pad_=0, cb=True, imageArgs={}, h
             fxpts = np.linspace(0, len(hAvg), 1000)
             fypts = fitModule.f(fxpts, *hFitParams)
             hax.plot(fypts, fxpts)
+        if flipVAx:
+            hax.invert_yaxis()
     return ax, cax, hax, vax, hAvg, vAvg, im, vline, hline
 
 def rotateTicks(plot):
