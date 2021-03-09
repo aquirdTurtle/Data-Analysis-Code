@@ -1235,39 +1235,48 @@ def getMaxFidelityThreshold(fitVals):
     return threshold, fidelity
 
 
-def postSelectOnAssembly( pic1AtomData, pic2AtomData, analysisOpts, justReformat=False ):
+def postSelectOnAssembly( pic1AtomData, pic2AtomData, analysisOpts, justReformat=False, extraDataToPostSelect = None ): 
+    totalRepNum = len(pic1AtomData[0])
+    dataSetTotalNum = len(analysisOpts.postSelectionConditions)
+    if extraDataToPostSelect is not None:
+        if len(extraDataToPostSelect) == totalRepNum:
+            raise ValueError('extraDataToPostSelect must have a value for every repetition')
     # the "justReformat" arg is a bit hackish here. 
     if analysisOpts.postSelectionConditions is None:
         analysisOpts.postSelectionConditions = [[] for _ in analysisOpts.positiveResultConditions]
     # 2d conditions... ps for post-selected
-    psPic1AtomData, psPic2AtomData = [[[] for atom in analysisOpts.postSelectionConditions] for _ in range(2)]
-    for dataSetInc, _ in enumerate(analysisOpts.postSelectionConditions):
+    psPic1AtomData, psPic2AtomData, postSelectedExtraData = [[[] for _ in analysisOpts.postSelectionConditions] for _ in range(3)]    
+    for dataSetInc in range(dataSetTotalNum):
         conditionHits = [None for condition in analysisOpts.postSelectionConditions[dataSetInc]]
         for conditionInc, condition in enumerate(analysisOpts.postSelectionConditions[dataSetInc]):
             # see getEnsembleHits for more discussion on how the post-selection is working here. 
-            conditionHits[conditionInc] = getConditionHits([pic1AtomData, pic2AtomData], condition)
-        for picInc, _ in enumerate(pic1AtomData[0]):
-            valid = True
+            conditionHits[conditionInc] = getConditionHits([pic1AtomData, pic2AtomData], condition)        
+        for repNum in range(totalRepNum):
+            allCondMatch = True
             for condition in conditionHits:
-                if condition[picInc] == False:
-                    valid = False
-            if valid or justReformat:
+                if condition[repNum] == False:
+                    allCondMatch = False
+            if allCondMatch or justReformat:
                 indvAtoms1, indvAtoms2 = [], []
                 for atomInc in range(len(pic1AtomData)):
-                    indvAtoms1.append(pic1AtomData[atomInc][picInc])
-                    indvAtoms2.append(pic2AtomData[atomInc][picInc])
+                    indvAtoms1.append(pic1AtomData[atomInc][repNum])
+                    indvAtoms2.append(pic2AtomData[atomInc][repNum])
                 psPic1AtomData[dataSetInc].append(indvAtoms1)
                 psPic2AtomData[dataSetInc].append(indvAtoms2)
+                if extraDataToPostSelect is not None:
+                    postSelectedExtraData[dataSetInc].append(extraDataToPostSelect[repNum])                    
             # else nothing! discard the data.
         if len(psPic1AtomData[dataSetInc]) == 0:
             print("No data left after post-selection! Data Set #" + str(dataSetInc))
             indvAtoms1, indvAtoms2 = [], []
             for atomInc in range(len(pic1AtomData)):
-                indvAtoms1.append(pic1AtomData[atomInc][picInc])
-                indvAtoms2.append(pic2AtomData[atomInc][picInc])
+                indvAtoms1.append(pic1AtomData[atomInc][repNum])
+                indvAtoms2.append(pic2AtomData[atomInc][repNum])
             psPic1AtomData[dataSetInc].append(indvAtoms1)
             psPic2AtomData[dataSetInc].append(indvAtoms2)
-    return psPic1AtomData, psPic2AtomData, None
+            if extraDataToPostSelect is not None:
+                postSelectedExtraData[dataSetInc].append(extraDataToPostSelect[repNum])       
+    return psPic1AtomData, psPic2AtomData, postSelectedExtraData
 
 def getConditionHits(atomPresenceData, hitCondition, verbose=False):
     """

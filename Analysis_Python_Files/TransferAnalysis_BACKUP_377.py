@@ -10,8 +10,12 @@ from .Miscellaneous import what
 
 def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWindow(), dataRange=None, keyOffset=0, 
                           dimSlice=None, varyingDim=None, groupData=False, quiet=False, picsPerRep=2, repRange=None, 
-                          keyConversion=None, binningParams=None, removePics=None, expFile_version=4, useBaseA=True, keyParameter=None):
-                         
+<<<<<<< HEAD
+                          keyConversion=None, binningParams=None, removePics=None, expFile_version=4, useBaseA=True):
+=======
+                          keyConversion=None, softwareBinning=None, removePics=None, expFile_version=4, useBaseA=True, 
+                          keyParameter=None):
+>>>>>>> e0d9c50a3fbfd2164e5e4358aaeec307f4096e9e
     """
     Unpack inputs, properly shape the key, picture array, and run some initial checks on the consistency of the settings.
     """
@@ -225,8 +229,7 @@ def standardTransferAnalysis( fileNumber, analysisOpts, picsPerRep=2, fitModules
     print("sta: Post-Selecting...",end='')
     for varInc in range(len(initAtoms)):
         print('.',end='')
-        ensembleHits[varInc] = None # Used to be assigned in postSelectOnAssembly
-        initAtomsPs[varInc], tferAtomsPs[varInc], _ = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], analysisOpts )
+        initAtomsPs[varInc], tferAtomsPs[varInc], ensembleHits[varInc] = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], analysisOpts )
         initAtoms[varInc], tferAtoms[varInc], _ = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], analysisOpts, justReformat=True)
     print("sta: Getting Transfer Averages...")
     res = getTransferAvgs(analysisOpts, initAtomsPs, tferAtomsPs)
