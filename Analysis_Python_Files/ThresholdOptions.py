@@ -2,7 +2,7 @@ import dataclasses as dc
 
 @dc.dataclass
 class ThresholdOptions:
-    balony:bool = True
+    histBinSize: int = 5
     indvVariationThresholds:bool = False
     subtractEdgeCounts:bool = True
     tferThresholdSame:bool = True
@@ -21,3 +21,5 @@ class ThresholdOptions:
                 + ', indvVariationThresholds:' + str(self.indvVariationThresholds) + ']')
     def __repr__(self):
         return self.__str__()
+    
+    

@@ -102,6 +102,10 @@ def setPath(day, month, year, repoAddress="\\\\jilafile.colorado.edu\\scratch\\r
     :return:
     """
     global dataAddress
+    if type(day) == int:
+        day = str(day)
+    if type(year) == int:
+        year = str(year)
     dataAddress = repoAddress + "\\" + year + "\\" + month + "\\" + month + " " + day + "\\Raw Data\\"
     #print("Setting new data address:" + dataAddress)
     return dataAddress

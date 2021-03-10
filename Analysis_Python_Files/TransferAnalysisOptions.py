@@ -50,9 +50,12 @@ class TransferAnalysisOptions:
 def getStandardLoadingOptions(atomLocs):
     prConditions = [None for _ in range(len(ah.unpackAtomLocations(atomLocs)))]
     for atomNum in range(len(ah.unpackAtomLocations(atomLocs))):
-        singleLoadCondition = condition(whichPic=[0],whichAtoms=[atomNum],conditions=[True],numRequired=-1, markerWhichPicList=(0,1), markerLocList=(atomNum,atomNum))
+        singleLoadCondition = condition(whichPic=[0],whichAtoms=[atomNum],conditions=[True],numRequired=-1, 
+                                        markerWhichPicList=(0,1), markerLocList=(atomNum,atomNum))
         prConditions[atomNum] = singleLoadCondition
-    return TransferAnalysisOptions( initLocsIn=atomLocs, tferLocsIn=atomLocs, postSelectionConditions=[[] for _ in range(len(ah.unpackAtomLocations(atomLocs)))], positiveResultConditions=prConditions )
+    return TransferAnalysisOptions( initLocsIn=atomLocs, tferLocsIn=atomLocs,
+                                   postSelectionConditions=[[] for _ in range(len(ah.unpackAtomLocations(atomLocs)))], 
+                                   positiveResultConditions=prConditions )
 
     
 def getStandardSurvivalOptions(atomLocs):

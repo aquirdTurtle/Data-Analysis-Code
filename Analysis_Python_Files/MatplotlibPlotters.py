@@ -407,7 +407,6 @@ def Survival(fileID, atomLocs, **TransferArgs):
     :param TransferArgs: See corresponding transfer function for valid TransferArgs.
     :return: see Transfer()
     """
-
     return Transfer(fileID, tao.getStandardSurvivalOptions(atomLocs), atomLocs, **TransferArgs)
 
 def Tunneling( fileID, tunnelPair1Locs, tunnelPair2Locs, dataColor=['#FF0000','#FFAAAA','#AAAAFF','#0000AA', 'k', '#00FF00', '#00AA00'], 
@@ -558,7 +557,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
         mainPlot = subplot(grid1[4:8, 15:16], sharey=countPlot)
     else:
         countPlot = subplot(grid1[4:8, 12:15])
-        countHist = subplot(grid1[4:8, 15:16], sharey=mainPlot)
+        countHist = subplot(grid1[4:8, 15:16], sharey=countPlot)
     grid1.update( left=0.001, right=0.95, hspace=1000 )
     
     avgPlt1 = subplot(grid1[8:12, 11:13])

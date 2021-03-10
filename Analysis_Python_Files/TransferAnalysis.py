@@ -85,12 +85,12 @@ def getTransferThresholds(analysisOpts, rawData, groupedData, picsPerRep, tOptio
             for j, variationData in enumerate(groupedData):
                 initPixelCounts = ah.getAtomCountsData( variationData, picsPerRep, analysisOpts.initPic, loc1, 
                                                        subtractEdges=opt.subtractEdgeCounts )
-                initThresholds[i][j] = ah.getThresholds( initPixelCounts, 5, opt )        
+                initThresholds[i][j] = ah.getThresholds( initPixelCounts, opt )        
         else:
             # calculate once with full raw data and then copy to all slots. 
             initPixelCounts = ah.getAtomCountsData( rawData, picsPerRep, analysisOpts.initPic, loc1, 
                                                    subtractEdges=opt.subtractEdgeCounts )
-            initThresholds[i][0] = ah.getThresholds( initPixelCounts, 5, opt )        
+            initThresholds[i][0] = ah.getThresholds( initPixelCounts, opt )        
             for j, _ in enumerate(groupedData):
                 initThresholds[i][j] = initThresholds[i][0]
         if opt.tferThresholdSame:
@@ -100,11 +100,11 @@ def getTransferThresholds(analysisOpts, rawData, groupedData, picsPerRep, tOptio
                 for j, variationData in enumerate(groupedData):
                     tferPixelCounts = ah.getAtomCountsData( variationData, picsPerRep, analysisOpts.tferPic, loc2, 
                                                            subtractEdges=opt.subtractEdgeCounts )
-                    tferThresholds[i][j] = ah.getThresholds( tferPixelCounts, 5, opt )
+                    tferThresholds[i][j] = ah.getThresholds( tferPixelCounts, opt )
             else:
                 tferPixelCounts = ah.getAtomCountsData( rawData, picsPerRep, analysisOpts.tferPic, loc1, 
                                                        subtractEdges=opt.subtractEdgeCounts )
-                tferThresholds[i][0] = ah.getThresholds( tferPixelCounts, 5, opt )        
+                tferThresholds[i][0] = ah.getThresholds( tferPixelCounts, opt )        
                 for j, _ in enumerate(groupedData):
                     tferThresholds[i][j] = tferThresholds[i][0]
     if tOptions[0].subtractEdgeCounts:
@@ -206,11 +206,9 @@ def getTransferAvgs(analysisOpts, initAtomsPs, tferAtomsPs, prConditions=None):
         tferVarErr.append(ah.jeffreyInterval(mv, len(np.array(varData).flatten())))
     return avgTferData, avgTferErr, tferVarAvg, tferVarErr, tferAtomsVarAvg, tferAtomsVarErrs, tferList
 
-
-def standardTransferAnalysis( fileNumber, analysisOpts, picsPerRep=2, fitModules=[None], varyingDim=None, getGenerationStats=False, 
-                              fitguess=[None], forceAnnotation=True, tOptions=[to.ThresholdOptions()], getFitterArgs=[None], **organizerArgs ):
+def stage1TransferAnalysis(fileNumber, analysisOpts, picsPerRep=2, varyingDim=None, tOptions=[to.ThresholdOptions()], **organizerArgs ):
     """
-    "Survival" is a special case of transfer where the initial location and the transfer location are the same location.
+    This stage is re-used in the fsi analysis. It's all the analysis up to the post-selection.
     """
     assert(type(analysisOpts) == ao.TransferAnalysisOptions)
     print("sta: Organizing Transfer Data...")
@@ -224,13 +222,25 @@ def standardTransferAnalysis( fileNumber, analysisOpts, picsPerRep=2, fitModules
     initAtoms, tferAtoms, initPicCounts, tferPicCounts = res
     print("sta: Getting Transfer Atom Images...")
     initAtomImages, tferAtomImages = getTransferAtomImages( analysisOpts, groupedData, numOfPictures, picsPerRep, initAtoms, tferAtoms )    
-    initAtomsPs, tferAtomsPs, ensembleHits = [[None for _ in initAtoms] for _ in range(3)]
+    initAtomsPs, tferAtomsPs, ensembleHits, groupedPostSelectedPics = [[None for _ in initAtoms] for _ in range(4)]
     print("sta: Post-Selecting...",end='')
     for varInc in range(len(initAtoms)):
         print('.',end='')
         ensembleHits[varInc] = None # Used to be assigned in postSelectOnAssembly
-        initAtomsPs[varInc], tferAtomsPs[varInc], _ = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], analysisOpts )
+        initAtomsPs[varInc], tferAtomsPs[varInc], groupedPostSelectedPics[varInc] = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], 
+                                                                                                            analysisOpts )
         initAtoms[varInc], tferAtoms[varInc], _ = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], analysisOpts, justReformat=True)
+    return (initAtoms, tferAtoms, initAtomsPs, tferAtomsPs, key, keyName, initPicCounts, tferPicCounts, repetitions, initThresholds,
+            avgPics, tferThresholds, initAtomImages, tferAtomImages, basicInfoStr, ensembleHits, groupedPostSelectedPics)
+
+def standardTransferAnalysis( fileNumber, analysisOpts, picsPerRep=2, fitModules=[None], varyingDim=None, getGenerationStats=False, 
+                              fitguess=[None], forceAnnotation=True, tOptions=[to.ThresholdOptions()], getFitterArgs=[None], **organizerArgs ):
+    """
+    "Survival" is a special case of transfer where the initial location and the transfer location are the same location.
+    """
+    res = stage1TransferAnalysis( fileNumber, analysisOpts, picsPerRep, varyingDim, tOptions, **organizerArgs )
+    (initAtoms, tferAtoms, initAtomsPs, tferAtomsPs, key, keyName, initPicCounts, tferPicCounts, repetitions, initThresholds,
+            avgPics, tferThresholds, initAtomImages, tferAtomImages, basicInfoStr, ensembleHits, groupedPostSelectedPics)  = res
     print("sta: Getting Transfer Averages...")
     res = getTransferAvgs(analysisOpts, initAtomsPs, tferAtomsPs)
     avgTferData, avgTferErr, tferVarAvg, tferVarErr, tferAtomsVarAvg, tferAtomsVarErrs, tferList = res

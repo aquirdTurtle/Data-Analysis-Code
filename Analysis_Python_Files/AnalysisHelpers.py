@@ -1122,53 +1122,51 @@ def getFitsDataFrame(fits, fitModules, avgFit):
     return fitDataFrames
 
     
-def getThresholds( picData, binWidth, tOptions=ThresholdOptions.ThresholdOptions()):
-    t = AtomThreshold.AtomThreshold()
-    t.rawData = picData
-    t.binCenters, t.binHeights = getBinData( binWidth, t.rawData )
-    # inner outwards
-    binGuessIteration = [t.binCenters[(len(t.binCenters) + (~i, i)[i%2]) // 2] for i in range(len(t.binCenters))]
+def getThresholds( picData, tOptions=ThresholdOptions.ThresholdOptions()):
+    th = AtomThreshold.AtomThreshold()
+    th.rawData = picData
+    th.binCenters, th.binHeights = getBinData( tOptions.histBinSize, th.rawData )
+    # inner outwards. e.g. [0,1,2,3,4] -> [2,1,3,0,4]
+    binGuessIteration = [th.binCenters[(len(th.binCenters) + (~i, i)[i%2]) // 2] for i in range(len(th.binCenters))]
     # binGuessIteration = list(reversed(bins[:len(bins)//2]))
     # binGuessIteration = list(bins[len(bins)//2:])
     gWidth = 25
     ampFac = 0.35
     if not tOptions.manualThreshold:
-        guess1, guess2 = guessGaussianPeaks( t.binCenters, t.binHeights )
-        guess = arr([max(t.binHeights), guess1, gWidth, max(t.binHeights)*ampFac, guess2, gWidth])
-        t.fitVals = fitDoubleGaussian(t.binCenters, t.binHeights, guess, quiet=True)
-        t.t, t.fidelity = calculateAtomThreshold(t.fitVals)
-        t.rmsResidual = getNormalizedRmsDeviationOfResiduals(t.binCenters, t.binHeights, double_gaussian.f, t.fitVals)
+        guessPos1, guessPos2 = guessGaussianPeaks( th.binCenters, th.binHeights )
+        guess = arr([max(th.binHeights), guessPos1, gWidth, max(th.binHeights)*ampFac, guessPos2, gWidth])
+        th.fitVals = fitDoubleGaussian(th.binCenters, th.binHeights, guess, quiet=True)
+        th.t, th.fidelity = calculateAtomThreshold(th.fitVals)
+        th.rmsResidual = getNormalizedRmsDeviationOfResiduals(th.binCenters, th.binHeights, double_gaussian.f, th.fitVals)
         if tOptions.rigorousThresholdFinding:
-            for r in range(len(binGuessIteration)):
-                if  t.fidelity - t.rmsResidual*0.05 > 0.97:
-                    break
-                g_r = binGuessIteration[r]
-                guess = arr([max(t.binHeights), guess1, gWidth, max(t.binHeights)*ampFac, g_r, gWidth])
-                t2 = copy(t)
+            for guessNum in range(len(binGuessIteration)):
+                if th.fidelity - th.rmsResidual*0.05 > 0.97:
+                    break # good enough. When fitting is good, Fidelity should be high and residual should be low. 
+                newGuessPosition = binGuessIteration[guessNum]
+                guess = arr([max(th.binHeights), guessPos1, gWidth, max(th.binHeights)*ampFac, newGuessPosition, gWidth])
+                t2 = copy(th)
                 t2.fitVals = fitDoubleGaussian(t2.binCenters, t2.binHeights, guess, quiet=True)
                 t2.t, t2.fidelity = calculateAtomThreshold(t2.fitVals)
                 t2.rmsResidual = getNormalizedRmsDeviationOfResiduals(t2.binCenters, t2.binHeights, double_gaussian.f, t2.fitVals)
-                
-                if t2.fidelity - t2.rmsResidual > t.fidelity - t.rmsResidual:
-                    t.t, t.fitVals, t.fidelity, t.rmsResidual = t2.t, t2.fitVals, t2.fidelity, t2.rmsResidual
+                if t2.fidelity - t2.rmsResidual > th.fidelity - th.rmsResidual: # keep track of the best result in the t variable.
+                    th.t, th.fitVals, th.fidelity, th.rmsResidual = t2.t, t2.fitVals, t2.fidelity, t2.rmsResidual
                 else:
                     pass
     elif tOptions.autoHardThreshold:
-        t.fitVals = None
-        t.t, t.fidelity = ((max(t.rawData) + min(t.rawData))/2.0, 0) 
-        t.rmsResidual=0
+        th.fitVals = None
+        th.t, th.fidelity = ((max(th.rawData) + min(th.rawData))/2.0, 0) 
+        th.rmsResidual=0
     elif tOptions.autoThresholdFittingGuess:
-        guess = arr([max(t.binHeights), (max(t.rawData) + min(t.rawData))/4.0, gWidth,
-                     max(t.binHeights)*0.5, 3*(max(t.rawData) + min(t.rawData))/4.0, gWidth])
-        t.fitVals = fitDoubleGaussian(t.binCenters, t.binHeights, guess, quiet=False)
-        t.t, t.fidelity = calculateAtomThreshold(t.fitVals)
-        t.rmsResidual = getNormalizedRmsDeviationOfResiduals(t.binCenters, t.binHeights, double_gaussian.f, t.fitVals)
+        guess = arr([max(th.binHeights), (max(th.rawData) + min(th.rawData))/4.0, gWidth,
+                     max(th.binHeights)*0.5, 3*(max(th.rawData) + min(th.rawData))/4.0, gWidth])
+        th.fitVals = fitDoubleGaussian(th.binCenters, th.binHeights, guess, quiet=False)
+        th.t, th.fidelity = calculateAtomThreshold(th.fitVals)
+        th.rmsResidual = getNormalizedRmsDeviationOfResiduals(th.binCenters, th.binHeights, double_gaussian.f, th.fitVals)
     else:
-        t.fitVals = None
-        t.t, t.fidelity = (tOptions.manualThresholdValue, 0)
-        t.rmsResidual=0
-    
-    return t
+        th.fitVals = None
+        th.t, th.fidelity = (tOptions.manualThresholdValue, 0)
+        th.rmsResidual=0
+    return th
 
 def getNormalizedRmsDeviationOfResiduals(xdata, ydata, function, fitVals):
     """

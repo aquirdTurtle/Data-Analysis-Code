@@ -11,6 +11,7 @@ from . import ExpFile as exp
 from . import AnalysisHelpers as ah
 from .fitters.Gaussian import bump3, bump
 from .fitters import LargeBeamMotExpansion 
+from . import TransferAnalysis as ta
 
 viridis = cm.get_cmap('viridis', 256)
 dark_viridis = []
@@ -49,19 +50,28 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
                             keys = None, fitModule=bump, extraPicDictionaries=None, newAnnotation=False, onlyThisPic=None, pltVSize=5,              
                             plotSigmas=False, plotCounts=False, manualColorRange=None, picsPerRep=1, calcTemperature = False, clearOutput = True, 
                            dataRange = None, guessTemp = 10e-6, trackFitCenter = False, increment = 1, startPic = 0, binningParams = None, 
-                           crop = [None, None, None, None]):
+                           crop = [None, None, None, None], transferAnalysisOpts=None):
+    if type(fids) == int:
+        fids = [fids]
     if keys is None:
         keys = [None for _ in fids]
     sortedStackedPics = {}
     for filenum, fid in enumerate(fids):
+        if transferAnalysisOpts is not None:
+            res = ta.stage1TransferAnalysis(fid, transferAnalysisOpts)
+            (initAtoms, tferAtoms, initAtomsPs, tferAtomsPs, key, keyName, initPicCounts, tferPicCounts, repetitions, initThresholds,
+                    avgPics, tferThresholds, initAtomImages, tferAtomImages, basicInfoStr, ensembleHits, groupedPostSelectedPics) = res
+            print('groupedPostSelectedPics',groupedPostSelectedPics)
+            for varData in groupedPostSelectedPics:
+                print(np.array(varData).shape)
         if type(fid) == int:
             ### For looking at either PGC imgs or FSI imgs 
-            with exp.ExpFile(fid) as f:
-                allpics = f.get_pics()[startPic::increment]
-                _, key = f.get_key()
+            with exp.ExpFile(fid) as file:
+                allpics = file.get_pics()[startPic::increment]
+                _, key = file.get_key()
                 if len(np.array(key).shape) == 2:
                     key = key[:,0]
-                f.get_basic_info()
+                file.get_basic_info()
         else:
             allpics = fid
             print("Assuming input is list of all pics.")
