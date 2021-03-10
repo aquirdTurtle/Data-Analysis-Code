@@ -45,7 +45,7 @@ def photonCounting(pics, threshold):
 
 
 
-def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=[None], bgPcInput=[None], shapes=[None], zeroCorrection=0, zeroCorrectionPC=0,
+def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcInput=None, shapes=[None], zeroCorrection=0, zeroCorrectionPC=0,
                             keys = None, fitModule=bump, extraPicDictionaries=None, newAnnotation=False, onlyThisPic=None, pltVSize=5,              
                             plotSigmas=False, plotCounts=False, manualColorRange=None, picsPerRep=1, calcTemperature = False, clearOutput = True, 
                            dataRange = None, guessTemp = 10e-6, trackFitCenter = False, increment = 1, startPic = 0, binningParams = None, 
@@ -69,17 +69,19 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=[None], bgPc
             key = keys[filenum]
        
         ### windowing, not compatible with different shapes in each variation
-        allpics = ah.windowImage(allpics, crop)
-                        
+        allpics = ah.windowImage(allpics, crop)                        
         allpics = ah.softwareBinning(binningParams, allpics)
         allpics = np.reshape(allpics, (len(key), int(allpics.shape[0]/len(key)), allpics.shape[1], allpics.shape[2]))    
         for i, keyV in enumerate(key):
             keyV = misc.round_sig_str(keyV)
             sortedStackedPics[keyV] = np.append(sortedStackedPics[keyV], allpics[i],axis=0) if (keyV in sortedStackedPics) else allpics[i]
-    bgInput = ah.windowImage(bgInput, crop)
-    bgPcInput = ah.windowImage(bgPcInput, crop)
-    bgInput = ah.softwareBinning(binningParams, bgInput)
-    bgPcInput = ah.softwareBinning(binningParams, bgPcInput)
+    if bgInput is not None: # was broken and not working if not given bg
+        bgInput = ah.windowImage(bgInput, crop)
+        bgInput = ah.softwareBinning(binningParams, bgInput)
+    if bgPcInput is not None:
+        bgPcInput = ah.windowImage(bgPcInput, crop)
+        bgPcInput = ah.softwareBinning(binningParams, bgPcInput)   
+    
     if extraPicDictionaries is not None:
         if type(extraPicDictionaries) == dict:
             extraPicDictionaries = [extraPicDictionaries]
@@ -95,9 +97,9 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=[None], bgPc
         shapes = [shapes for _ in range(numVars)]       
     if guesses is None:
         guesses = [[None for _ in range(4)] for _ in range(numVars)]
-    if len(np.array(bgInput).shape) == 2:
+    if len(np.array(bgInput).shape) == 2 or bgInput == None:
         bgInput = [bgInput for _ in range(numVars)]
-    if len(np.array(bgPcInput).shape) == 2:
+    if len(np.array(bgPcInput).shape) == 2 or bgPcInput == None:
         bgPcInput = [bgPcInput for _ in range(numVars)]
    
     datalen, avgFitSigmas, images, fitParams, fitCovs = [{} for _ in range(5)]
@@ -114,7 +116,7 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=[None], bgPc
         else:
             bgPhotonCountImage = bgPcInput[vari]
         expAvg = np.mean(expansionPics, 0)
-        if len(bgInput[vari]) == 1:
+        if bgInput[vari] is None or len(bgInput[vari]) == 1:
             bgAvg = np.zeros(expansionPics[0].shape)
         else:
             bgAvg = bgInput[vari]

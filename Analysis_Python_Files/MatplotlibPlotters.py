@@ -265,9 +265,9 @@ def plotImages( data, mainPlot='fits', key=None, magnification=3, showAllPics=Tr
         ax.legend(loc='right')        
     if showAllPics:
         if 'raw' in plottedData:
-            showPics(rawData, key, fitParams=pictureFitParams, hFitParams=h_params, vFitParams=v_params)
+            picFig = showPics(rawData, key, fitParams=pictureFitParams, hFitParams=h_params, vFitParams=v_params)
         if '-bg' in plottedData:
-            showPics(dataMinusBg, key, fitParams=pictureFitParams, hFitParams=h_params, vFitParams=v_params)
+            picFig = showPics(dataMinusBg, key, fitParams=pictureFitParams, hFitParams=h_params, vFitParams=v_params)
     return pictureFitParams, rawData, intRawData
     
     
@@ -283,7 +283,7 @@ def plotMotTemperature(data, key=None, magnification=3, showAllPics=True, plot1D
      v_params, v_errs, h_params, h_errs, waists_1D, temp_1D, fitVals_1D, fitCov_1D) = res
     errs = np.sqrt(np.diag(fitCov))
     errs_1D = np.sqrt(np.diag(fitCov_1D))
-    f, ax = subplots(figsize=(20,3))
+    fig, ax = plt.subplots(figsize=(20,3))
     ax.plot(times, waists, 'bo', label='Fit Waist 2D')
     ax.plot(times, 2 * LargeBeamMotExpansion.f(times, *fitVals), 'c:', label='Balistic Expansion Waist 2D')
     
@@ -305,16 +305,16 @@ def plotMotTemperature(data, key=None, magnification=3, showAllPics=True, plot1D
     ax2.grid(True,color='r')
     if showAllPics:
         if 'raw' in plottedData:
-            showPics(rawData, key, fitParams=pictureFitParams, hFitParams=h_params, vFitParams=v_params)
+            picFig = showPics(rawData, key, fitParams=pictureFitParams, hFitParams=h_params, vFitParams=v_params)
         if '-bg' in plottedData:
-            showPics(dataMinusBg, key, fitParams=pictureFitParams, hFitParams=h_params, vFitParams=v_params)    
+            picFig = showPics(dataMinusBg, key, fitParams=pictureFitParams, hFitParams=h_params, vFitParams=v_params)    
     print("\nTemperture in the Large Laser Beam Approximation (2D Fits):", misc.errString(temp * 1e6, errs[2]*1e6),    'uK')
     print("\nTemperture in the Large Laser Beam Approximation (1D Fits):", misc.errString(temp_1D * 1e6, errs_1D[2]*1e6), 'uK')
     print('2D Fit-Parameters:', fitVals)
-    return pictureFitParams, rawData, temp * 1e6, errs[2]*1e6
+    return pictureFitParams, rawData, temp * 1e6, errs[2]*1e6, [fig, picFig]
     
     
-def plotMotNumberAnalysis(data, motKey, exposureTime,  *fillAnalysisArgs):
+def plotMotNumberAnalysis(data, motKey, exposureTime,  **fillAnalysisArgs):
     """
     Calculate the MOT number and plot the data that resulted in the #.
 
@@ -335,7 +335,8 @@ def plotMotNumberAnalysis(data, motKey, exposureTime,  *fillAnalysisArgs):
     :param imagingLoss: the loss in the imaging path due to filtering, imperfect reflections, etc.
     :param detuning: detuning of the mot beams during the imaging.
     """
-    rawData, intRawData, motnumber, fitParams, fluorescence, motKey, fitErr = ah.motFillAnalysis(data, motKey, exposureTime, loadType='basler', *fillAnalysisArgs)
+    (rawData, intRawData, motnumber, fitParams, fluorescence, motKey, fitErr)\
+        = ah.motFillAnalysis(data, motKey, exposureTime, loadType='basler', **fillAnalysisArgs)
     fig = plt.figure(figsize=(20,5))
     ax1 = subplot2grid((1, 4), (0, 0), colspan=3)
     ax2 = subplot2grid((1, 4), (0, 3), colspan=1)
@@ -350,7 +351,7 @@ def plotMotNumberAnalysis(data, motKey, exposureTime,  *fillAnalysisArgs):
     print("integrated saturated counts subtracting background =", -fitParams[0])
     print("loading time 1/e =", fitParams[1], "s")
     print('Light Scattered off of full MOT:', fluorescence * mc.h * mc.Rb87_D2LineFrequency * 1e9, "nW")
-    return motnumber, fitParams[1], rawData[-1], fitErr[1]
+    return motnumber, fitParams[1], rawData[-1], fitErr[1], rawData, fig
 
 
 def singleImage(data, accumulations=1, loadType='andor', bg=arr([0]), title='Single Picture', window=(0, 0, 0, 0),
@@ -688,7 +689,8 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
                 if markerTotalList.count((pic, psc.markerLocList[markernum])) == 1:                    
                     circ = Circle((loc[1], loc[0]), 0.2, color=color)
                 else:                    
-                    circNum = markerTotalList.count((pic, psc.markerLocList[markernum])) - markerRunningList.count((pic, psc.markerLocList[markernum]))
+                    circNum = markerTotalList.count((pic, psc.markerLocList[markernum])) \
+                              - markerRunningList.count((pic, psc.markerLocList[markernum]))
                     circ = Circle((loc[1]+markerLocModList[circNum][0], loc[0]+markerLocModList[circNum][1]), 0.2, color=color)
                 [avgPlt1,avgPlt2][pic].add_artist(circ)
         for markernum, pic in enumerate(prc.markerWhichPicList):
@@ -728,7 +730,8 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
         f_imgPlots = []
         if tOptions[0].indvVariationThresholds:
             for varInc in range(len(initThresholds[0])):
-                f_img, axs = subplots(1, 9 if tOptions[0].tferThresholdSame else 13, figsize = (36.0, 2.0) if tOptions[0].tferThresholdSame else (36.0,3))
+                f_img, axs = subplots(1, 9 if tOptions[0].tferThresholdSame else 13, 
+                                      figsize = (36.0, 2.0) if tOptions[0].tferThresholdSame else (36.0,3))
                 lims = [[None, None] for _ in range(9 if tOptions[0].tferThresholdSame else 13)]
                 ims = [None for _ in range(5)]
                 imagingSignal.append(np.mean(
@@ -906,7 +909,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
             for row in thresholdList:
                 for thresh in row:
                     f.write(str(thresh) + ' ')
-    return { 'Key':key, 'All_Transfer':transferData, 'All_Transfer_Errs':transferErrs, 'Initial_Populations':initPopulation, 
+    return {'Key':key, 'All_Transfer':transferData, 'All_Transfer_Errs':transferErrs, 'Initial_Populations':initPopulation, 
             'Transfer_Fits':fits, 'Average_Transfer_Fit':avgFit, 'Average_Atom_Generation':genAvgs, 
             'Average_Atom_Generation_Err':genErrs, 'Picture_1_Data':pic1Data, 'Fit_Character':fitCharacters, 
             'Average_Transfer_Pic':avgTransferPic, 'Transfer_Averaged_Over_Variations':transVarAvg, 
@@ -914,7 +917,8 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
             'Average_Transfer_Err':avgTransferErr, 'Initial_Atom_Images':initAtomImages, 
             'Transfer_Atom_Images':transAtomImages, 'Picture_2_Data':pic2Data, 'Initial_Thresholds':initThresholds,
             'Transfer_Thresholds':transThresholds, 'Fit_Modules':fitModules, 'Average_Fit_Character':avgFitCharacter,
-            'Ensemble_Hits':ensembleHits, 'InitAtoms':initAtoms, 'TferAtoms':tferAtoms, 'tferList':tferList, 'Main_Axis':mainPlot }
+            'Ensemble_Hits':ensembleHits, 'InitAtoms':initAtoms, 'TferAtoms':tferAtoms, 'tferList':tferList, 'Main_Axis':mainPlot,
+            'Figures':[fig, *f_imgPlots]}
 
 
 def Loading(fileID, atomLocs, **TransferArgs):
@@ -1165,8 +1169,9 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
         if showFitDetails:
             fits_df = getFitsDataFrame(fits, fitModules, avgFits, markersize=5)
             display(fits_df)
-    return { 'Key': key, 'All_Populations': allPops, 'All_Populations_Error': allPopsErr, 'Pixel_Counts':locCounts, 'Atom_Images':atomImages, 
-             'Thresholds':thresholds, 'Atom_Data':atomData, 'Raw_Data':rawData, 'Average_Population': avgPop, 'Average_Population_Error': avgPopErr }
+    return { 'Key': key, 'All_Populations': allPops, 'All_Populations_Error': allPopsErr, 'Pixel_Counts':locCounts, 
+            'Atom_Images':atomImages, 'Thresholds':thresholds, 'Atom_Data':atomData, 'Raw_Data':rawData, 
+            'Average_Population': avgPop, 'Average_Population_Error': avgPopErr }
 
 
 def Assembly(fileNumber, atomLocs1, pic1Num, partialCredit=False, **standardAssemblyArgs):
@@ -1375,3 +1380,4 @@ def showPics(data, key, fitParams=None, indvColorBars=False, colorMax=-1, fancy=
             pl2.axis('off')
         count += 1
         picCount += 1
+    return fig

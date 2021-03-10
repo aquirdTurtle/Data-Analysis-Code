@@ -1356,7 +1356,6 @@ def getEnsembleHits(atomPresenceData, hitCondition=None, requireConsecutive=Fals
             for inc, atoms in enumerate(misc.transpose(atomPresenceData)):
                 ensembleHits.append(sum(atoms)) # / len(atoms))
         else:
-            #print('hitCondition:',hitCondition)
             for inc, atoms in enumerate(misc.transpose(atomPresenceData)):
                 ensembleHits.append(True)
                 for atom, needAtom in zip(atoms, hitCondition):
@@ -1366,7 +1365,6 @@ def getEnsembleHits(atomPresenceData, hitCondition=None, requireConsecutive=Fals
                         ensembleHits[inc] = False
                     if atom and not needAtom:
                         ensembleHits[inc] = False
-                #print(atoms, hitCondition, ensembleHits[inc])
                         
     return ensembleHits
 
@@ -1429,6 +1427,8 @@ def guessGaussianPeaks(binCenters, binnedData):
     :param binnedData: the binned data data points.
     :return: the two guesses.
     """
+    if len(binCenters) == 0 or len(binnedData) == 0:
+        raise ValueError("inputted data was empty?!?" + str(binCenters) + str(binnedData))
     # This offset is to prevent negative x values while working with the poissonian. If set wrong guesses can start to work funny.
     # The offset is only use to get an appropriate width for the no-atoms peak. Arguably since I use this to manually shift the width, I should
     # just use a gaussian instead of a poissonian.
@@ -1450,9 +1450,11 @@ def guessGaussianPeaks(binCenters, binnedData):
     return guess1Location - randomOffset, guess2Location - randomOffset
 
 def getBinData(binWidth, data):
+    # I feel like there's probably a better built in way to do this...
+    if min(data) == max(data):
+        raise ValueError("Data for binning was all same value of " + str(min(data)))
     binBorderLocation = min(data)
     binsBorders = arr([])
-    tt = TimeTracker()
     while binBorderLocation < max(data):
         binsBorders = np.append(binsBorders, binBorderLocation)
         binBorderLocation = binBorderLocation + binWidth
