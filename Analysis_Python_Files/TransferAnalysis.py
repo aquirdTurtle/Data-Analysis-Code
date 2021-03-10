@@ -226,9 +226,15 @@ def stage1TransferAnalysis(fileNumber, analysisOpts, picsPerRep=2, varyingDim=No
     print("sta: Post-Selecting...",end='')
     for varInc in range(len(initAtoms)):
         print('.',end='')
+        #extraDataToPostSelectIn = [(pic1, pic2) for pic1, pic2 in zip(groupedData[varInc][::2], groupedData[varInc][1::2])]
+        extraDataToPostSelectIn = list(zip(groupedData[varInc][::2], groupedData[varInc][1::2]))
         ensembleHits[varInc] = None # Used to be assigned in postSelectOnAssembly
-        initAtomsPs[varInc], tferAtomsPs[varInc], groupedPostSelectedPics[varInc] = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], 
-                                                                                                            analysisOpts )
+        initAtomsPs[varInc], tferAtomsPs[varInc], tempPS = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], 
+                                                                                                            analysisOpts, extraDataToPostSelect = extraDataToPostSelectIn )
+        groupedPostSelectedPics[varInc] = []
+        for repPics in tempPS[0]:
+            groupedPostSelectedPics[varInc].append(repPics[0])
+            groupedPostSelectedPics[varInc].append(repPics[1])
         initAtoms[varInc], tferAtoms[varInc], _ = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], analysisOpts, justReformat=True)
     return (initAtoms, tferAtoms, initAtomsPs, tferAtomsPs, key, keyName, initPicCounts, tferPicCounts, repetitions, initThresholds,
             avgPics, tferThresholds, initAtomImages, tferAtomImages, basicInfoStr, ensembleHits, groupedPostSelectedPics)

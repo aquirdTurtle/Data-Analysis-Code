@@ -1237,8 +1237,9 @@ def postSelectOnAssembly( pic1AtomData, pic2AtomData, analysisOpts, justReformat
     totalRepNum = len(pic1AtomData[0])
     dataSetTotalNum = len(analysisOpts.postSelectionConditions)
     if extraDataToPostSelect is not None:
-        if len(extraDataToPostSelect) == totalRepNum:
-            raise ValueError('extraDataToPostSelect must have a value for every repetition')
+        if len(extraDataToPostSelect) != totalRepNum:
+            raise ValueError('extraDataToPostSelect must have a value for every repetition. Length of extraDataToPostSelect = ' 
+                             + str(len(extraDataToPostSelect)) + ' while totalRepNum = ' + str(totalRepNum))
     # the "justReformat" arg is a bit hackish here. 
     if analysisOpts.postSelectionConditions is None:
         analysisOpts.postSelectionConditions = [[] for _ in analysisOpts.positiveResultConditions]
@@ -1262,7 +1263,8 @@ def postSelectOnAssembly( pic1AtomData, pic2AtomData, analysisOpts, justReformat
                 psPic1AtomData[dataSetInc].append(indvAtoms1)
                 psPic2AtomData[dataSetInc].append(indvAtoms2)
                 if extraDataToPostSelect is not None:
-                    postSelectedExtraData[dataSetInc].append(extraDataToPostSelect[repNum])                    
+                    postSelectedExtraData[dataSetInc].append(extraDataToPostSelect[repNum])  
+                    
             # else nothing! discard the data.
         if len(psPic1AtomData[dataSetInc]) == 0:
             print("No data left after post-selection! Data Set #" + str(dataSetInc))

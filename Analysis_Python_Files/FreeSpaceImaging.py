@@ -61,9 +61,9 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             res = ta.stage1TransferAnalysis(fid, transferAnalysisOpts)
             (initAtoms, tferAtoms, initAtomsPs, tferAtomsPs, key, keyName, initPicCounts, tferPicCounts, repetitions, initThresholds,
                     avgPics, tferThresholds, initAtomImages, tferAtomImages, basicInfoStr, ensembleHits, groupedPostSelectedPics) = res
-            print('groupedPostSelectedPics',groupedPostSelectedPics)
+            #print('groupedPostSelectedPics',groupedPostSelectedPics)
             for varData in groupedPostSelectedPics:
-                print(np.array(varData).shape)
+                print('varData', np.array(varData).shape)
         if type(fid) == int:
             ### For looking at either PGC imgs or FSI imgs 
             with exp.ExpFile(fid) as file:
