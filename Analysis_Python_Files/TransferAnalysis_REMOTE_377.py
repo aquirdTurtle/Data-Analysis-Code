@@ -10,8 +10,8 @@ from .Miscellaneous import what
 
 def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWindow(), dataRange=None, keyOffset=0, 
                           dimSlice=None, varyingDim=None, groupData=False, quiet=False, picsPerRep=2, repRange=None, 
-                          keyConversion=None, binningParams=None, removePics=None, expFile_version=4, useBaseA=True, keyParameter=None):
-                         
+                          keyConversion=None, softwareBinning=None, removePics=None, expFile_version=4, useBaseA=True, 
+                          keyParameter=None):
     """
     Unpack inputs, properly shape the key, picture array, and run some initial checks on the consistency of the settings.
     """
@@ -19,8 +19,6 @@ def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWind
         rawData, keyName, hdf5Key, repetitions = f.pics, f.key_name, f.key, f.reps
         if not quiet:
             basicInfoStr = f.get_basic_info()
-        if (rawData[0] == np.zeros(rawData[0].shape)).all():
-            raise ValueError("Pictures in Data are all zeros?!")
     if removePics is not None:
         for index in reversed(sorted(removePics)):
             rawData = np.delete(rawData, index, 0)
@@ -29,9 +27,10 @@ def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWind
     if repRange is not None:
         repetitions = repRange[1] - repRange[0]
         rawData = rawData[repRange[0]*picsPerRep:repRange[1]*picsPerRep]
-
+    if softwareBinning is not None:
+        sb = softwareBinning
+        rawData = rawData.reshape(rawData.shape[0], rawData.shape[1]//sb[0], sb[0], rawData.shape[2]//sb[1], sb[1]).sum(4).sum(2)
     rawData = np.array([win.window(pic) for pic in rawData])
-    rawData = ah.softwareBinning(binningParams, rawData)
     # Group data into variations.
     numberOfPictures = int(rawData.shape[0])
     if groupData:
@@ -70,6 +69,7 @@ def getTransferStats(tferList):
         transferErrors = ah.jeffreyInterval(transferAverages, len(tferVarList))
     return transferAverages, transferErrors
 
+
 def getTransferThresholds(analysisOpts, rawData, groupedData, picsPerRep, tOptions=[to.ThresholdOptions()]):
     # some initialization...
     (initThresholds, tferThresholds) =  np.array([[None] * len(analysisOpts.initLocs())] * 2)
@@ -83,13 +83,11 @@ def getTransferThresholds(analysisOpts, rawData, groupedData, picsPerRep, tOptio
         opt = tOptions[i]
         if opt.indvVariationThresholds:
             for j, variationData in enumerate(groupedData):
-                initPixelCounts = ah.getAtomCountsData( variationData, picsPerRep, analysisOpts.initPic, loc1, 
-                                                       subtractEdges=opt.subtractEdgeCounts )
+                initPixelCounts = ah.getAtomCountsData( variationData, picsPerRep, analysisOpts.initPic, loc1, subtractEdges=opt.subtractEdgeCounts )
                 initThresholds[i][j] = ah.getThresholds( initPixelCounts, 5, opt )        
         else:
             # calculate once with full raw data and then copy to all slots. 
-            initPixelCounts = ah.getAtomCountsData( rawData, picsPerRep, analysisOpts.initPic, loc1, 
-                                                   subtractEdges=opt.subtractEdgeCounts )
+            initPixelCounts = ah.getAtomCountsData( rawData, picsPerRep, analysisOpts.initPic, loc1, subtractEdges=opt.subtractEdgeCounts )
             initThresholds[i][0] = ah.getThresholds( initPixelCounts, 5, opt )        
             for j, _ in enumerate(groupedData):
                 initThresholds[i][j] = initThresholds[i][0]
@@ -181,7 +179,7 @@ def getTransferAvgs(analysisOpts, initAtomsPs, tferAtomsPs, prConditions=None):
             print('using default positive result condition...')
         for varInc in range(len(initAtomsPs)):
             if prConditions[dsetInc] is None:
-                prConditions[dsetInc] = ao.condition(name='Def. Sv', whichPic=[1],
+                prConditions[dsetInc] = ao.condition(name='Default Survival Condition', whichPic=[1],
                                                      whichAtoms=[dsetInc],conditions=[True],numRequired=-1);
             tferList[dsetInc][varInc] = getGeneralEvents(misc.transpose(initAtomsPs[varInc][dsetInc]), misc.transpose(tferAtomsPs[varInc][dsetInc]),
                                                          prConditions[dsetInc])
@@ -228,8 +226,7 @@ def standardTransferAnalysis( fileNumber, analysisOpts, picsPerRep=2, fitModules
     print("sta: Post-Selecting...",end='')
     for varInc in range(len(initAtoms)):
         print('.',end='')
-        ensembleHits[varInc] = None # Used to be assigned in postSelectOnAssembly
-        initAtomsPs[varInc], tferAtomsPs[varInc], _ = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], analysisOpts )
+        initAtomsPs[varInc], tferAtomsPs[varInc], ensembleHits[varInc] = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], analysisOpts )
         initAtoms[varInc], tferAtoms[varInc], _ = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], analysisOpts, justReformat=True)
     print("sta: Getting Transfer Averages...")
     res = getTransferAvgs(analysisOpts, initAtomsPs, tferAtomsPs)
