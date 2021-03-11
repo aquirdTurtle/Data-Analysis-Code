@@ -5,13 +5,15 @@ import matplotlib.pyplot as plt
 import scipy.optimize as opt
 import IPython.display as disp
 
+from .fitters.Gaussian import bump3, bump
+from .fitters import LargeBeamMotExpansion 
+
 from . import Miscellaneous as misc
 from . import MatplotlibPlotters as mp
 from . import ExpFile as exp
 from . import AnalysisHelpers as ah
-from .fitters.Gaussian import bump3, bump
-from .fitters import LargeBeamMotExpansion 
 from . import TransferAnalysis as ta
+from . import PictureWindow as pw
 
 viridis = cm.get_cmap('viridis', 256)
 dark_viridis = []
@@ -45,12 +47,12 @@ def photonCounting(pics, threshold):
     return np.array(pcPics)
 
 
-
 def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcInput=None, shapes=[None], zeroCorrection=0, zeroCorrectionPC=0,
-                            keys = None, fitModule=bump, extraPicDictionaries=None, newAnnotation=False, onlyThisPic=None, pltVSize=5,              
-                            plotSigmas=False, plotCounts=False, manualColorRange=None, picsPerRep=1, calcTemperature = False, clearOutput = True, 
-                           dataRange = None, guessTemp = 10e-6, trackFitCenter = False, increment = 1, startPic = 0, binningParams = None, 
-                           crop = [None, None, None, None], transferAnalysisOpts=None):
+                            keys=None, fitModule=bump, extraPicDictionaries=None, newAnnotation=False, onlyThisPic=None, pltVSize=5,              
+                            plotSigmas=False, plotCounts=False, manualColorRange=None, picsPerRep=1, calcTemperature=False, clearOutput=True, 
+                            dataRange=None, guessTemp=10e-6, trackFitCenter=False, increment=1, startPic=0, binningParams=None, 
+                            win=pw.PictureWindow(), transferAnalysisOpts=None, tferBinningParams=None, tferWin= pw.PictureWindow(),
+                            **extraTferAnalysisArgs):
     if type(fids) == int:
         fids = [fids]
     if keys is None:
@@ -58,13 +60,11 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
     sortedStackedPics = {}
     for filenum, fid in enumerate(fids):
         if transferAnalysisOpts is not None:
-            res = ta.stage1TransferAnalysis(fid, transferAnalysisOpts)
+            res = ta.stage1TransferAnalysis( fid, transferAnalysisOpts, binningParams=tferBinningParams, win=tferWin, **extraTferAnalysisArgs )
             (initAtoms, tferAtoms, initAtomsPs, tferAtomsPs, key, keyName, initPicCounts, tferPicCounts, repetitions, initThresholds,
-                    avgPics, tferThresholds, initAtomImages, tferAtomImages, basicInfoStr, ensembleHits, groupedPostSelectedPics) = res
-            #print('groupedPostSelectedPics',groupedPostSelectedPics)
-            for varData in groupedPostSelectedPics:
-                print('varData', np.array(varData).shape)
-        if type(fid) == int:
+             avgPics, tferThresholds, initAtomImages, tferAtomImages, basicInfoStr, ensembleHits, groupedPostSelectedPics) = res
+            allpics = np.array(groupedPostSelectedPics[0])[startPic::increment]
+        elif type(fid) == int:
             ### For looking at either PGC imgs or FSI imgs 
             with exp.ExpFile(fid) as file:
                 allpics = file.get_pics()[startPic::increment]
@@ -77,19 +77,18 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             print("Assuming input is list of all pics.")
         if keys[filenum] is not None:
             key = keys[filenum]
-       
         ### windowing, not compatible with different shapes in each variation
-        allpics = ah.windowImage(allpics, crop)                        
-        allpics = ah.softwareBinning(binningParams, allpics)
-        allpics = np.reshape(allpics, (len(key), int(allpics.shape[0]/len(key)), allpics.shape[1], allpics.shape[2]))    
+        allpics = win.window( allpics )
+        allpics = ah.softwareBinning( binningParams, allpics )
+        allpics = np.reshape( allpics, (len(key), int(allpics.shape[0]/len(key)), allpics.shape[1], allpics.shape[2]) )
         for i, keyV in enumerate(key):
             keyV = misc.round_sig_str(keyV)
             sortedStackedPics[keyV] = np.append(sortedStackedPics[keyV], allpics[i],axis=0) if (keyV in sortedStackedPics) else allpics[i]
     if bgInput is not None: # was broken and not working if not given bg
-        bgInput = ah.windowImage(bgInput, crop)
+        bgInput = win.window(bgInput)
         bgInput = ah.softwareBinning(binningParams, bgInput)
     if bgPcInput is not None:
-        bgPcInput = ah.windowImage(bgPcInput, crop)
+        bgPcInput = win.window(bgPcInput)
         bgPcInput = ah.softwareBinning(binningParams, bgPcInput)   
     
     if extraPicDictionaries is not None:
@@ -100,7 +99,6 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
                 sortedStackedPics[keyV] = (np.append(sortedStackedPics[keyV], pics,axis=0) if keyV in sortedStackedPics else pics)    
     sortedStackedKeyFl = [float(keyStr) for keyStr in sortedStackedPics.keys()]
     sortedKey = list(sorted(sortedStackedKeyFl))
-    print(sortedStackedKeyFl)
     sortedKey, sortedStackedPics = ah.applyDataRange(dataRange, sortedStackedPics, sortedKey)
     numVars = len(sortedStackedPics.items())
     if len(np.array(shapes).shape) == 1:
@@ -121,20 +119,13 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
         expansionPics = rmHighCountPics(varPics[picsPerRep-1::picsPerRep],7000)
         datalen[keyV] = len(expansionPics)
         expPhotonCountImage = photonCounting(expansionPics, 120) / len(expansionPics)
-        if bgPcInput[vari] is None:
-            bgPhotonCountImage = np.zeros(expansionPics[0].shape)
-        else:
-            bgPhotonCountImage = bgPcInput[vari]
+        bgPhotonCountImage = np.zeros(expansionPics[0].shape) if bgPcInput[vari] is None else bgPcInput[vari]
         expAvg = np.mean(expansionPics, 0)
-        if bgInput[vari] is None or len(bgInput[vari]) == 1:
-            bgAvg = np.zeros(expansionPics[0].shape)
-        else:
-            bgAvg = bgInput[vari]
+        bgAvg = np.zeros(expansionPics[0].shape) if (bgInput[vari] is None or len(bgInput[vari]) == 1) else bgInput[vari]
+        
         if bgPhotonCountImage is None:
             print('no bg photon', expAvg.shape)
             bgPhotonCount = np.zeros(photonCountImage.shape)
-        
-        
         ### windowing for background...windowing images earlier 
         #avg_mbg = ah.windowImage(expAvg, s_) - ah.windowImage(bgAvg, s_)
         #avg_mbgpc = ah.windowImage(expPhotonCountImage, s_) - ah.windowImage(bgPhotonCountImage, s_)
@@ -171,29 +162,18 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
     numVariations = len(images)
     if onlyThisPic is None:
         fig, axs = plt.subplots(numVariations, 4, figsize=(20, pltVSize*numVariations))
-        
         if numVariations == 1:
             axs = np.array([axs])
-        
     else:
         numRows = int(np.ceil(numVariations/4))
-
         if numVariations == 1:
             fig, axs = plt.subplots(figsize=(20, pltVSize))
             axs = np.array(axs)
         else:
             fig, axs = plt.subplots(numRows, 4, figsize=(20, pltVSize*numRows))
-    #if numVariations == 1:
-     #   axs = [axs]
     
-    fitCenters = np.zeros((len(images), 4))
-    fitCenterErrs = np.zeros((len(images), 4))
-    sigmas = np.zeros((len(images), 4))
-    totalSignal = np.zeros((len(images), 4))
-    sigmaErrs = np.zeros((len(images), 4))
     keyPlt = np.zeros(len(images))
-    amplitude = np.zeros((len(images), 4))
-    ampErrs = np.zeros((len(images), 4))
+    fitCenters, fitCenterErrs, sigmas, totalSignal, sigmaErrs, amplitude, ampErrs = [np.zeros((len(images), 4)) for _ in range(7)]
     for vari, ((keyV,ims), (_,param_set), (_, cov_set)) in enumerate(zip(images.items(), fitParams.items(), fitCovs.items())):
         if onlyThisPic is None:
             for which, (im, ax, params, title, min_, max_, covs) in enumerate(zip(ims, axs[vari], param_set, titles, mins, maxes, cov_set)):
@@ -206,8 +186,8 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
                 ampErrs[vari][which] = np.sqrt(np.diag(covs))[0]
                 totalSignal[vari][which] = np.sum(im.flatten())
                 keyPlt[vari] = keyV
-                res = mp.fancyImshow(fig, ax, im, imageArgs={'cmap':dark_viridis_cmap, 'vmin':min_, 'vmax':max_}, hFitParams=params, fitModule=fitModule,
-                                     flipVAx = True)
+                res = mp.fancyImshow(fig, ax, im, imageArgs={'cmap':dark_viridis_cmap, 'vmin':min_, 'vmax':max_}, 
+                                     hFitParams=params, fitModule=fitModule, flipVAx = True)
                 ax, hAvg, vAvg = [res[0], res[4], res[5]]
                 ax.set_title(keyV + ': ' + str(datalen[keyV]) + ';\n' + title + ': ' + misc.errString(sigmas[vari][which],sigmaErrs[vari][which]) 
                     + r'$\mu m$ sigma, ' + misc.round_sig_str(totalSignal[vari][which],5), fontsize=12)
@@ -231,25 +211,19 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
                          + r'$\mu m$ sigma, ' + misc.round_sig_str((totalSignal[vari][onlyThisPic]),5), 
                          fontsize=12)
             fig.subplots_adjust(left=0,right=1,bottom=0.1,top=0.9, wspace=0.3, hspace=0.5)
-        
     disp.display(fig)
-    
     if calcTemperature: 
         mbgSigmas = np.array([elt[2] for elt in sigmas])
         mbgSigmaErrs = np.array([elt[2] for elt in sigmaErrs])
         myGuess = [0.0, min((mbgSigmas)*1e-6), guessTemp]
         temp, fitV, cov = ah.calcBallisticTemperature(keyPlt*1e-3, (mbgSigmas)*1e-6, guess = myGuess, sizeErrors = mbgSigmaErrs)
-        
         error = np.sqrt(np.diag(cov))
-        
     numAxisCol = int(plotSigmas) + int(plotCounts) + int(trackFitCenter)
-               
     if numAxisCol != 0:
         fig2, axs = plt.subplots(1, numAxisCol, figsize = (15, 5)) 
         fig2.subplots_adjust(top=0.75, wspace = 0.4)
     if plotSigmas:
-        ax = (axs if numAxisCol == 1 else axs[0])
-        
+        ax = (axs if numAxisCol == 1 else axs[0])        
         if onlyThisPic is not None:
             ax.errorbar(keyPlt, sigmas[:,onlyThisPic], sigmaErrs[:,onlyThisPic], marker='o', linestyle='', capsize=3, label=titles[onlyThisPic]);
         else:
@@ -257,8 +231,7 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
                 ax.errorbar(keyPlt, sigmas[:,whichPic], sigmaErrs[:,whichPic], marker='o', linestyle='', capsize=3, label=titles[whichPic]);
         fig2.legend()
         ax.set_ylabel(r'Fit Sigma ($\mu m$)')
-        
-    
+            
         if calcTemperature:
             # converting time to s, sigmas in um 
             xPoints = np.linspace(min(keyPlt), max(keyPlt))*1e-3
@@ -290,8 +263,6 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             ax = axs[1 if plotSigmas else 0]
         else:
             ax = axs[1]
-       
-        
         #Create axis to plot photon counts
         ax.set_ylabel(r'Integrated signal')
         photon_axis = ax.twinx()
@@ -326,10 +297,7 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
                 ax.legend()
                 photon_axis.legend()
         
-        
-        
         photon_axis.set_ylabel(r'Photon count', color = 'r')
-        
     if trackFitCenter:
         #numaxcol = 1: ax = axs
         #numaxcol = 2: trackfitcenter + plotsigmas: ax = axs[1]
@@ -339,28 +307,18 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             ax = axs
         else:
             ax = axs[-1]     
-        
-        
         if onlyThisPic is not None:
             ax.errorbar(keyPlt, fitCenters[:,onlyThisPic], fitCenterErrs[:,onlyThisPic], marker='o', linestyle='', capsize=3, label=titles[onlyThisPic]);
             def accel(t, x0, a):
                 return x0 + 0.5*a*t**2
-            
             accelFit, AccelCov = opt.curve_fit(accel, keyPlt*1e-3, fitCenters[:,onlyThisPic], sigma = fitCenterErrs[:,onlyThisPic])
-            
             fitx = np.linspace(keyPlt[0], keyPlt[-1])*1e-3
             fity = accel(fitx, *accelFit)
-            
             ax.plot(fitx*1e3, fity)
-            
-        
-        
         else:
             for whichPic in range(4):
                 ax.errorbar(keyPlt, fitCenters[:,whichPic], fitCenterErrs[:,whichPic], marker='o', linestyle='', capsize=3, label=titles[whichPic]);
-        
         accelErr = np.sqrt(np.diag(AccelCov))
-        
         fig2.legend()
         ax.set_ylabel(b'Fit Centers (pix)')
         ax.set_xlabel('time (ms)')
@@ -379,7 +337,6 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
         tempCalc = temp*1e6
         tempCalcErr = error[2]*1e6
         print('temperature = ' + misc.errString(tempCalc, tempCalcErr) + 'uk')
-        
     else:
         tempCalc = None
         tempCalcErr = None
@@ -393,8 +350,12 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
                 file.get_basic_info()
     if trackFitCenter:
         print('Acceleration in Mpix/s^2 = ' + misc.errString(accelFit[1], accelErr[1]))
-    
-    return {'images':images, 'fits':fitParams, 'cov':fitCovs, 'pics':sortedStackedPics, 'sigmas':sigmas, 'sigmaErrors':sigmaErrs, 'dataKey':keyPlt, 'totalPhotons':totalPhotons, 'tempCalc':tempCalc, 'tempCalcErr':tempCalcErr}
+    if transferAnalysisOpts is not None:
+        colors, colors2 = misc.getColors(transferAnalysisOpts.numDataSets() + 1)#, cmStr=dataColor)
+        pltShape = (transferAnalysisOpts.initLocsIn[-1], transferAnalysisOpts.initLocsIn[-2])
+        mp.plotThresholdHists(initThresholds[0], colors, shape=pltShape)    
+    return {'images':images, 'fits':fitParams, 'cov':fitCovs, 'pics':sortedStackedPics, 'sigmas':sigmas, 'sigmaErrors':sigmaErrs, 'dataKey':keyPlt, 
+            'totalPhotons':totalPhotons, 'tempCalc':tempCalc, 'tempCalcErr':tempCalcErr}
 
 def getBgImgs(fid):
     with exp.ExpFile(fid) as file:

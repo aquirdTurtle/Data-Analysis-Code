@@ -29,17 +29,18 @@ def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWind
     if repRange is not None:
         repetitions = repRange[1] - repRange[0]
         rawData = rawData[repRange[0]*picsPerRep:repRange[1]*picsPerRep]
-
-    rawData = np.array([win.window(pic) for pic in rawData])
-    rawData = ah.softwareBinning(binningParams, rawData)
+    # rawData = np.array([win.window(pic) for pic in rawData])
+    windowedData = win.window(rawData)
+    binnedData = ah.softwareBinning(binningParams, windowedData)
     # Group data into variations.
-    numberOfPictures = int(rawData.shape[0])
+    numberOfPictures = int(binnedData.shape[0])
     if groupData:
         repetitions = int(numberOfPictures / picsPerRep)
     numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
     key = ah.handleKeyModifications(hdf5Key, numberOfVariations, keyInput=key, keyOffset=keyOffset, groupData=groupData, keyConversion=keyConversion )
-    groupedDataRaw = rawData.reshape((numberOfVariations, repetitions * picsPerRep, rawData.shape[1], rawData.shape[2]))
-    res = ah.sliceMultidimensionalData(dimSlice, key, groupedDataRaw, varyingDim=varyingDim)
+    groupedBinnedData = binnedData.reshape((numberOfVariations, repetitions * picsPerRep, binnedData.shape[1], binnedData.shape[2]))
+    groupedRawData = rawData.reshape((numberOfVariations, repetitions * picsPerRep, rawData.shape[1], rawData.shape[2]))
+    res = ah.sliceMultidimensionalData(dimSlice, key, groupedBinnedData, varyingDim=varyingDim)
     (_, slicedData, otherDimValues, varyingDim) = res
     slicedOrderedData = slicedData
     key, groupedData = ah.applyDataRange(dataRange, slicedOrderedData, key)
@@ -49,7 +50,7 @@ def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWind
     numOfPictures = groupedData.shape[0] * groupedData.shape[1]
     allAvgPics = ah.getAvgPics(groupedData, picsPerRep=picsPerRep)
     avgPics = [allAvgPics[analysisOpts.initPic], allAvgPics[analysisOpts.tferPic]]
-    return rawData, groupedData, keyName, repetitions, key, numOfPictures, avgPics, basicInfoStr, analysisOpts
+    return binnedData, groupedData, keyName, repetitions, key, numOfPictures, avgPics, basicInfoStr, analysisOpts, groupedRawData
 
 def getGeneralEvents(pic1Atoms, pic2Atoms, positiveResultCondition):
     eventList = ah.getConditionHits( [pic1Atoms, pic2Atoms], positiveResultCondition);
@@ -210,12 +211,12 @@ def stage1TransferAnalysis(fileNumber, analysisOpts, picsPerRep=2, varyingDim=No
     """
     This stage is re-used in the fsi analysis. It's all the analysis up to the post-selection.
     """
-    assert(type(analysisOpts) == ao.TransferAnalysisOptions)
+    #assert(type(analysisOpts) == ao.TransferAnalysisOptions)
     print("sta: Organizing Transfer Data...")
-    ( rawData, groupedData, keyName, repetitions, key, numOfPictures, avgPics, 
-      basicInfoStr, analysisOpts ) = organizeTransferData( fileNumber, analysisOpts, picsPerRep=picsPerRep, varyingDim=varyingDim, **organizerArgs )
+    ( binnedData, groupedData, keyName, repetitions, key, numOfPictures, avgPics, basicInfoStr, analysisOpts, 
+     groupedRawData ) = organizeTransferData( fileNumber, analysisOpts, picsPerRep=picsPerRep, varyingDim=varyingDim, **organizerArgs )
     print("sta: Getting Transfer Thresholds...")
-    res = getTransferThresholds( analysisOpts, rawData, groupedData, picsPerRep, tOptions )
+    res = getTransferThresholds( analysisOpts, binnedData, groupedData, picsPerRep, tOptions )
     borders_init, borders_tfer, initThresholds, tferThresholds = res
     print("sta: Determining Atom Prescence...")
     res = determineTransferAtomPrescence( analysisOpts, groupedData, picsPerRep, borders_init, borders_tfer, initThresholds, tferThresholds)
@@ -226,11 +227,11 @@ def stage1TransferAnalysis(fileNumber, analysisOpts, picsPerRep=2, varyingDim=No
     print("sta: Post-Selecting...",end='')
     for varInc in range(len(initAtoms)):
         print('.',end='')
-        #extraDataToPostSelectIn = [(pic1, pic2) for pic1, pic2 in zip(groupedData[varInc][::2], groupedData[varInc][1::2])]
-        extraDataToPostSelectIn = list(zip(groupedData[varInc][::2], groupedData[varInc][1::2]))
+        extraDataToPostSelectIn = list(zip(groupedRawData[varInc][::2], groupedRawData[varInc][1::2]))
         ensembleHits[varInc] = None # Used to be assigned in postSelectOnAssembly
-        initAtomsPs[varInc], tferAtomsPs[varInc], tempPS = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], 
-                                                                                                            analysisOpts, extraDataToPostSelect = extraDataToPostSelectIn )
+        initAtomsPs[varInc], tferAtomsPs[varInc], tempPS = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], analysisOpts, 
+                                                                                   extraDataToPostSelect = extraDataToPostSelectIn )
+        # print(np.array(initAtomsPs[varInc]).shape, np.array(tferAtomsPs[varInc]).shape, np.array(tempPS).shape)
         groupedPostSelectedPics[varInc] = []
         for repPics in tempPS[0]:
             groupedPostSelectedPics[varInc].append(repPics[0])

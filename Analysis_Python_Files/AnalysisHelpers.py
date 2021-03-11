@@ -62,11 +62,9 @@ def softwareBinning(binningParams, rawData):
                 raise ValueError('Horizontal size ' + str(rawData.shape[1]) +  ' not divisible by binning parameter ' + str(sb[1]))
             rawData = rawData.reshape(rawData.shape[0]//sb[0], sb[0], rawData.shape[1]//sb[1], sb[1]).sum(3).sum(1)
         else:
-            raise ValueError('Raw data must either 2 or 3 dimensions')
-            
+            raise ValueError('Raw data must either 2 or 3 dimensions')            
     return rawData
     
-
 def windowImage(image, window):
     if len(np.array(image).shape) == 2:
         return image[window[0]:window[1], window[2]:window[3]]
@@ -1233,7 +1231,8 @@ def getMaxFidelityThreshold(fitVals):
     return threshold, fidelity
 
 
-def postSelectOnAssembly( pic1AtomData, pic2AtomData, analysisOpts, justReformat=False, extraDataToPostSelect = None ): 
+def postSelectOnAssembly( pic1AtomData, pic2AtomData, analysisOpts, justReformat=False, extraDataToPostSelect=None ): 
+    print(analysisOpts)
     totalRepNum = len(pic1AtomData[0])
     dataSetTotalNum = len(analysisOpts.postSelectionConditions)
     if extraDataToPostSelect is not None:
@@ -1250,11 +1249,14 @@ def postSelectOnAssembly( pic1AtomData, pic2AtomData, analysisOpts, justReformat
         for conditionInc, condition in enumerate(analysisOpts.postSelectionConditions[dataSetInc]):
             # see getEnsembleHits for more discussion on how the post-selection is working here. 
             conditionHits[conditionInc] = getConditionHits([pic1AtomData, pic2AtomData], condition)        
+        #print('hello, world!')
+        #print(conditionHits, pic1AtomData, analysisOpts.postSelectionConditions[dataSetInc])        
         for repNum in range(totalRepNum):
             allCondMatch = True
             for condition in conditionHits:
                 if condition[repNum] == False:
                     allCondMatch = False
+            #print('!' if allCondMatch else '.', end='')
             if allCondMatch or justReformat:
                 indvAtoms1, indvAtoms2 = [], []
                 for atomInc in range(len(pic1AtomData)):

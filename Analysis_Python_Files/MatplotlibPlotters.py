@@ -15,7 +15,7 @@ import IPython.display as disp
 from . import MainAnalysis as ma
 from .MainAnalysis import analyzeNiawgWave, standardAssemblyAnalysis, AnalyzeRearrangeMoves
 from . import TransferAnalysis
-from .Miscellaneous import getColors, getMarkers, errString
+#from .Miscellaneous import getColors, getMarkers, errString
 from . import Miscellaneous as misc
 
 from .LoadingFunctions import loadDataRay, loadCompoundBasler, loadDetailedKey
@@ -146,8 +146,9 @@ def makeThresholdStatsImages(ax, thresholds, locs, shape, ims, lims, fig):
         a.tick_params(axis='both', which='major', labelsize=8)
     return imagePeakDiff
 
+
 def plotThresholdHists( thresholds, colors, extra=None, extraname=None, thresholds_2=None, shape=(10,10), title='', minx=None, maxx=None,
-                        localMinMax=False, detailColor='k'):
+                        localMinMax=False, detailColor='k' ):
     fig, axs = subplots(shape[0], shape[1], figsize=(25.0, 3.0))
     if thresholds_2 is None:
         thresholds_2 = [None for _ in thresholds]
@@ -603,7 +604,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
     fitCharacters = []
     
     if type(dataColor) == str:
-        colors, colors2 = getColors(analysisOpts.numDataSets() + 1, cmStr=dataColor)
+        colors, colors2 = misc.getColors(analysisOpts.numDataSets() + 1, cmStr=dataColor)
     else:
         colors = dataColor
     longLegend = len(transferData[0]) == 1
@@ -946,7 +947,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     (locCounts, thresholds, avgPic, key, allPopsErr, allPops, avgPop, avgPopErr, fits,
      fitModules, keyName, atomData, rawData, atomLocations, avgFits, atomImages,
      totalAvg, totalErr, variationCountData, variationAtomData, varThresholds) = res
-    colors, _ = getColors(len(atomLocations) + 1, cmStr=dataCmap)
+    colors, _ = misc.getColors(len(atomLocations) + 1, cmStr=dataCmap)
     
     if not show:
         return key, allPops, allPopsErr, locCounts, atomImages, thresholds, avgPop
@@ -1127,10 +1128,7 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     for s in allPops:
         avgPops.append(np.mean(s))
     if plotIndvHists:
-        if type(atomLocs_orig[-1]) == int:
-            shape = (atomLocs_orig[-1], atomLocs_orig[-2])
-        else:
-            shape = (10,10)            
+        shape = (atomLocs_orig[-1], atomLocs_orig[-2]) if type(atomLocs_orig[-1]) == int else (10,10)
         if thresholdOptions.indvVariationThresholds:
             for varInc in range(len(key)):
                 #misc.transpose(varThresholds)[varInc]
@@ -1186,7 +1184,7 @@ def Assembly(fileNumber, atomLocs1, pic1Num, partialCredit=False, **standardAsse
 
     if not show:
         return key, survivalData, survivalErrs
-    colors, colors2 = getColors(len(atomLocs1)+1)
+    colors, colors2 = misc.getColors(len(atomLocs1)+1)
     f = figure()
     # Setup grid
     grid1 = mpl.gridspec.GridSpec(12, 16)
