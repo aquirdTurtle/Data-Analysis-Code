@@ -316,7 +316,11 @@ def parseRearrangeInfo(addr, limitedMoves=-1):
                 readyForAtomList = False
     return moveList
 
-def handleKeyModifications(hdf5Key, numVariations, keyInput=None, keyOffset=0, groupData=False, keyConversion=None ):
+def handleKeyModifications(hdf5Key, numVariations, keyInput=None, keyOffset=0, groupData=False, keyConversion=None, keySlice=None ):
+    """
+    keySlice: mostly for handling the case of two concurrent variables that are varying the same, so it's not quite a multidimensional
+    slice but I need to specify which value to use for the x-axis etc.
+    """
     key = None
     key = hdf5Key if keyInput is None else keyInput
     if key is None: 
@@ -332,6 +336,8 @@ def handleKeyModifications(hdf5Key, numVariations, keyInput=None, keyOffset=0, g
         raise ValueError("ERROR: The Length of the key doesn't match the data found. "
                          "Did you want to use a transfer-based function instead of a population-based function? Key:", 
                          len(key), "vars:", numVariations)
+    if keySlice is not None:
+        key = key[:,keySlice]
     return key
 
 def modFitFunc(sign, hBiasIn, vBiasIn, depthIn, *testBiases):
@@ -624,13 +630,13 @@ def fitDoubleGaussian(binCenters, binnedData, fitGuess, quiet=False):
         fitVals, fitCovNotUsed = opt.curve_fit( lambda x, a1, a2, a3, a4, a5, a6:
                                             double_gaussian.f(x, a1, a2, a3, a4, a5, a6, 0),
                                             binCenters, binnedData, fitGuess )
-    except opt.OptimizeWarning:
+    except opt.OptimizeWarning as err:
         if not quiet:
-            print('Double-Gaussian Fit Failed! (Optimization Warning)')
+            print('Double-Gaussian Fit Failed! (Optimization Warning)', err)
         fitVals = (0, 0, 0, 0, 0, 0)
-    except RuntimeError:
+    except RuntimeError as err:
         if not quiet:
-            print('Double-Gaussian Fit Failed! (Runtime error)')
+            print('Double-Gaussian Fit Failed! (Runtime error)', err)
         fitVals = (0, 0, 0, 0, 0, 0)        
     return [*fitVals,0]
 
@@ -1018,8 +1024,8 @@ def groupMultidimensionalData(key, varyingDim, atomLocations, survivalData, surv
     # make list of unique indexes for each dimension
     uniqueSecondaryAxisValues = []
     newKey = []
-    for i, secondaryValues in enumerate(misc.transpose(key)):
-        if i == varyingDim:
+    for keyValNum, secondaryValues in enumerate(misc.transpose(key)):
+        if keyValNum == varyingDim:
             for val in secondaryValues:
                 if val not in newKey:
                     newKey.append(val)
@@ -1120,7 +1126,7 @@ def getFitsDataFrame(fits, fitModules, avgFit):
     return fitDataFrames
 
     
-def getThresholds( picData, tOptions=ThresholdOptions.ThresholdOptions()):
+def getThresholds( picData, tOptions=ThresholdOptions.ThresholdOptions(), quiet=True):
     th = AtomThreshold.AtomThreshold()
     th.rawData = picData
     th.binCenters, th.binHeights = getBinData( tOptions.histBinSize, th.rawData )
@@ -1132,8 +1138,10 @@ def getThresholds( picData, tOptions=ThresholdOptions.ThresholdOptions()):
     ampFac = 0.35
     if not tOptions.manualThreshold:
         guessPos1, guessPos2 = guessGaussianPeaks( th.binCenters, th.binHeights )
+        if guessPos1 == guessPos2:
+            guessPos2 += 1
         guess = arr([max(th.binHeights), guessPos1, gWidth, max(th.binHeights)*ampFac, guessPos2, gWidth])
-        th.fitVals = fitDoubleGaussian(th.binCenters, th.binHeights, guess, quiet=True)
+        th.fitVals = fitDoubleGaussian(th.binCenters, th.binHeights, guess, quiet=quiet)
         th.t, th.fidelity = calculateAtomThreshold(th.fitVals)
         th.rmsResidual = getNormalizedRmsDeviationOfResiduals(th.binCenters, th.binHeights, double_gaussian.f, th.fitVals)
         if tOptions.rigorousThresholdFinding:
@@ -1143,7 +1151,7 @@ def getThresholds( picData, tOptions=ThresholdOptions.ThresholdOptions()):
                 newGuessPosition = binGuessIteration[guessNum]
                 guess = arr([max(th.binHeights), guessPos1, gWidth, max(th.binHeights)*ampFac, newGuessPosition, gWidth])
                 t2 = copy(th)
-                t2.fitVals = fitDoubleGaussian(t2.binCenters, t2.binHeights, guess, quiet=True)
+                t2.fitVals = fitDoubleGaussian(t2.binCenters, t2.binHeights, guess, quiet=quiet)
                 t2.t, t2.fidelity = calculateAtomThreshold(t2.fitVals)
                 t2.rmsResidual = getNormalizedRmsDeviationOfResiduals(t2.binCenters, t2.binHeights, double_gaussian.f, t2.fitVals)
                 if t2.fidelity - t2.rmsResidual > th.fidelity - th.rmsResidual: # keep track of the best result in the t variable.
@@ -1157,10 +1165,11 @@ def getThresholds( picData, tOptions=ThresholdOptions.ThresholdOptions()):
     elif tOptions.autoThresholdFittingGuess:
         guess = arr([max(th.binHeights), (max(th.rawData) + min(th.rawData))/4.0, gWidth,
                      max(th.binHeights)*0.5, 3*(max(th.rawData) + min(th.rawData))/4.0, gWidth])
-        th.fitVals = fitDoubleGaussian(th.binCenters, th.binHeights, guess, quiet=False)
+        th.fitVals = fitDoubleGaussian(th.binCenters, th.binHeights, guess, quiet=quiet)
         th.t, th.fidelity = calculateAtomThreshold(th.fitVals)
         th.rmsResidual = getNormalizedRmsDeviationOfResiduals(th.binCenters, th.binHeights, double_gaussian.f, th.fitVals)
     else:
+        print('no option???')
         th.fitVals = None
         th.t, th.fidelity = (tOptions.manualThresholdValue, 0)
         th.rmsResidual=0
@@ -1232,7 +1241,6 @@ def getMaxFidelityThreshold(fitVals):
 
 
 def postSelectOnAssembly( pic1AtomData, pic2AtomData, analysisOpts, justReformat=False, extraDataToPostSelect=None ): 
-    print(analysisOpts)
     totalRepNum = len(pic1AtomData[0])
     dataSetTotalNum = len(analysisOpts.postSelectionConditions)
     if extraDataToPostSelect is not None:
@@ -1764,27 +1772,28 @@ def getGridDims(locs):
 
 def sliceMultidimensionalData(dimSlice, origKey, rawData, varyingDim=None):
     """
-
     :param dimSlice: e.g. [80, None]
     :param origKey:
     :param rawData:
     :param varyingDim:
     :return:
     """
+    
+    print('vary',varyingDim)
     key = origKey[:]
     if dimSlice is not None:
         runningKey = key[:]
         runningData = rawData[:]
-        for i, dimSpec in enumerate(dimSlice):
+        for dimnum, dimSpec in enumerate(dimSlice):
             if dimSpec is None:
-                varyingDim = i
+                varyingDim = dimnum
                 continue
             tempKey = []
             tempData = []
-            for j, elem in enumerate(misc.transpose(runningKey)[i]):
+            for elemnum, elem in enumerate(misc.transpose(runningKey)[dimnum]):
                 if abs(elem - dimSpec) < 1e-6:
-                    tempKey.append(runningKey[j])
-                    tempData.append(runningData[j])
+                    tempKey.append(runningKey[elemnum])
+                    tempData.append(runningData[elemnum])
             runningKey = tempKey[:]
             runningData = tempData[:]
         key = runningKey[:]
@@ -1792,10 +1801,11 @@ def sliceMultidimensionalData(dimSlice, origKey, rawData, varyingDim=None):
     otherDimValues = None
     if varyingDim is not None:
         otherDimValues = []
+        print('key',key)
         for keyVal in key:
             otherDimValues.append('')
-            for i, dimVal in enumerate(keyVal):
-                if not i == varyingDim:
+            for valNum, dimVal in enumerate(keyVal):
+                if not valNum == varyingDim:
                     otherDimValues[-1] += str(dimVal) + ","
     if dimSlice is not None:
         key = arr(misc.transpose(key)[varyingDim])

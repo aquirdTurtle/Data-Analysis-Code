@@ -302,7 +302,63 @@ def makeLegend(ax, loc = 'upper left', bbox=(0,1.05)):
     for text in leg.get_texts():
         text.set_color("k")
 
-
+def simpleCheck(data, bounds, msg):
+    susData = []
+    for dp in data:
+        if (bounds[0] is not None and bounds[0] > dp.value) or (bounds[1] is not None and dp.value > bounds[1]):
+            susData.append(dp)
+    if susData:
+        print(msg, ';\tReasonable data bounds:', bounds)
+        for sd in susData:
+            print('\t',sd)
+        
+def checkData(calData):
+    # check for zero errors, usually something fit but curve_fit couldn't figure out error
+    susData = []
+    for dataname in calData.keys():
+        if dataname in ['MOT_Size', 'SpotSize2Freqs', 'SpotSizeAxDepth']:
+            continue
+        for val in calData[dataname]:
+            if type(val.error) == list or type(val.error) == type(np.array([])):
+                if val.error[0] == 0:
+                    susData.append([dataname, val])
+            else:
+                if val.error == 0:
+                    susData.append([dataname, val])
+    if susData:
+        print('Data with no error:')
+        for data in susData:
+            print('\t',data)
+    
+    simpleCheck(calData['MOT_Size'], [1000,500000],'Suspicious MOT size data')
+    simpleCheck(calData['MOT_FillTime'], [0.5,10],'Suspicious MOT Fill time data')
+    simpleCheck(calData['MOT_Temperature'], [10,200],'Suspicious MOT Temperature data')
+    simpleCheck(calData['RPGC_Temperature'], [3,50],'Suspicious RPGC Temperature data')
+    simpleCheck(calData['LGM_Temperature'], [3,50],'Suspicious LGM Temperature data')
+    
+    simpleCheck(calData['Loading'], [0.5,0.95],'Suspicious Atom Loading Rate')
+    simpleCheck(calData['ImagingSurvival'], [0.9, 1],'Suspicious Imaging Survival Data')
+    simpleCheck(calData['LifeTime'], [1000,10000],'Suspicious Atom Lifetime')
+    
+    simpleCheck(calData['ThermalTrapFreq'], [100, 200], 'Suspicious Thermal Radial Trap Frequency')
+    simpleCheck(calData['RadialTrapFreq'], [100, 200], 'Suspicious Radial Trap Frequency')
+    simpleCheck(calData['AxialTrapFreq'], [20, 45], 'Suspicious Axial Trap Frequency')
+    
+    simpleCheck(calData['ShallowDepth'], [-0.5, 0.2], 'Suspicious Shallow Depth')
+    simpleCheck(calData['DeepDepth'], [-1.5, -0.5], 'Suspicious Deep Depth')
+    simpleCheck(calData['RamanDepth'], [-1.5, -0.5], 'Suspicious Raman Depth')
+    
+    simpleCheck(calData['SpotSize2Freqs'], [800e-9, 1100e-9], 'Suspicious Radial+Axial Spot Size Value')
+    simpleCheck(calData['SpotSizeRadialDepth'], [600e-9, 900e-9], 'Suspicious Radial+Depth Spot Size Value')
+    simpleCheck(calData['SpotSizeAxDepth'], [700e-9, 1000e-9], 'Suspicious Axial+Depth Spot Size Value')
+    
+    simpleCheck(calData['ThermalNbar'], [1, None], 'Suspicious Radial+Axial Spot Size Value')
+    simpleCheck(calData['AxialNbar'], [0, 1], 'Suspicious Axial Nbar')
+    simpleCheck(calData['RadialNbar'], [0, 1], 'Suspicious Radial Nbar')
+    
+    simpleCheck(calData['RadialCarrierLocation'], [6.8309, 6.831], 'Suspicious Carrier Location')
+    
+    
 def standardPlotting(calData, which="all"):
     fs = 20
     fig, axs = plt.subplots(8 if which=="all" else 1,1, figsize=(20,35) if which=="all" else (20,5))
@@ -333,6 +389,8 @@ def standardPlotting(calData, which="all"):
         ca.plotCalData(ax2_MOT, calData['MOT_Temperature'], {'marker':'o','label':'MOT_Temperature','capsize':5, 'color':'r'})
         ca.plotCalData(ax2, calData['RPGC_Temperature'], {'marker':'o','label':'RPGC_Temperature','capsize':5, 'color':'b'})
         ca.plotCalData(ax2, calData['LGM_Temperature'], {'marker':'o','label':'LGM_Temperature','capsize':5, 'color':'g'})
+        ax2.set_ylim(max(0,ax2.get_ylim()[0]),min(1e2,ax2.get_ylim()[1]))
+        ax2_MOT.set_ylim(max(0,ax2_MOT.get_ylim()[0]),min(1e3,ax2_MOT.get_ylim()[1]))
         ca.makeLegend(ax2)
         ca.makeLegend(ax2_MOT, 'upper right', (1,1.05))
         ca.setAxis(ax2, color='k')
@@ -350,6 +408,8 @@ def standardPlotting(calData, which="all"):
         probAx.set_ylim(0,1)
         probAx.set_ylabel('Probability (/1)', fontsize=fs)
         lifeAx.set_ylabel('Lifetime (ms)', fontsize=fs)
+        lifeAx.set_ylim(0,min(10000,lifeAx.get_ylim()[1]))
+                
         ca.setAxis(probAx, color='k')
         ca.makeLegend(probAx)
         ca.setAxis(lifeAx, color='r')
@@ -357,9 +417,12 @@ def standardPlotting(calData, which="all"):
     if which == "all" or which == 3:
         trapAx_rfreqs = axs[3] if which == "all" else axs
         trapAx_axfreqs = trapAx_rfreqs.twinx()
-        ca.plotCalData(trapAx_rfreqs, calData['ThermalTrapFreq'], {'linestyle':':','marker':'o','label':'ThermalTrapFreq','capsize':5, 'color':'r'})
-        ca.plotCalData(trapAx_rfreqs, calData['RadialTrapFreq'], {'marker':'o','label':'RadialTrapFreq','capsize':5, 'color':'b'})
-        ca.plotCalData(trapAx_axfreqs, calData['AxialTrapFreq'], {'marker':'o','label':'AxialTrapFreq','capsize':5, 'color':'c'})
+        ca.plotCalData(trapAx_rfreqs, calData['ThermalTrapFreq'], 
+                       {'linestyle':':','marker':'o','label':'ThermalTrapFreq','capsize':5, 'color':'r'})
+        ca.plotCalData(trapAx_rfreqs, calData['RadialTrapFreq'], 
+                       {'marker':'o','label':'RadialTrapFreq','capsize':5, 'color':'b'})
+        ca.plotCalData(trapAx_axfreqs, calData['AxialTrapFreq'], 
+                       {'marker':'o','label':'AxialTrapFreq','capsize':5, 'color':'c'})
         trapAx_rfreqs.set_ylabel('Radial Trap Frequencies', fontsize=fs)
         trapAx_axfreqs.set_ylabel('Axial Trap Frequencies', fontsize=fs)
         trapAx_rfreqs.set_ylim(120,170)
@@ -371,9 +434,12 @@ def standardPlotting(calData, which="all"):
     if which == "all" or which == 4:
         trapAx_depths = axs[4] if which == "all" else axs
         trapAx_resonances = trapAx_depths.twinx()
-        ca.plotCalData(trapAx_depths, calData['ShallowDepth'], {'linestyle':':','marker':'o','label':'ShallowDepth','capsize':5, 'color':'g'})
-        ca.plotCalData(trapAx_depths, calData['DeepDepth'], {'linestyle':'--','marker':'o','label':'DeepDepth','capsize':5, 'color':'g'})
-        ca.plotCalData(trapAx_depths, calData['RamanDepth'], {'linestyle':'-','marker':'o','label':'RamanDepth','capsize':5, 'color':'g'})
+        ca.plotCalData(trapAx_depths, calData['ShallowDepth'], 
+                       {'linestyle':':','marker':'o','label':'ShallowDepth','capsize':5, 'color':'g'})
+        ca.plotCalData(trapAx_depths, calData['DeepDepth'], 
+                       {'linestyle':'--','marker':'o','label':'DeepDepth','capsize':5, 'color':'g'})
+        ca.plotCalData(trapAx_depths, calData['RamanDepth'], 
+                       {'linestyle':'-','marker':'o','label':'RamanDepth','capsize':5, 'color':'g'})
         trapAx_depths.set_ylabel('Depth (V)', fontsize=fs)
         trapAx_depths.set_title('Trap Characterization', color='k', fontsize=fs)
         setAxis(trapAx_depths, color='g')
@@ -387,9 +453,12 @@ def standardPlotting(calData, which="all"):
         setAxis(trapAx_resonances, color='k', pad=50)
     if which == "all" or which == 5:
         trapAx_sizes = axs[5] if which == "all" else axs
-        ca.plotCalData(trapAx_sizes, calData['SpotSize2Freqs'],{'linestyle':':','marker':'o','label':'SpotSize2Freqs','capsize':5, 'color':'r'}, sf=1e9)
-        ca.plotCalData(trapAx_sizes, calData['SpotSizeRadialDepth'],{'linestyle':'-','marker':'o','label':'SpotSizeRadialDepth','capsize':5, 'color':'r'}, sf=1e9)
-        ca.plotCalData(trapAx_sizes, calData['SpotSizeAxDepth'],{'linestyle':'--','marker':'o','label':'SpotSizeAxDepth','capsize':5, 'color':'r'}, sf=1e9)
+        ca.plotCalData(trapAx_sizes, calData['SpotSize2Freqs'],
+                       {'linestyle':':','marker':'o','label':'SpotSize2Freqs','capsize':5, 'color':'r'}, sf=1e9)
+        ca.plotCalData(trapAx_sizes, calData['SpotSizeRadialDepth'],
+                       {'linestyle':'-','marker':'o','label':'SpotSizeRadialDepth','capsize':5, 'color':'r'}, sf=1e9)
+        ca.plotCalData(trapAx_sizes, calData['SpotSizeAxDepth'],
+                       {'linestyle':'--','marker':'o','label':'SpotSizeAxDepth','capsize':5, 'color':'r'}, sf=1e9)
         trapAx_sizes.set_ylabel('Spot Sizes (nm)', fontsize=fs)
         setAxis(trapAx_sizes, color='r', pad=50)
         makeLegend(trapAx_sizes, 'upper right', (1,1.15))

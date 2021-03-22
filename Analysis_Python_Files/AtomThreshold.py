@@ -19,14 +19,16 @@ class AtomThreshold:
         return self.binCenters[1] - self.binCenters[0]
     def binEdges(self):
         # for step style plotting
-        return np.array([self.binCenters[0] - self.binWidth()] + list(self.binCenters) + [self.binCenters[-1] + self.binWidth()]) + self.binWidth()/2
+        return np.array([self.binCenters[0] - self.binWidth()] + list(self.binCenters) 
+                        + [self.binCenters[-1] + self.binWidth()]) + self.binWidth()/2
     def binEdgeHeights(self):
         return np.array([0] + list(self.binHeights) + [0])
     def __copy__(self):
         return type(self)(th=self.th, fidelity=self.fidelity, binCenters=self.binCenters, binHeights=self.binHeights, 
                           fitVals=self.fitVals, rmsResidual=self.rmsResidual, rawData=self.rawData)
     def __str__(self):
-        return '[AtomThrehsold with t='+str(self.th) + ', fid=' + str(self.fidelity) + ']'
+        return ('[AtomThrehsold with t='+str(self.th) + ', fid='
+                + str(self.fidelity) + ', fitVals=' + str(self.fitVals) + ']')
     def __repr__(self):
         return self.__str__()
 

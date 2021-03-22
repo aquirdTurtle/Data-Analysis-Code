@@ -10,7 +10,7 @@ from .Miscellaneous import what
 
 def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWindow(), dataRange=None, keyOffset=0, 
                           dimSlice=None, varyingDim=None, groupData=False, quiet=False, picsPerRep=2, repRange=None, 
-                          keyConversion=None, binningParams=None, removePics=None, expFile_version=4, useBaseA=True, keyParameter=None):
+                          keyConversion=None, binningParams=None, removePics=None, expFile_version=4, useBaseA=True, keyParameter=None, keySlice=None):
                          
     """
     Unpack inputs, properly shape the key, picture array, and run some initial checks on the consistency of the settings.
@@ -37,7 +37,7 @@ def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWind
     if groupData:
         repetitions = int(numberOfPictures / picsPerRep)
     numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
-    key = ah.handleKeyModifications(hdf5Key, numberOfVariations, keyInput=key, keyOffset=keyOffset, groupData=groupData, keyConversion=keyConversion )
+    key = ah.handleKeyModifications(hdf5Key, numberOfVariations, keyInput=key, keyOffset=keyOffset, groupData=groupData, keyConversion=keyConversion, keySlice=keySlice )
     groupedBinnedData = binnedData.reshape((numberOfVariations, repetitions * picsPerRep, binnedData.shape[1], binnedData.shape[2]))
     groupedRawData = rawData.reshape((numberOfVariations, repetitions * picsPerRep, rawData.shape[1], rawData.shape[2]))
     res = ah.sliceMultidimensionalData(dimSlice, key, groupedBinnedData, varyingDim=varyingDim)

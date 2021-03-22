@@ -43,8 +43,8 @@ def photonCounting(pics, threshold):
     pcPics[pcPics<=threshold] = 0
     pcPics[pcPics>threshold] = 1
     # sum
-    pcPics = np.sum(pcPics,axis=0)
-    return np.array(pcPics)
+    pcPicTotal = np.sum(pcPics,axis=0)
+    return np.array(pcPicTotal), pcPics
 
 
 def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcInput=None, shapes=[None], zeroCorrection=0, zeroCorrectionPC=0,
@@ -52,18 +52,22 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
                             plotSigmas=False, plotCounts=False, manualColorRange=None, picsPerRep=1, calcTemperature=False, clearOutput=True, 
                             dataRange=None, guessTemp=10e-6, trackFitCenter=False, increment=1, startPic=0, binningParams=None, 
                             win=pw.PictureWindow(), transferAnalysisOpts=None, tferBinningParams=None, tferWin= pw.PictureWindow(),
-                            **extraTferAnalysisArgs):
+                            extraTferAnalysisArgs={}):
     if type(fids) == int:
         fids = [fids]
     if keys is None:
         keys = [None for _ in fids]
     sortedStackedPics = {}
+    initThresholds = [None]
     for filenum, fid in enumerate(fids):
         if transferAnalysisOpts is not None:
-            res = ta.stage1TransferAnalysis( fid, transferAnalysisOpts, binningParams=tferBinningParams, win=tferWin, **extraTferAnalysisArgs )
+            res = ta.stage1TransferAnalysis( fid, transferAnalysisOpts, **extraTferAnalysisArgs )
             (initAtoms, tferAtoms, initAtomsPs, tferAtomsPs, key, keyName, initPicCounts, tferPicCounts, repetitions, initThresholds,
              avgPics, tferThresholds, initAtomImages, tferAtomImages, basicInfoStr, ensembleHits, groupedPostSelectedPics) = res
+            print(key, keyName)
             allpics = np.array(groupedPostSelectedPics[0])[startPic::increment]
+            fig, axs = plt.subplots(1,2)
+            mp.makeAvgPlts(axs[0],axs[1], avgPics, transferAnalysisOpts, ['r','g','b']) 
         elif type(fid) == int:
             ### For looking at either PGC imgs or FSI imgs 
             with exp.ExpFile(fid) as file:
@@ -118,7 +122,7 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
         # 0 is init atom pics for post-selection on atom number... if we wanted to.
         expansionPics = rmHighCountPics(varPics[picsPerRep-1::picsPerRep],7000)
         datalen[keyV] = len(expansionPics)
-        expPhotonCountImage = photonCounting(expansionPics, 120) / len(expansionPics)
+        expPhotonCountImage = photonCounting(expansionPics, 120)[0] / len(expansionPics)
         bgPhotonCountImage = np.zeros(expansionPics[0].shape) if bgPcInput[vari] is None else bgPcInput[vari]
         expAvg = np.mean(expansionPics, 0)
         bgAvg = np.zeros(expansionPics[0].shape) if (bgInput[vari] is None or len(bgInput[vari]) == 1) else bgInput[vari]
@@ -351,11 +355,11 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
     if trackFitCenter:
         print('Acceleration in Mpix/s^2 = ' + misc.errString(accelFit[1], accelErr[1]))
     if transferAnalysisOpts is not None:
-        colors, colors2 = misc.getColors(transferAnalysisOpts.numDataSets() + 1)#, cmStr=dataColor)
+        colors, colors2 = misc.getColors(len(transferAnalysisOpts.initLocs()) + 2)#, cmStr=dataColor)
         pltShape = (transferAnalysisOpts.initLocsIn[-1], transferAnalysisOpts.initLocsIn[-2])
-        mp.plotThresholdHists(initThresholds[0], colors, shape=pltShape)    
+        mp.plotThresholdHists([initThresholds[0][0],initThresholds[1][0]], colors, shape=pltShape)    
     return {'images':images, 'fits':fitParams, 'cov':fitCovs, 'pics':sortedStackedPics, 'sigmas':sigmas, 'sigmaErrors':sigmaErrs, 'dataKey':keyPlt, 
-            'totalPhotons':totalPhotons, 'tempCalc':tempCalc, 'tempCalcErr':tempCalcErr}
+            'totalPhotons':totalPhotons, 'tempCalc':tempCalc, 'tempCalcErr':tempCalcErr, 'initThresholds':initThresholds[0]}
 
 def getBgImgs(fid):
     with exp.ExpFile(fid) as file:
@@ -363,5 +367,5 @@ def getBgImgs(fid):
     pics2 = pics[1::2]
     pics2 = rmHighCountPics(pics2, 7000)
     avgBg = np.mean(pics2,0)
-    avgPcBg = photonCounting(pics2, 120) / len(pics2)
+    avgPcBg = photonCounting(pics2, 120)[0] / len(pics2)
     return avgBg, avgPcBg
