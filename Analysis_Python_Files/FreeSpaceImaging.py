@@ -49,8 +49,8 @@ def photonCounting(pics, threshold):
 
 def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcInput=None, shapes=[None], zeroCorrection=0, zeroCorrectionPC=0,
                             keys=None, fitModule=bump, extraPicDictionaries=None, newAnnotation=False, onlyThisPic=None, pltVSize=5,              
-                            plotSigmas=False, plotCounts=False, manualColorRange=None, picsPerRep=1, calcTemperature=False, clearOutput=True, 
-                            dataRange=None, guessTemp=10e-6, trackFitCenter=False, increment=1, startPic=0, binningParams=None, 
+                            plotSigmas=False, plotCounts=False, manualColorRange=None, calcTemperature=False, clearOutput=True, 
+                            dataRange=None, guessTemp=10e-6, trackFitCenter=False, picsPerRep=1, startPic=0, binningParams=None, 
                             win=pw.PictureWindow(), transferAnalysisOpts=None, tferBinningParams=None, tferWin= pw.PictureWindow(),
                             extraTferAnalysisArgs={}):
     if type(fids) == int:
@@ -65,29 +65,39 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             (initAtoms, tferAtoms, initAtomsPs, tferAtomsPs, key, keyName, initPicCounts, tferPicCounts, repetitions, initThresholds,
              avgPics, tferThresholds, initAtomImages, tferAtomImages, basicInfoStr, ensembleHits, groupedPostSelectedPics) = res
             print(key, keyName)
-            allpics = np.array(groupedPostSelectedPics[0])[startPic::increment]
+            allPics =  np.array(groupedPostSelectedPics[0])
+            allFSIPics = np.array(groupedPostSelectedPics[0])[startPic::picsPerRep]
             fig, axs = plt.subplots(1,2)
             mp.makeAvgPlts(axs[0],axs[1], avgPics, transferAnalysisOpts, ['r','g','b']) 
         elif type(fid) == int:
             ### For looking at either PGC imgs or FSI imgs 
             with exp.ExpFile(fid) as file:
-                allpics = file.get_pics()[startPic::increment]
+                allPics = file.get_pics()
+                allFSIPics = file.get_pics()[startPic::picsPerRep]
                 _, key = file.get_key()
                 if len(np.array(key).shape) == 2:
                     key = key[:,0]
                 file.get_basic_info()
         else:
-            allpics = fid
-            print("Assuming input is list of all pics.")
+            ### Assumes given pics have the same start pic and increment (picsPerRep).
+            allPics = fid
+            allFSIPics = fid[startPic::picsPerRep]
+            print("Assuming input is list of all pics, then splices to get FSI pics. Old code assumed the given were FSI pics.")
         if keys[filenum] is not None:
             key = keys[filenum]
         ### windowing, not compatible with different shapes in each variation
-        allpics = win.window( allpics )
-        allpics = ah.softwareBinning( binningParams, allpics )
-        allpics = np.reshape( allpics, (len(key), int(allpics.shape[0]/len(key)), allpics.shape[1], allpics.shape[2]) )
+        allFSIPics = win.window( allFSIPics )
+        allFSIPics = ah.softwareBinning( binningParams, allFSIPics )
+        allFSIPics = np.reshape( allFSIPics, (len(key), int(allFSIPics.shape[0]/len(key)), allFSIPics.shape[1], allFSIPics.shape[2]) )
         for i, keyV in enumerate(key):
             keyV = misc.round_sig_str(keyV)
-            sortedStackedPics[keyV] = np.append(sortedStackedPics[keyV], allpics[i],axis=0) if (keyV in sortedStackedPics) else allpics[i]
+            sortedStackedPics[keyV] = np.append(sortedStackedPics[keyV], allFSIPics[i],axis=0) if (keyV in sortedStackedPics) else allFSIPics[i]         
+    
+    if bgInput == 'lastPic':
+        if len(fids) > 1:
+            raise ValueError('bgInput = lastPic only works with one file.')
+        bgInput, pcBgInput = getBgImgs(allPics, startPic = picsPerRep-1, picsPerRep = picsPerRep)
+        
     if bgInput is not None: # was broken and not working if not given bg
         bgInput = win.window(bgInput)
         bgInput = ah.softwareBinning(binningParams, bgInput)
@@ -120,7 +130,7 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
         keyV=misc.round_sig_str(keyV)
         varPics = sortedStackedPics[keyV]
         # 0 is init atom pics for post-selection on atom number... if we wanted to.
-        expansionPics = rmHighCountPics(varPics[picsPerRep-1::picsPerRep],7000)
+        expansionPics = rmHighCountPics(varPics,7000)
         datalen[keyV] = len(expansionPics)
         expPhotonCountImage = photonCounting(expansionPics, 120)[0] / len(expansionPics)
         bgPhotonCountImage = np.zeros(expansionPics[0].shape) if bgPcInput[vari] is None else bgPcInput[vari]
@@ -168,13 +178,12 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
         fig, axs = plt.subplots(numVariations, 4, figsize=(20, pltVSize*numVariations))
         if numVariations == 1:
             axs = np.array([axs])
+        bgFig, bgAxs = plt.subplots(1, 2, figsize(20, pltVSize))
     else:
-        numRows = int(np.ceil(numVariations/4))
-        if numVariations == 1:
-            fig, axs = plt.subplots(figsize=(20, pltVSize))
-            axs = np.array(axs)
-        else:
-            fig, axs = plt.subplots(numRows, 4, figsize=(20, pltVSize*numRows))
+        numRows = int(np.ceil((numVariations+2)/4))
+        fig, axs = plt.subplots(numRows, 4, figsize=(20, pltVSize*numRows))
+        bgAxs = [axs.flatten()[-1], axs.flatten()[-2]]
+        bgFig = fig
     
     keyPlt = np.zeros(len(images))
     fitCenters, fitCenterErrs, sigmas, totalSignal, sigmaErrs, amplitude, ampErrs = [np.zeros((len(images), 4)) for _ in range(7)]
@@ -195,7 +204,6 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
                 ax, hAvg, vAvg = [res[0], res[4], res[5]]
                 ax.set_title(keyV + ': ' + str(datalen[keyV]) + ';\n' + title + ': ' + misc.errString(sigmas[vari][which],sigmaErrs[vari][which]) 
                     + r'$\mu m$ sigma, ' + misc.round_sig_str(totalSignal[vari][which],5), fontsize=12)
-            fig.subplots_adjust(left=0,right=1,bottom=0.1,top=0.7, wspace=0.4, hspace=0.5)
         else:
             ax = axs.flatten()[vari]
             fitCenters[vari][onlyThisPic] = param_set[onlyThisPic][1]
@@ -214,7 +222,13 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
                          + titles[onlyThisPic] + ': ' + misc.errString(param_set[onlyThisPic][2]*cf*1e6, np.sqrt(np.diag(cov_set[onlyThisPic]))[2]*cf*1e6) 
                          + r'$\mu m$ sigma, ' + misc.round_sig_str((totalSignal[vari][onlyThisPic]),5), 
                          fontsize=12)
-            fig.subplots_adjust(left=0,right=1,bottom=0.1,top=0.9, wspace=0.3, hspace=0.5)
+    ### Plotting background and photon counted background
+    mp.fancyImshow(bgFig, bgAxs[0], bgAvg, imageArgs={'cmap':dark_viridis_cmap},flipVAx = True) 
+    bgAxs[0].set_title('Background image')
+    mp.fancyImshow(bgFig, bgAxs[1], bgPhotonCountImage, imageArgs={'cmap':dark_viridis_cmap},flipVAx = True) 
+    bgAxs[1].set_title('Photon counted background image')
+    fig.subplots_adjust(left=0,right=1,bottom=0.1, hspace=0.5, **({'top': 0.7, 'wspace': 0.4} if (onlyThisPic is None) else {'top': 0.9, 'wspace': 0.3}))
+    
     disp.display(fig)
     if calcTemperature: 
         mbgSigmas = np.array([elt[2] for elt in sigmas])
@@ -361,10 +375,15 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
     return {'images':images, 'fits':fitParams, 'cov':fitCovs, 'pics':sortedStackedPics, 'sigmas':sigmas, 'sigmaErrors':sigmaErrs, 'dataKey':keyPlt, 
             'totalPhotons':totalPhotons, 'tempCalc':tempCalc, 'tempCalcErr':tempCalcErr, 'initThresholds':initThresholds[0]}
 
-def getBgImgs(fid):
-    with exp.ExpFile(fid) as file:
-        pics = file.get_pics()
-    pics2 = pics[1::2]
+def getBgImgs(bgSource, startPic=1, picsPerRep=2):
+    """ Expects either a file ID number or a list (or an array) of images as input.
+    """
+    if type(bgSource) == int:
+        with exp.ExpFile(bgSource) as file:
+            pics = file.get_pics()
+    if type(bgSource) == type(np.array([])) or type(bgSource) == type([]):
+        pics = bgSource
+    pics2 = pics[startPic::picsPerRep]
     pics2 = rmHighCountPics(pics2, 7000)
     avgBg = np.mean(pics2,0)
     avgPcBg = photonCounting(pics2, 120)[0] / len(pics2)
