@@ -18,6 +18,7 @@ from . import LightShiftCalculations as lsc
 import matplotlib.pyplot as plt
 import IPython.display
 import matplotlib.dates as mdates
+import pickle
 
 @dataclass
 class calPoint:
@@ -72,7 +73,6 @@ def getWaist_fromRadialFreq(freq_r, depth_mk):
     omega_r = 2*np.pi*freq_r
     return np.sqrt(4*V/(mc.Rb87_M * omega_r**2))
 
-
 def getWaist_fromRadialFreq_err(freq_r, depth_mk, freq_r_err, depth_mk_err):
     m = mc.Rb87_M
     omega_r = 2*np.pi*freq_r
@@ -108,8 +108,8 @@ def std_MOT_NUMBER(calData):
         raise ValueError('BAD DATA!!!!')
     return calData, [res[-1]]
 
-def std_BASIC_SINGLE_ATOMS(calData):
-    res = mp.Survival("BASIC_SINGLE_ATOMS", [2,2,3,7,1], forceNoAnnotation=True);
+def std_BASIC_SINGLE_ATOMS(calData, atomLocations=[2,2,3,7,1]):
+    res = mp.Survival("BASIC_SINGLE_ATOMS", atomLocations, forceNoAnnotation=True);
     dt = exp.getStartDatetime("BASIC_SINGLE_ATOMS")
     avgVals = [np.mean(vals) for vals in misc.transpose(res['Initial_Populations'])]
     calData['Loading'] = ca.calPoint(np.max(avgVals), np.std(misc.transpose(res['Initial_Populations'])[np.argmax(avgVals)]),dt)
@@ -123,26 +123,31 @@ def std_MOT_TEMPERATURE(calData):
     return calData, res[-1]
 
 def std_RED_PGC_TEMPERATURE(calData):
-    res = mp.plotMotTemperature('RED_PGC_TEMPERATURE', reps=15, fitWidthGuess=3, window=pw.PictureWindow(xmin=30, xmax=175, ymin=65, ymax=240));
+    res = mp.plotMotTemperature('RED_PGC_TEMPERATURE', reps=15, fitWidthGuess=3, temperatureGuess=20e-6,
+                                window=pw.PictureWindow(xmin=30, xmax=175, ymin=65, ymax=240));
     dt = exp.getStartDatetime("RED_PGC_TEMPERATURE")
     calData['RPGC_Temperature'] = ca.calPoint(res[2], res[3], dt)
     return calData, res[-1]
 
-def std_GREY_MOLASSES_TEMPERATURE(calData):
-    res = mp.plotMotTemperature('GREY_MOLASSES_TEMPERATURE', reps=15, fitWidthGuess=20, lastDataIsBackground=True, window=pw.PictureWindow(xmin=35));
+def std_GREY_MOLASSES_TEMPERATURE(calData, win=pw.PictureWindow(xmin=35)):
+    res = mp.plotMotTemperature('GREY_MOLASSES_TEMPERATURE', reps=15, fitWidthGuess=20, lastDataIsBackground=True, temperatureGuess=20e-6,
+                                window=win);
     dt = exp.getStartDatetime("GREY_MOLASSES_TEMPERATURE")
     calData['LGM_Temperature'] = ca.calPoint(res[2], res[3], dt)
     return calData, res[-1]
 
-def std_3DSBC_TOP_CARRIER_RAMAN_SPECTROSCOPY(calData):
-    res = mp.Survival( "3DSBC_TOP_CARRIER_RAMAN_SPECTROSCOPY", [2,2,3,7,1], fitModules=[bump], forceNoAnnotation=True);
+def std_3DSBC_TOP_CARRIER_RAMAN_SPECTROSCOPY(calData, atomLocations=[2,2,3,7,1]):
+    res = mp.Survival( "3DSBC_TOP_CARRIER_RAMAN_SPECTROSCOPY", atomLocations, fitModules=[bump], forceNoAnnotation=True);
     dt = exp.getStartDatetime("3DSBC_TOP_CARRIER_RAMAN_SPECTROSCOPY")
     fit = res['Average_Transfer_Fit']
-    calData['RadialCarrierLocation'] = ca.calPoint(fit['vals'][1], fit['errs'][1], dt) 
+    if np.isinf(fit['errs'][1]) or np.isnan(fit['errs'][1]):
+        print('BAD CARRIER SCAN!')
+    else:
+        calData['RadialCarrierLocation'] = ca.calPoint(fit['vals'][1], fit['errs'][1], dt) 
     return calData, res['Figures']
 
-def std_THERMAL_TOP_SIDEBAND_RAMAN_SPECTROSCOPY(calData):
-    res = mp.Survival( "THERMAL_TOP_SIDEBAND_RAMAN_SPECTROSCOPY", [2,2,3,7,1], 
+def std_THERMAL_TOP_SIDEBAND_RAMAN_SPECTROSCOPY(calData, atomLocations=[2,2,3,7,1]):
+    res = mp.Survival( "THERMAL_TOP_SIDEBAND_RAMAN_SPECTROSCOPY", atomLocations, 
                        forceNoAnnotation=True, fitModules=[bump2], 
                        fitguess=[[0,0.3,-150,10, 0.3, 150, 10]]);
     dt = exp.getStartDatetime("THERMAL_TOP_SIDEBAND_RAMAN_SPECTROSCOPY")
@@ -151,8 +156,8 @@ def std_THERMAL_TOP_SIDEBAND_RAMAN_SPECTROSCOPY(calData):
     calData['ThermalNbar'] = ca.calPoint(bump2.fitCharacter(fit['vals']), bump2.fitCharacterErr(fit['vals'], fit['errs']), dt)
     return calData, res['Figures']
 
-def std_3DSBC_AXIAL_RAMAN_SPECTROSCOPY(calData):
-    res = mp.Survival( "3DSBC_AXIAL_RAMAN_SPECTROSCOPY", [2,2,3,7,1], forceNoAnnotation=True, 
+def std_3DSBC_AXIAL_RAMAN_SPECTROSCOPY(calData, atomLocations=[2,2,3,7,1]):
+    res = mp.Survival( "3DSBC_AXIAL_RAMAN_SPECTROSCOPY", atomLocations, forceNoAnnotation=True, 
                        fitModules=bump3_Sym, showFitDetails=False );
     dt = exp.getStartDatetime("3DSBC_AXIAL_RAMAN_SPECTROSCOPY")
     fitV = res['Average_Transfer_Fit']['vals']
@@ -162,8 +167,8 @@ def std_3DSBC_AXIAL_RAMAN_SPECTROSCOPY(calData):
     calData['AxialNbar'] = ca.calPoint(bump3_Sym.fitCharacter(fitV), bump3_Sym.fitCharacterErr(fitV, fitE), dt)
     return calData, res['Figures']
 
-def std_3DSBC_TOP_SIDEBAND_RAMAN_SPECTROSCOPY(calData):
-    res = mp.Survival("3DSBC_TOP_SIDEBAND_RAMAN_SPECTROSCOPY", [2,2,3,7,1], 
+def std_3DSBC_TOP_SIDEBAND_RAMAN_SPECTROSCOPY(calData, atomLocations=[2,2,3,7,1]):
+    res = mp.Survival("3DSBC_TOP_SIDEBAND_RAMAN_SPECTROSCOPY", atomLocations, 
                       fitModules=[bump2], fitguess=[[0,0.3,-150,10, 0.3, 150, 10]], forceNoAnnotation=True);
     dt = exp.getStartDatetime("3DSBC_TOP_SIDEBAND_RAMAN_SPECTROSCOPY")
     fvals = res['Average_Transfer_Fit']['vals']
@@ -176,8 +181,8 @@ def std_3DSBC_TOP_SIDEBAND_RAMAN_SPECTROSCOPY(calData):
         calData["SpotSize2Freqs"] = ca.calPoint(ca.getWaistFromBothFreqs(nur,nuax), 0, dt)
     return calData, res['Figures']
 
-def std_DEPTH_MEASUREMENT_DEEP(calData):
-    res = mp.Survival("DEPTH_MEASUREMENT_DEEP", [2,2,3,7,1], fitModules=dip, forceNoAnnotation=True, showFitDetails=True);
+def std_DEPTH_MEASUREMENT_DEEP(calData, atomLocations=[2,2,3,7,1]):
+    res = mp.Survival("DEPTH_MEASUREMENT_DEEP", atomLocations, fitModules=dip, forceNoAnnotation=True, showFitDetails=True);
     dt = exp.getStartDatetime("DEPTH_MEASUREMENT_DEEP")
     fvals = res['Average_Transfer_Fit']['vals']
     ferrs = res['Average_Transfer_Fit']['errs']
@@ -202,8 +207,8 @@ def std_DEPTH_MEASUREMENT_DEEP(calData):
         calData['IndvRamanDepths'][fitn] = ca.calPoint(rdepth, abs(rdepth-lsc.trapDepthFromDac(pt.value+pt.error)), dt)
     return calData, res['Figures']
 
-def std_DEPTH_MEASUREMENT_SHALLOW(calData):
-    res = mp.Survival("DEPTH_MEASUREMENT_SHALLOW", [2,2,3,7,1], fitModules=dip, forceNoAnnotation=True, showFitDetails=True);
+def std_DEPTH_MEASUREMENT_SHALLOW(calData, atomLocations=[2,2,3,7,1]):
+    res = mp.Survival("DEPTH_MEASUREMENT_SHALLOW", atomLocations, fitModules=dip, forceNoAnnotation=True, showFitDetails=True);
     dt = exp.getStartDatetime("DEPTH_MEASUREMENT_SHALLOW")
     fvals = res['Average_Transfer_Fit']['vals']
     ferrs = res['Average_Transfer_Fit']['errs']
@@ -220,9 +225,9 @@ def std_DEPTH_MEASUREMENT_SHALLOW(calData):
                                                     np.sqrt(calData['DeepDepth'].error**2+calData['ShallowDepth'].error**2), dt)
     return calData, res['Figures']
 
-def std_LIFETIME_MEASUREMENT(calData):
+def std_LIFETIME_MEASUREMENT(calData, atomLocations=[2,2,3,7,1]):
     decay.limit = 0
-    res = mp.Survival("LIFETIME_MEASUREMENT", [2,2,3,7,1], fitModules=decay, forceNoAnnotation=True);
+    res = mp.Survival("LIFETIME_MEASUREMENT", atomLocations, fitModules=decay, forceNoAnnotation=True);
     dt = exp.getStartDatetime("LIFETIME_MEASUREMENT")
     fit = res['Average_Transfer_Fit']
     calData['LifeTime'] = ca.calPoint(fit['vals'][1], fit['errs'][1], dt)
@@ -237,8 +242,8 @@ def getInitCalData():
            "ShallowScatteringResonance":ea, "ShallowDepth":ea, "ResonanceDelta":ea, "SpotSize2Freqs":ea, 
            "SpotSizeRadialDepth":ea, "SpotSizeAxDepth":ea, "RamanDepth":ea, "ResonanceDepthDelta":ea, "Lifetime":ea }    
 
-def std_analyzeAll(sCalData = getInitCalData(), displayResults=True):
-    allFigs = []
+def std_analyzeAll(sCalData = getInitCalData(), displayResults=True, atomLocations=[2,2,3,7,1]):
+    allErrs, allFigs = [],[]
     analysis_names = ["MOT_NUMBER", "MOT_TEMPERATURE", "RED_PGC_TEMPERATURE", "GREY_MOLASSES_TEMPERATURE",
                     "BASIC_SINGLE_ATOMS","3DSBC_TOP_CARRIER_RAMAN_SPECTROSCOPY",
                     "THERMAL_TOP_SIDEBAND_RAMAN_SPECTROSCOPY","3DSBC_AXIAL_RAMAN_SPECTROSCOPY",
@@ -250,20 +255,27 @@ def std_analyzeAll(sCalData = getInitCalData(), displayResults=True):
                      std_3DSBC_TOP_SIDEBAND_RAMAN_SPECTROSCOPY,std_DEPTH_MEASUREMENT_DEEP,std_DEPTH_MEASUREMENT_SHALLOW,
                     std_LIFETIME_MEASUREMENT]:
         try:
-            sCalData, figures = std_func(sCalData)
+            if std_func in [std_MOT_NUMBER, std_MOT_TEMPERATURE, std_RED_PGC_TEMPERATURE, std_GREY_MOLASSES_TEMPERATURE]:
+                sCalData, figures = std_func(sCalData)
+            else:
+                sCalData, figures = std_func(sCalData, atomLocations)
             for fig in figures:
                 plt.close(fig)
             allFigs.append(figures)
-        except:
-            print("Failed to do calibration: ", std_func)
+            allErrs.append(None)
+        except Exception as error:
+            print("Failed to do calibration: ", std_func, error)
             allFigs.append([])
+            allErrs.append(error)
     IPython.display.clear_output()
     if displayResults:
         assert(len(analysis_names) == len(allFigs))
-        for name, figs in zip(analysis_names, allFigs):
+        for name, figs, err in zip(analysis_names, allFigs, allErrs):
             IPython.display.display(IPython.display.Markdown('### ' + name))
             for fig in figs:
                 IPython.display.display(fig)
+            if err is not None:
+                print(err)
     return sCalData
 
 
@@ -273,6 +285,7 @@ def plotCalData(ax, dataV, pltargs={}, sf=1):
         err = misc.transpose(err)
     ax.errorbar([data.timestamp for data in dataV], [data.value*sf for data in dataV], 
                 yerr=err, **pltargs)
+    
 def addAnnotations(ax):
     ax.axvline(datetime(2020,6,20), color='k')
     ax.text(datetime(2020,6,20),0.5, 'Chimera 2.0', transform=ax.get_xaxis_transform(), color='k', rotation=-90)
@@ -302,10 +315,13 @@ def makeLegend(ax, loc = 'upper left', bbox=(0,1.05)):
     for text in leg.get_texts():
         text.set_color("k")
 
-def simpleCheck(data, bounds, msg):
+def simpleCheck(data, bounds, msg, errBound=np.inf):
     susData = []
     for dp in data:
+        err = dp.error[0] if type(dp.error) == list or type(dp.error) == type(np.array([])) else dp.error
         if (bounds[0] is not None and bounds[0] > dp.value) or (bounds[1] is not None and dp.value > bounds[1]):
+            susData.append(dp)        
+        elif errBound < err:
             susData.append(dp)
     if susData:
         print(msg, ';\tReasonable data bounds:', bounds)
@@ -319,12 +335,9 @@ def checkData(calData):
         if dataname in ['MOT_Size', 'SpotSize2Freqs', 'SpotSizeAxDepth']:
             continue
         for val in calData[dataname]:
-            if type(val.error) == list or type(val.error) == type(np.array([])):
-                if val.error[0] == 0:
-                    susData.append([dataname, val])
-            else:
-                if val.error == 0:
-                    susData.append([dataname, val])
+            err = val.error[0] if type(val.error) == list or type(val.error) == type(np.array([])) else val.error
+            if  err == 0 or np.isinf(err) or np.isnan(err):
+                susData.append([dataname, val])
     if susData:
         print('Data with no error:')
         for data in susData:
@@ -356,10 +369,36 @@ def checkData(calData):
     simpleCheck(calData['AxialNbar'], [0, 1], 'Suspicious Axial Nbar')
     simpleCheck(calData['RadialNbar'], [0, 1], 'Suspicious Radial Nbar')
     
-    simpleCheck(calData['RadialCarrierLocation'], [6.8309, 6.831], 'Suspicious Carrier Location')
+    simpleCheck(calData['RadialCarrierLocation'], [6.8309, 6.831], 'Suspicious Carrier Location', 0.01)
     
+def loadAllCalData():
+    ea = np.array([]) # empty array
+    calData = {"Loading":ea,"ImagingSurvival":ea,"MOT_Size":ea,"MOT_FillTime":ea, "MOT_Temperature":ea,
+               "RPGC_Temperature":ea,"LGM_Temperature":ea,"ThermalTrapFreq":ea, "ThermalNbar":ea, 
+               "AxialTrapFreq":ea, "AxialCarrierLocation":ea, "AxialNbar":ea, "RadialTrapFreq":ea,
+               "RadialNbar":ea, "RadialCarrierLocation":ea, "DeepScatteringResonance":ea, "DeepDepth":ea, 
+               "ShallowScatteringResonance":ea, "ShallowDepth":ea, "ResonanceDelta":ea, "SpotSize2Freqs":ea, 
+               "SpotSizeRadialDepth":ea, "SpotSizeAxDepth":ea, "RamanDepth":ea, "ResonanceDepthDelta":ea, "IndvRamanDepths":ea, "LifeTime": ea }
+    for year_ in ['2020','2021']:
+        print(year_)
+        for month_ in ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november','december']:
+            print(month_,end=',')
+            for d_ in range(1,32):
+                exp.setPath(str(d_),month_, year_)
+                try:
+                    with open(exp.dataAddress + 'CalibrationData.p', 'rb') as handle:
+                        readCalData = pickle.loads(handle.read())
+                    for key in calData.keys():
+                        if key in readCalData:
+                            if readCalData[key] is not None:
+                                # the data gets set to none if, e.g. there's a bad calibation set which was never fixed that day. 
+                                calData[key] = np.append(calData[key], readCalData[key])
+                except OSError:
+                    pass
+    return calData
+        
     
-def standardPlotting(calData, which="all"):
+def standardPlotting(pltData, which="all", useSmartYLims=True):
     fs = 20
     fig, axs = plt.subplots(8 if which=="all" else 1,1, figsize=(20,35) if which=="all" else (20,5))
     plt.subplots_adjust(hspace=0.3)
@@ -367,9 +406,9 @@ def standardPlotting(calData, which="all"):
         motAx = axs[0] if which == "all" else axs
         motAx_2 = motAx.twinx()
         motAx_3 = motAx.twinx()
-        ca.plotCalData(motAx, calData['MOT_Temperature'], {'marker':'o','label':'MOT_Temperature','capsize':5, 'color':'r'})
-        ca.plotCalData(motAx_2, calData['MOT_FillTime'], {'marker':'o','label':'MOT_FillTime','capsize':5, 'color':'b'})
-        ca.plotCalData(motAx_3, calData['MOT_Size'], {'marker':'o','label':'MOT_Size','capsize':5, 'color':'g'})
+        ca.plotCalData(motAx, pltData['MOT_Temperature'], {'marker':'o','label':'MOT_Temperature','capsize':5, 'color':'r'})
+        ca.plotCalData(motAx_2, pltData['MOT_FillTime'], {'marker':'o','label':'MOT_FillTime','capsize':5, 'color':'b'})
+        ca.plotCalData(motAx_3, pltData['MOT_Size'], {'marker':'o','label':'MOT_Size','capsize':5, 'color':'g'})
         motAx_2.set_title('MOT Characteristics', color='k', fontsize=fs)
         motAx.set_ylabel(r'MOT Temperature ($\mu K$)', fontsize=fs)
         motAx_2.set_ylabel(r'MOT Fill-Time', fontsize=fs)
@@ -380,15 +419,15 @@ def standardPlotting(calData, which="all"):
         motAx.set_ylabel(r'MOT Temperature ($\mu K$)', fontsize=fs)
         motAx_2.set_ylabel(r'MOT Fill Time (Seconds)', fontsize=fs)
         motAx_3.set_ylabel(r'MOT Size (# Atoms)', fontsize=fs)
-        ca.setAxis(motAx, calData['MOT_Temperature'], color='r', pad=0)
+        ca.setAxis(motAx, pltData['MOT_Temperature'], color='r', pad=0)
         ca.setAxis(motAx_2, color='b', pad=0)
         ca.setAxis(motAx_3, color='g', pad=50)
     if which == "all" or which == 1:
         ax2 = axs[1] if which == "all" else axs
         ax2_MOT = ax2.twinx()
-        ca.plotCalData(ax2_MOT, calData['MOT_Temperature'], {'marker':'o','label':'MOT_Temperature','capsize':5, 'color':'r'})
-        ca.plotCalData(ax2, calData['RPGC_Temperature'], {'marker':'o','label':'RPGC_Temperature','capsize':5, 'color':'b'})
-        ca.plotCalData(ax2, calData['LGM_Temperature'], {'marker':'o','label':'LGM_Temperature','capsize':5, 'color':'g'})
+        ca.plotCalData(ax2_MOT, pltData['MOT_Temperature'], {'marker':'o','label':'MOT_Temperature','capsize':5, 'color':'r'})
+        ca.plotCalData(ax2, pltData['RPGC_Temperature'], {'marker':'o','label':'RPGC_Temperature','capsize':5, 'color':'b'})
+        ca.plotCalData(ax2, pltData['LGM_Temperature'], {'marker':'o','label':'LGM_Temperature','capsize':5, 'color':'g'})
         ax2.set_ylim(max(0,ax2.get_ylim()[0]),min(1e2,ax2.get_ylim()[1]))
         ax2_MOT.set_ylim(max(0,ax2_MOT.get_ylim()[0]),min(1e3,ax2_MOT.get_ylim()[1]))
         ca.makeLegend(ax2)
@@ -402,9 +441,9 @@ def standardPlotting(calData, which="all"):
         probAx = axs[2] if which == "all" else axs
         probAx.set_title('Basic Atom', color='k', fontsize=fs)
         lifeAx = probAx.twinx()
-        ca.plotCalData(probAx, calData['Loading'], {'marker':'o','label':'Loading','capsize':5})
-        ca.plotCalData(probAx, calData['ImagingSurvival'], {'marker':'o','label':'ImagingSurvival','capsize':5})
-        ca.plotCalData(lifeAx, calData['LifeTime'], {'marker':'o','label':'Lifetime','capsize':5, 'color':'r'})
+        ca.plotCalData(probAx, pltData['Loading'], {'marker':'o','label':'Loading','capsize':5})
+        ca.plotCalData(probAx, pltData['ImagingSurvival'], {'marker':'o','label':'ImagingSurvival','capsize':5})
+        ca.plotCalData(lifeAx, pltData['LifeTime'], {'marker':'o','label':'Lifetime','capsize':5, 'color':'r'})
         probAx.set_ylim(0,1)
         probAx.set_ylabel('Probability (/1)', fontsize=fs)
         lifeAx.set_ylabel('Lifetime (ms)', fontsize=fs)
@@ -417,11 +456,11 @@ def standardPlotting(calData, which="all"):
     if which == "all" or which == 3:
         trapAx_rfreqs = axs[3] if which == "all" else axs
         trapAx_axfreqs = trapAx_rfreqs.twinx()
-        ca.plotCalData(trapAx_rfreqs, calData['ThermalTrapFreq'], 
+        ca.plotCalData(trapAx_rfreqs, pltData['ThermalTrapFreq'], 
                        {'linestyle':':','marker':'o','label':'ThermalTrapFreq','capsize':5, 'color':'r'})
-        ca.plotCalData(trapAx_rfreqs, calData['RadialTrapFreq'], 
+        ca.plotCalData(trapAx_rfreqs, pltData['RadialTrapFreq'], 
                        {'marker':'o','label':'RadialTrapFreq','capsize':5, 'color':'b'})
-        ca.plotCalData(trapAx_axfreqs, calData['AxialTrapFreq'], 
+        ca.plotCalData(trapAx_axfreqs, pltData['AxialTrapFreq'], 
                        {'marker':'o','label':'AxialTrapFreq','capsize':5, 'color':'c'})
         trapAx_rfreqs.set_ylabel('Radial Trap Frequencies', fontsize=fs)
         trapAx_axfreqs.set_ylabel('Axial Trap Frequencies', fontsize=fs)
@@ -434,17 +473,17 @@ def standardPlotting(calData, which="all"):
     if which == "all" or which == 4:
         trapAx_depths = axs[4] if which == "all" else axs
         trapAx_resonances = trapAx_depths.twinx()
-        ca.plotCalData(trapAx_depths, calData['ShallowDepth'], 
+        ca.plotCalData(trapAx_depths, pltData['ShallowDepth'], 
                        {'linestyle':':','marker':'o','label':'ShallowDepth','capsize':5, 'color':'g'})
-        ca.plotCalData(trapAx_depths, calData['DeepDepth'], 
+        ca.plotCalData(trapAx_depths, pltData['DeepDepth'], 
                        {'linestyle':'--','marker':'o','label':'DeepDepth','capsize':5, 'color':'g'})
-        ca.plotCalData(trapAx_depths, calData['RamanDepth'], 
+        ca.plotCalData(trapAx_depths, pltData['RamanDepth'], 
                        {'linestyle':'-','marker':'o','label':'RamanDepth','capsize':5, 'color':'g'})
         trapAx_depths.set_ylabel('Depth (V)', fontsize=fs)
         trapAx_depths.set_title('Trap Characterization', color='k', fontsize=fs)
         setAxis(trapAx_depths, color='g')
         makeLegend(trapAx_depths, 'upper left', (0,1.15))
-        ca.plotCalData(trapAx_resonances, calData['ResonanceDepthDelta'], {'marker':'o','label':'ResonanceDelta','capsize':5, 'color':'k'})
+        ca.plotCalData(trapAx_resonances, pltData['ResonanceDepthDelta'], {'marker':'o','label':'ResonanceDelta','capsize':5, 'color':'k'})
         trapAx_resonances.set_ylabel('Depth Delta (V)', fontsize=fs)
         trapAx_resonances.yaxis.tick_left()
         trapAx_resonances.yaxis.set_label_position("left")
@@ -453,11 +492,11 @@ def standardPlotting(calData, which="all"):
         setAxis(trapAx_resonances, color='k', pad=50)
     if which == "all" or which == 5:
         trapAx_sizes = axs[5] if which == "all" else axs
-        ca.plotCalData(trapAx_sizes, calData['SpotSize2Freqs'],
+        ca.plotCalData(trapAx_sizes, pltData['SpotSize2Freqs'],
                        {'linestyle':':','marker':'o','label':'SpotSize2Freqs','capsize':5, 'color':'r'}, sf=1e9)
-        ca.plotCalData(trapAx_sizes, calData['SpotSizeRadialDepth'],
+        ca.plotCalData(trapAx_sizes, pltData['SpotSizeRadialDepth'],
                        {'linestyle':'-','marker':'o','label':'SpotSizeRadialDepth','capsize':5, 'color':'r'}, sf=1e9)
-        ca.plotCalData(trapAx_sizes, calData['SpotSizeAxDepth'],
+        ca.plotCalData(trapAx_sizes, pltData['SpotSizeAxDepth'],
                        {'linestyle':'--','marker':'o','label':'SpotSizeAxDepth','capsize':5, 'color':'r'}, sf=1e9)
         trapAx_sizes.set_ylabel('Spot Sizes (nm)', fontsize=fs)
         setAxis(trapAx_sizes, color='r', pad=50)
@@ -465,18 +504,20 @@ def standardPlotting(calData, which="all"):
     if which == "all" or which == 6:
         nbar_ax = axs[6] if which == "all" else axs
         nbar_ax.set_title('NBar Values', color='k', fontsize=fs)
-        plotCalData(nbar_ax, calData['ThermalNbar'], {'marker':'o','label':'ThermalNbar','capsize':5})
-        plotCalData(nbar_ax, calData['AxialNbar'], {'marker':'o','label':'AxialNbar','capsize':5})
-        plotCalData(nbar_ax, calData['RadialNbar'], {'marker':'o','label':'RadialNbar','capsize':5})
+        plotCalData(nbar_ax, pltData['ThermalNbar'], {'marker':'o','label':'ThermalNbar','capsize':5})
+        plotCalData(nbar_ax, pltData['AxialNbar'], {'marker':'o','label':'AxialNbar','capsize':5})
+        plotCalData(nbar_ax, pltData['RadialNbar'], {'marker':'o','label':'RadialNbar','capsize':5})
         nbar_ax.set_ylim(0,2)
         makeLegend(nbar_ax)
         setAxis(nbar_ax)
     if which == "all" or which == 7:
         carrierAx = axs[7] if which == "all" else axs
         carrierAx.set_title('Carrier Drift', color='k', fontsize=fs)
-        plotCalData(carrierAx, calData['RadialCarrierLocation'], {'marker':'o','label':'Radial Carrier Location','capsize':5})
+        plotCalData(carrierAx, pltData['RadialCarrierLocation'], {'marker':'o','label':'Radial Carrier Location','capsize':5})
         setAxis(carrierAx, color='k')
         makeLegend(carrierAx, loc="upper right", bbox=(1,1.05))
-        carrierAx.axvline(datetime(2020,6,16))
+        carrierAx.axvline(datetime(2020,6,16), color='k')
         carrierAx.text(datetime(2020,6,16),0.5, 'Started Recording\nAbosolute Freq', transform=carrierAx.get_xaxis_transform(), color='k');
-        #display(carrierAx);
+        if useSmartYLims:
+            carrierAx.set_ylim(max(6.8308,carrierAx.get_ylim()[0]),min(6.8311,carrierAx.get_ylim()[1]))
+        

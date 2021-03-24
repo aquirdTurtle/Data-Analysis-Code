@@ -37,6 +37,7 @@ def rmHighCountPics(pics, threshold):
         pics = np.delete(pics, index, 0)
     return pics
 
+
 def photonCounting(pics, threshold):
     pcPics = np.copy(pics)
     # digitize
@@ -46,13 +47,24 @@ def photonCounting(pics, threshold):
     pcPicTotal = np.sum(pcPics,axis=0)
     return np.array(pcPicTotal), pcPics
 
+def getBgImgs(fid, incr=2,startPic=1):
+    if type(fid) == int:
+        with exp.ExpFile(fid) as file:
+            pics = file.get_pics()
+    else:
+        pics = fid
+    pics2 = pics[startPic::incr]
+    pics2 = rmHighCountPics(pics2, 7000)
+    avgBg = np.mean(pics2,0)
+    avgPcBg = photonCounting(pics2, 120)[0] / len(pics2)
+    return avgBg, avgPcBg
 
 def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcInput=None, shapes=[None], zeroCorrection=0, zeroCorrectionPC=0,
                             keys=None, fitModule=bump, extraPicDictionaries=None, newAnnotation=False, onlyThisPic=None, pltVSize=5,              
                             plotSigmas=False, plotCounts=False, manualColorRange=None, picsPerRep=1, calcTemperature=False, clearOutput=True, 
                             dataRange=None, guessTemp=10e-6, trackFitCenter=False, increment=1, startPic=0, binningParams=None, 
                             win=pw.PictureWindow(), transferAnalysisOpts=None, tferBinningParams=None, tferWin= pw.PictureWindow(),
-                            extraTferAnalysisArgs={}):
+                            extraTferAnalysisArgs={}, emGainSetting=300, lastPicIsBg=False):
     if type(fids) == int:
         fids = [fids]
     if keys is None:
@@ -88,6 +100,9 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
         for i, keyV in enumerate(key):
             keyV = misc.round_sig_str(keyV)
             sortedStackedPics[keyV] = np.append(sortedStackedPics[keyV], allpics[i],axis=0) if (keyV in sortedStackedPics) else allpics[i]
+    if lastPicIsBg:
+        bgInput, bgPcInput = getBgImgs(allpics, increment-1, increment)
+        print('background from last pics:', bgInput)
     if bgInput is not None: # was broken and not working if not given bg
         bgInput = win.window(bgInput)
         bgInput = ah.softwareBinning(binningParams, bgInput)
@@ -152,7 +167,7 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
                     cov = np.zeros((len(guess), len(guess)))
                 fitParams[keyV].append(params)
                 fitCovs[keyV].append(cov)
-
+    # conversion from the num of pixels on the camera to microns at the focus of the tweezers
     cf = 16e-6/64
     mins, maxes = [[], []]
     imgs_ = np.array(list(images.values()))
@@ -267,41 +282,37 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             ax = axs[1 if plotSigmas else 0]
         else:
             ax = axs[1]
-        #Create axis to plot photon counts
+        # Create axis to plot photon counts
         ax.set_ylabel(r'Integrated signal')
         photon_axis = ax.twinx()
-           
-        colors = ['red', 'orange', 'yellow', 'pink']
         
+        colors = ['red', 'orange', 'yellow', 'pink']
+        # This is not currently doing any correct for e.g. the loading rate.
+        countToCameraPhotonEM = 0.018577 / (emGainSetting/200) # the float is is EM200. 
+        countToScatteredPhotonEM = 0.018577/0.07 / (emGainSetting/200)
+
         if onlyThisPic is not None:
-            #calculate number of photons
-            amp = amplitude[:,onlyThisPic]*len(expansionPics[0][0]) #Horizontal "un"normalization for number of columns begin averaged.
-            sig = sigmas[:,onlyThisPic]/(16/40) #Convert from um to pixels.
-            countToCameraPhotonEM200 = 0.018577 * 2 #(EM100)
-            countToScatteredPhotonEM200 = 0.018577/0.07 * 2
-            totalCountsPerPic = bump.area_under(amp, sig)
-            totalPhotons = countToScatteredPhotonEM200*totalCountsPerPic
-            
+            # calculate number of photons
+            amp = amplitude[:,onlyThisPic]*len(expansionPics[0][0]) # Horizontal "un"normalization for number of columns begin averaged.
+            sigpx = sigmas[:,onlyThisPic]/(16/64) # Convert from um back to to pixels.
+            totalCountsPerPic = bump.area_under(amp, sigpx)
+            totalPhotons = countToScatteredPhotonEM*totalCountsPerPic            
             ax.plot(keyPlt, totalSignal[:,onlyThisPic], marker='o', linestyle='', label=titles[onlyThisPic]);
             photon_axis.plot(keyPlt, totalPhotons, marker='o', linestyle='', color = 'r')
-            
         else:
             for whichPic in range(4):
-                #calculate number of photons
-                amp = amplitude[:,whichPic]*len(expansionPics[0][0]) #Horizontal "un"normalization for number of columns begin averaged.
-                sig = sigmas[:,whichPic]/(16/40) #Convert from um to pixels.
-                countToCameraPhotonEM200 = 0.018577 * 2 #(EM100)
-                countToScatteredPhotonEM200 = 0.018577/0.07 * 2
+                # See above comments
+                amp = amplitude[:,whichPic]*len(expansionPics[0][0]) 
+                sig = sigmas[:,whichPic]/(16/64) 
                 totalCountsPerPic = bump.area_under(amp, sig)
-                totalPhotons = countToScatteredPhotonEM200*totalCountsPerPic
-                
+                totalPhotons = countToScatteredPhotonEM*totalCountsPerPic
                 ax.plot(keyPlt, totalSignal[:,whichPic], marker='o', linestyle='', label=titles[whichPic]);
-                photon_axis.plot(keyPlt, totalPhotons, marker='o', linestyle='', color = colors[whichPic])
-               
+                photon_axis.plot(keyPlt, totalPhotons, marker='o', linestyle='', color = colors[whichPic])               
                 ax.legend()
                 photon_axis.legend()
-        
-        photon_axis.set_ylabel(r'Photon count', color = 'r')
+        [tick.set_color('red') for tick in photon_axis.yaxis.get_ticklines()]
+        [tick.set_color('red') for tick in photon_axis.yaxis.get_ticklabels()]
+        photon_axis.set_ylabel(r'Fit-Based Avg Scattered Photon/Img', color = 'r')
     if trackFitCenter:
         #numaxcol = 1: ax = axs
         #numaxcol = 2: trackfitcenter + plotsigmas: ax = axs[1]
@@ -361,11 +372,3 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
     return {'images':images, 'fits':fitParams, 'cov':fitCovs, 'pics':sortedStackedPics, 'sigmas':sigmas, 'sigmaErrors':sigmaErrs, 'dataKey':keyPlt, 
             'totalPhotons':totalPhotons, 'tempCalc':tempCalc, 'tempCalcErr':tempCalcErr, 'initThresholds':initThresholds[0]}
 
-def getBgImgs(fid):
-    with exp.ExpFile(fid) as file:
-        pics = file.get_pics()
-    pics2 = pics[1::2]
-    pics2 = rmHighCountPics(pics2, 7000)
-    avgBg = np.mean(pics2,0)
-    avgPcBg = photonCounting(pics2, 120)[0] / len(pics2)
-    return avgBg, avgPcBg

@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import scipy.optimize as opt
 import scipy.special as special
 import scipy.interpolate as interp
+import warnings
 
 from . import MarksConstants as mc
 from . import Miscellaneous as misc
@@ -194,7 +195,7 @@ def fitManyGaussianImage(im, numGauss, neighborhood_size=20, threshold=1, direct
     ax[4].set_title('Fit-Diff')
     return optParam
 
-def temperatureAnalysis( data, magnification, **standardImagesArgs ):
+def temperatureAnalysis( data, magnification, temperatureGuess=100e-6, **standardImagesArgs ):
     res = ma.standardImages(data, scanType="Time(ms)", majorData='fits', fitPics=True, manualAccumulation=True, quiet=True, **standardImagesArgs)
     (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, fitCov, plottedData, v_params, v_errs, h_params, h_errs, intRawData) = res
     # convert to meters, convert from sigma to waist
@@ -203,8 +204,8 @@ def temperatureAnalysis( data, magnification, **standardImagesArgs ):
     waists_1D = 2 * mc.baslerScoutPixelSize * v_params[:, 2] * magnification
     # convert to s
     times = key / 1000
-    temp, fitVals, fitCov = calcBallisticTemperature(times, waists / 2)
-    temp_1D, fitVals_1D, fitCov_1D = calcBallisticTemperature(times, waists_1D / 2)
+    temp, fitVals, fitCov = calcBallisticTemperature(times, waists / 2, guess = [*LargeBeamMotExpansion.guess()[:-1], temperatureGuess])
+    temp_1D, fitVals_1D, fitCov_1D = calcBallisticTemperature(times, waists_1D / 2, guess = [*LargeBeamMotExpansion.guess()[:-1], temperatureGuess])
     return ( temp, fitVals, fitCov, times, waists, rawData, pictureFitParams, key, plottedData, dataMinusBg, v_params, v_errs, h_params, h_errs,
              waists_1D, temp_1D, fitVals_1D, fitCov_1D )
 
@@ -965,18 +966,44 @@ def computeMotNumber(sidemotPower, diagonalPower, motRadius, exposure, imagingLo
     motNumber = fluorescence / rate
     return motNumber, fluorescence
 
+
 def calcBallisticTemperature(times, sizeSigmas, guess = LargeBeamMotExpansion.guess(), sizeErrors=None):
     """ Small wrapper around a fit 
     expects time in s, sigma in m
     return temp, vals, cov
     """
+    warnings.simplefilter("error", opt.OptimizeWarning)
     try:
         fitVals, fitCovariances = opt.curve_fit(LargeBeamMotExpansion.f, times, sizeSigmas, p0=guess, sigma = sizeErrors)
+        temperature = fitVals[2]
+    except opt.OptimizeWarning as error:
+        warn('Mot Temperature Expansion Fit Failed!' + str(error))
+        try:
+            fitValsTemp, fitCovTemp = opt.curve_fit(lambda t,x,y: LargeBeamMotExpansion.f(t, x, 0, y), times, sizeSigmas, p0=[guess[0], guess[2]], sigma = sizeErrors)
+            temperature = fitValsTemp[1]
+            fitVals = [fitValsTemp[0], 0, fitValsTemp[1]]
+            fitCovariances = np.zeros((len(guess),len(guess)))
+            fitCovariances[0,0] = fitCovTemp[0,0]
+            fitCovariances[2,0] = fitCovTemp[1,0]
+            fitCovariances[0,2] = fitCovTemp[0,1]
+            fitCovariances[2,2] = fitCovTemp[1,1]
+        except opt.OptimizeWarning:
+            fitVals = np.zeros(len(guess))
+            fitCovariances = np.zeros((len(guess), len(guess)))
+            temperature = 0
+            warn('Restricted Mot Temperature Expansion Fit Failed Too with optimize error!')
+        except RuntimeError:
+            fitVals = np.zeros(len(guess))
+            fitCovariances = np.zeros((len(guess), len(guess)))
+            temperature = 0
+            warn('Mot Temperature Expansion Fit Failed with Runtime error!')
     except RuntimeError:
         fitVals = np.zeros(len(guess))
         fitCovariances = np.zeros((len(guess), len(guess)))
+        temperature = 0
         warn('Mot Temperature Expansion Fit Failed!')
-    return fitVals[2], fitVals, fitCovariances
+    warnings.simplefilter("default", opt.OptimizeWarning)
+    return temperature, fitVals, fitCovariances
 
 
 def orderData(data, key, keyDim=None, otherDimValues=None):

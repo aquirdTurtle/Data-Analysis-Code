@@ -11,6 +11,8 @@ from scipy.optimize import curve_fit as fit
 from matplotlib.patches import Ellipse
 import IPython
 import IPython.display as disp
+from scipy.optimize import OptimizeWarning
+
 
 from . import MainAnalysis as ma
 from .MainAnalysis import analyzeNiawgWave, standardAssemblyAnalysis, AnalyzeRearrangeMoves
@@ -316,14 +318,14 @@ def plotImages( data, mainPlot='fits', key=None, magnification=3, showAllPics=Tr
     return pictureFitParams, rawData, intRawData
     
     
-def plotMotTemperature(data, key=None, magnification=3, showAllPics=True, plot1D=False, **standardImagesArgs):
+def plotMotTemperature(data, key=None, magnification=3, showAllPics=True, temperatureGuess=100e-6, plot1D=False, **standardImagesArgs):
     """
     Calculate the mot temperature, and plot the data that led to this.
     :param data:
     :param standardImagesArgs: see the standardImages function to see the acceptable arguments here.
     :return:
     """
-    res = ah.temperatureAnalysis(data, magnification, key=key, loadType='basler',**standardImagesArgs)
+    res = ah.temperatureAnalysis(data, magnification, key=key, loadType='basler',temperatureGuess=temperatureGuess, **standardImagesArgs)
     (temp, fitVals, fitCov, times, waists, rawData, pictureFitParams, key, plottedData, dataMinusBg, 
      v_params, v_errs, h_params, h_errs, waists_1D, temp_1D, fitVals_1D, fitCov_1D) = res
     errs = np.sqrt(np.diag(fitCov))
