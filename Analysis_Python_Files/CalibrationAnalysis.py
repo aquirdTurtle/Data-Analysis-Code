@@ -116,22 +116,22 @@ def std_BASIC_SINGLE_ATOMS(calData, atomLocations=[2,2,3,7,1]):
     calData['ImagingSurvival'] = ca.calPoint(res['Average_Transfer'][0],res['Average_Transfer_Err'][0],dt)
     return calData, res['Figures']
 
-def std_MOT_TEMPERATURE(calData):
-    res = mp.plotMotTemperature('MOT_TEMPERATURE', reps=15, fitWidthGuess=15);
+def std_MOT_TEMPERATURE(calData, **plotMotTempArgs):
+    res = mp.plotMotTemperature('MOT_TEMPERATURE', reps=15, fitWidthGuess=15, **plotMotTempArgs);
     dt = exp.getStartDatetime("MOT_TEMPERATURE")
     calData['MOT_Temperature'] = ca.calPoint(res[2], res[3], dt)
     return calData, res[-1]
 
-def std_RED_PGC_TEMPERATURE(calData):
+def std_RED_PGC_TEMPERATURE(calData, **plotMotTempArgs):
     res = mp.plotMotTemperature('RED_PGC_TEMPERATURE', reps=15, fitWidthGuess=3, temperatureGuess=20e-6,
-                                window=pw.PictureWindow(xmin=30, xmax=175, ymin=65, ymax=240));
+                                **plotMotTempArgs);
     dt = exp.getStartDatetime("RED_PGC_TEMPERATURE")
     calData['RPGC_Temperature'] = ca.calPoint(res[2], res[3], dt)
     return calData, res[-1]
 
-def std_GREY_MOLASSES_TEMPERATURE(calData, win=pw.PictureWindow(xmin=35)):
+def std_GREY_MOLASSES_TEMPERATURE(calData, **plotMotTempArgs):
     res = mp.plotMotTemperature('GREY_MOLASSES_TEMPERATURE', reps=15, fitWidthGuess=20, lastDataIsBackground=True, temperatureGuess=20e-6,
-                                window=win);
+                                **plotMotTempArgs);
     dt = exp.getStartDatetime("GREY_MOLASSES_TEMPERATURE")
     calData['LGM_Temperature'] = ca.calPoint(res[2], res[3], dt)
     return calData, res[-1]
@@ -156,9 +156,12 @@ def std_THERMAL_TOP_SIDEBAND_RAMAN_SPECTROSCOPY(calData, atomLocations=[2,2,3,7,
     calData['ThermalNbar'] = ca.calPoint(bump2.fitCharacter(fit['vals']), bump2.fitCharacterErr(fit['vals'], fit['errs']), dt)
     return calData, res['Figures']
 
-def std_3DSBC_AXIAL_RAMAN_SPECTROSCOPY(calData, atomLocations=[2,2,3,7,1]):
+def std_3DSBC_AXIAL_RAMAN_SPECTROSCOPY(calData, atomLocations=[2,2,3,7,1], centerGuess=None, **SurvivalArgs):
+    guess=bump3_Sym.guess([],[])
+    if centerGuess is not None:
+        guess[-2] = centerGuess
     res = mp.Survival( "3DSBC_AXIAL_RAMAN_SPECTROSCOPY", atomLocations, forceNoAnnotation=True, 
-                       fitModules=bump3_Sym, showFitDetails=False );
+                       fitModules=bump3_Sym, showFitDetails=False, fitguess=[guess], **SurvivalArgs);
     dt = exp.getStartDatetime("3DSBC_AXIAL_RAMAN_SPECTROSCOPY")
     fitV = res['Average_Transfer_Fit']['vals']
     fitE = res['Average_Transfer_Fit']['errs']
@@ -254,6 +257,8 @@ def std_analyzeAll(sCalData = getInitCalData(), displayResults=True, atomLocatio
                     std_THERMAL_TOP_SIDEBAND_RAMAN_SPECTROSCOPY,std_3DSBC_AXIAL_RAMAN_SPECTROSCOPY,
                      std_3DSBC_TOP_SIDEBAND_RAMAN_SPECTROSCOPY,std_DEPTH_MEASUREMENT_DEEP,std_DEPTH_MEASUREMENT_SHALLOW,
                     std_LIFETIME_MEASUREMENT]:
+        #with open('temp.txt','a') as file:
+        #    file.write(str(std_func) + ', ' + str(sCalData['AxialCarrierLocation']) + '\n')
         try:
             if std_func in [std_MOT_NUMBER, std_MOT_TEMPERATURE, std_RED_PGC_TEMPERATURE, std_GREY_MOLASSES_TEMPERATURE]:
                 sCalData, figures = std_func(sCalData)
@@ -324,7 +329,7 @@ def simpleCheck(data, bounds, msg, errBound=np.inf):
         elif errBound < err:
             susData.append(dp)
     if susData:
-        print(msg, ';\tReasonable data bounds:', bounds)
+        print(msg, ';\tReasonable data bounds:', bounds, '\tReasonable Error:', errBound)
         for sd in susData:
             print('\t',sd)
         
@@ -345,17 +350,17 @@ def checkData(calData):
     
     simpleCheck(calData['MOT_Size'], [1000,500000],'Suspicious MOT size data')
     simpleCheck(calData['MOT_FillTime'], [0.5,10],'Suspicious MOT Fill time data')
-    simpleCheck(calData['MOT_Temperature'], [10,200],'Suspicious MOT Temperature data')
-    simpleCheck(calData['RPGC_Temperature'], [3,50],'Suspicious RPGC Temperature data')
-    simpleCheck(calData['LGM_Temperature'], [3,50],'Suspicious LGM Temperature data')
+    simpleCheck(calData['MOT_Temperature'], [10,350],'Suspicious MOT Temperature data', 110)
+    simpleCheck(calData['RPGC_Temperature'], [3,50],'Suspicious RPGC Temperature data', 50)
+    simpleCheck(calData['LGM_Temperature'], [3,50],'Suspicious LGM Temperature data', 50)
     
-    simpleCheck(calData['Loading'], [0.5,0.95],'Suspicious Atom Loading Rate')
-    simpleCheck(calData['ImagingSurvival'], [0.9, 1],'Suspicious Imaging Survival Data')
+    simpleCheck(calData['Loading'], [0.3,0.95],'Suspicious Atom Loading Rate', 0.1)
+    simpleCheck(calData['ImagingSurvival'], [0, 1],'Suspicious Imaging Survival Data', 0.1)
     simpleCheck(calData['LifeTime'], [1000,10000],'Suspicious Atom Lifetime')
     
     simpleCheck(calData['ThermalTrapFreq'], [100, 200], 'Suspicious Thermal Radial Trap Frequency')
     simpleCheck(calData['RadialTrapFreq'], [100, 200], 'Suspicious Radial Trap Frequency')
-    simpleCheck(calData['AxialTrapFreq'], [20, 45], 'Suspicious Axial Trap Frequency')
+    simpleCheck(calData['AxialTrapFreq'], [20, 45], 'Suspicious Axial Trap Frequency', 5)
     
     simpleCheck(calData['ShallowDepth'], [-0.5, 0.2], 'Suspicious Shallow Depth')
     simpleCheck(calData['DeepDepth'], [-1.5, -0.5], 'Suspicious Deep Depth')
@@ -371,7 +376,7 @@ def checkData(calData):
     
     simpleCheck(calData['RadialCarrierLocation'], [6.8309, 6.831], 'Suspicious Carrier Location', 0.01)
     
-def loadAllCalData():
+def loadAllCalData(checkDates=False):
     ea = np.array([]) # empty array
     calData = {"Loading":ea,"ImagingSurvival":ea,"MOT_Size":ea,"MOT_FillTime":ea, "MOT_Temperature":ea,
                "RPGC_Temperature":ea,"LGM_Temperature":ea,"ThermalTrapFreq":ea, "ThermalNbar":ea, 
@@ -390,10 +395,22 @@ def loadAllCalData():
                         readCalData = pickle.loads(handle.read())
                     for key in calData.keys():
                         if key in readCalData:
-                            if readCalData[key] is not None:
+                            if readCalData[key] is not None and readCalData[key] != []: 
+                                if checkDates:
+                                    if type(readCalData[key]) == list:
+                                        for data in readCalData[key]:
+                                            if data.timestamp.day != d_:
+                                                print(data.timestamp, 'data for date',year_,month_,d_, "dates don't match!")
+                                                continue
+                                    else:
+                                        if readCalData[key].timestamp.day != d_:
+                                            print(readCalData[key].timestamp, 'data for date',year_,month_,d_, "dates don't match!")
+                                            continue
                                 # the data gets set to none if, e.g. there's a bad calibation set which was never fixed that day. 
                                 calData[key] = np.append(calData[key], readCalData[key])
                 except OSError:
+                    pass
+                except EOFError:
                     pass
     return calData
         
@@ -465,7 +482,7 @@ def standardPlotting(pltData, which="all", useSmartYLims=True):
         trapAx_rfreqs.set_ylabel('Radial Trap Frequencies', fontsize=fs)
         trapAx_axfreqs.set_ylabel('Axial Trap Frequencies', fontsize=fs)
         trapAx_rfreqs.set_ylim(120,170)
-        trapAx_axfreqs.set_ylim(25,40)
+        trapAx_axfreqs.set_ylim(20,45)
         ca.makeLegend(trapAx_rfreqs, 'upper right', (1, 1.1))
         ca.makeLegend(trapAx_axfreqs, 'upper right', (1,1.2))
         ca.setAxis(trapAx_rfreqs, color='b')

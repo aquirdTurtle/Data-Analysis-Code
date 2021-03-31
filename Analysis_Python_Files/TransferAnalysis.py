@@ -10,12 +10,13 @@ from .Miscellaneous import what
 
 def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWindow(), dataRange=None, keyOffset=0, 
                           dimSlice=None, varyingDim=None, groupData=False, quiet=False, picsPerRep=2, repRange=None, 
-                          keyConversion=None, binningParams=None, removePics=None, expFile_version=4, useBaseA=True, keyParameter=None, keySlice=None):
+                          keyConversion=None, binningParams=None, removePics=None, expFile_version=4, useBase=True, 
+                         keyParameter=None, keySlice=None):
                          
     """
     Unpack inputs, properly shape the key, picture array, and run some initial checks on the consistency of the settings.
     """
-    with exp.ExpFile(fileNumber, expFile_version=expFile_version, useBaseA=useBaseA, keyParameter=keyParameter) as f:
+    with exp.ExpFile(fileNumber, expFile_version=expFile_version, useBaseA=useBase, keyParameter=keyParameter) as f:
         rawData, keyName, hdf5Key, repetitions = f.pics, f.key_name, f.key, f.reps
         if not quiet:
             basicInfoStr = f.get_basic_info()
@@ -170,7 +171,8 @@ def handleTransferFits(analysisOpts, fitModules, key, avgTferData, fitguess, get
             raise ValueError("ERROR: length of fitmodules should be" + str(numDataSets+1) + "(Includes avg fit)")
         for i, (loc, module) in enumerate(zip(range(analysisOpts.numDataSets()), fitModules)):
             fits[i], _ = ah.fitWithModule(module, key, tferAtomsVarAvg[i], guess=fitguess[i], getF_args=getFitterArgs[i])
-        avgFit, _ = ah.fitWithModule(fitModules[-1], key, avgTferData, guess=fitguess[-1], getF_args=getFitterArgs[-1])
+        #print('fitguess',fitguess,fitguess[-1])
+        avgFit, _ = ah.fitWithModule(fitModules[-1], key, avgTferData, guess=fitguess[-1], getF_args=getFitterArgs[-1], maxfev=100000)
     return fits, avgFit, fitModules
 
 def getTransferAvgs(analysisOpts, initAtomsPs, tferAtomsPs, prConditions=None):
@@ -227,15 +229,15 @@ def stage1TransferAnalysis(fileNumber, analysisOpts, picsPerRep=2, varyingDim=No
     print("sta: Post-Selecting...",end='')
     for varInc in range(len(initAtoms)):
         print('.',end='')
-        extraDataToPostSelectIn = list(zip(groupedRawData[varInc][::2], groupedRawData[varInc][1::2]))
+        extraDataToPostSelectIn = list(zip(*[groupedRawData[varInc][picNum::picsPerRep] for picNum in range(picsPerRep)]))
         ensembleHits[varInc] = None # Used to be assigned in postSelectOnAssembly
         initAtomsPs[varInc], tferAtomsPs[varInc], tempPS = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], analysisOpts, 
                                                                                    extraDataToPostSelect = extraDataToPostSelectIn )
-        # print(np.array(initAtomsPs[varInc]).shape, np.array(tferAtomsPs[varInc]).shape, np.array(tempPS).shape)
-        groupedPostSelectedPics[varInc] = []
-        for repPics in tempPS[0]:
-            groupedPostSelectedPics[varInc].append(repPics[0])
-            groupedPostSelectedPics[varInc].append(repPics[1])
+        groupedPostSelectedPics[varInc] = [[] for _ in tempPS]
+        for conditionnum, conditionPics in enumerate(tempPS):
+            for repPics in conditionPics:
+                for picNum in range(picsPerRep):
+                    groupedPostSelectedPics[varInc][conditionnum].append(repPics[picNum])
         initAtoms[varInc], tferAtoms[varInc], _ = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], analysisOpts, justReformat=True)
     return (initAtoms, tferAtoms, initAtomsPs, tferAtomsPs, key, keyName, initPicCounts, tferPicCounts, repetitions, initThresholds,
             avgPics, tferThresholds, initAtomImages, tferAtomImages, basicInfoStr, ensembleHits, groupedPostSelectedPics)

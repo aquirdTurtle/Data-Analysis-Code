@@ -40,7 +40,6 @@ def f(x, Offset, Amp1, Sigma1, Amp2, Sigma2, Amp3, Sigma3, Center, Spread):
     penalty = 10**10 * np.ones(len(x))
     
     params = [Offset, Amp1, Center - Spread/2, Sigma1, Amp2, Center, Sigma2, Amp3, Center + Spread/2, Sigma3]
-    
     for i in range(numGauss):
         if params[3*i+1] < 0:
             # Penalize negative amplitude fits.
@@ -76,12 +75,11 @@ def guess(key, values):
     Returns guess values for the parameters of this function class based on the input. Used for fitting using this class.
     """
     #a = (max(values)-min(values))/10
-    return [0,
-            0.5, 3,
-            0.4, 3,
-            0.2, 3, 
-            85, 55]
-    
+    return [0.1,
+            0.4, 10,
+            0.4, 10,
+            0.2, 10, 
+            105, 60]    
 
 def areas(A1, x01, sig1, A2, x02, sig2):
     return np.array([A1*sig1,A2*sig2])*np.sqrt(2*np.pi)

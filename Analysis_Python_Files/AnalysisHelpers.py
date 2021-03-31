@@ -457,7 +457,7 @@ def extrapolateModDepth(sign, hBiasIn, vBiasIn, depthIn, testBiases):
         modDepth[:, colInc] = modDepth[:, colInc] * (1-sign * dif)
     return modDepth
 
-def fitWithModule(module, key, vals, errs=None, guess=None, getF_args=[None]):
+def fitWithModule(module, key, vals, errs=None, guess=None, getF_args=[None], maxfev=2000):
     # this also works with class objects which have all the required member functions. 
     key = arr(key)
     xFit = (np.linspace(min(key), max(key), 1000) if len(key.shape) == 1 else np.linspace(min(misc.transpose(key)[0]),
@@ -470,7 +470,7 @@ def fitWithModule(module, key, vals, errs=None, guess=None, getF_args=[None]):
         if len(key) < len(signature(fitF).parameters) - 1:
             raise RuntimeError('Not enough data points to constrain a fit!')
         guessUsed = guess if guess is not None else module.guess(key,vals)
-        fitValues, fitCovs = opt.curve_fit(fitF, key, vals, p0=guessUsed)
+        fitValues, fitCovs = opt.curve_fit(fitF, key, vals, p0=guessUsed, maxfev=maxfev)
         fitErrs = np.sqrt(np.diag(fitCovs))
         corr_vals = unc.correlated_values(fitValues, fitCovs)
         fitUncObject = fitF_unc(xFit, *corr_vals)
@@ -485,8 +485,8 @@ def fitWithModule(module, key, vals, errs=None, guess=None, getF_args=[None]):
     except (RuntimeError, LinAlgError, ValueError) as e:
         fitF = module.getF(*getF_args) if hasattr(module, 'getF') else module.f
         fitF_unc = module.getF_unc(*getF_args) if hasattr(module, 'getF_unc') else module.f_unc
-        warn('Data Fit Failed!')
-        print(e)
+        warn('Data Fit Failed! ' + str(e))
+        print('stuff',key, vals, guessUsed)
         fitValues = module.guess(key, vals)
         fitNom = fitF(xFit, *fitValues)
         fitFinished = False        
