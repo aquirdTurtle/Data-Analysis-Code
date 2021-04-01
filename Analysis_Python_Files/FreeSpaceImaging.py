@@ -110,7 +110,6 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             allFSIPics = np.reshape( allFSIPics, (len(key), int(allFSIPics.shape[0]/len(key)), allFSIPics.shape[1], allFSIPics.shape[2]) )
         if keys[filenum] is not None:
             key = keys[filenum]
-        ### windowing, not compatible with different shapes in each variation
         for i, keyV in enumerate(key):
             keyV = misc.round_sig_str(keyV)
             sortedStackedPics[keyV] = np.append(sortedStackedPics[keyV], allFSIPics[i],axis=0) if (keyV in sortedStackedPics) else allFSIPics[i]         
@@ -174,7 +173,7 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
                     hparams, hcov = opt.curve_fit(fitModule.f, np.arange(len(hAvg)), hAvg, p0=guess)
                     vparams, vcov = opt.curve_fit(fitModule.f, np.arange(len(vAvg)), vAvg, p0=guess)
                 except RuntimeError:
-                    warnings.warn('fit failed!')
+                    warnings.warn('1D Fit Failed!')
                     vparams = hparams = guess
                     vcov = hcov = np.zeros((len(guess), len(guess)))
                 hFitParams[keyV].append(hparams)
@@ -236,7 +235,7 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
     bgAxs[0].set_title('Background image (' + str(len(picsForBg)/picsPerRep) + ')')
     mp.fancyImshow(bgFig, bgAxs[1], bgPhotonCountImage, imageArgs={'cmap':dark_viridis_cmap},flipVAx = True) 
     bgAxs[1].set_title('Photon counted background image (' + str(len(picsForBg)/picsPerRep) + ')')
-    fig.subplots_adjust(left=0,right=1,bottom=0.1, hspace=0, **({'top': 0.7, 'wspace': 0.4} if (onlyThisPic is None) else {'top': 0.9, 'wspace': 0.3}))
+    fig.subplots_adjust(left=0,right=1,bottom=0.1, hspace=0.2, **({'top': 0.7, 'wspace': 0.4} if (onlyThisPic is None) else {'top': 0.9, 'wspace': 0.3}))
     
     disp.display(fig)
     if calcTemperature: 
@@ -259,7 +258,7 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             for whichPic in range(4):
                 ax.errorbar(keyPlt, hSigmas[:,whichPic], hSigmaErrs[:,whichPic], color='b', label='h '+titles[whichPic], **stdStyle);
                 ax.errorbar(keyPlt, vSigmas[:,whichPic], vSigmaErrs[:,whichPic], color='c', label='v '+titles[whichPic], **stdStyle);
-        fig2.legend()
+        ax.legend()
         ax.set_ylabel(r'Fit Sigma ($\mu m$)')
             
         if calcTemperature:
@@ -280,9 +279,11 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             for whichPic in range(4):
                 ampAx.errorbar(keyPlt, h_amp[:,whichPic], hAmpErrs[:,whichPic], label='h '+titles[whichPic], color = 'orange', **stdStyle);
                 ampAx.errorbar(keyPlt, v_amp[:,whichPic], vAmpErrs[:,whichPic], label='v '+titles[whichPic], color = 'r', **stdStyle);
+        [tick.set_color('red') for tick in ampAx.yaxis.get_ticklines()]
+        [tick.set_color('red') for tick in ampAx.yaxis.get_ticklabels()]
         ampAx.set_ylabel(r'Fit h_amps', color = 'r')
         
-    totalPhotons = None    
+    hTotalPhotons, vTotalPhotons = None, None
     if plotCounts:
         # numAxCol = 1: ax = axs
         # numAxCol = 2: plotSigmas + plotCounts -- ax = axs[1]
@@ -297,7 +298,6 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
         # Create axis to plot photon counts
         ax.set_ylabel(r'Integrated signal')
         photon_axis = ax.twinx()
-        
         colors = ['red', 'orange', 'yellow', 'pink']
         # This is not currently doing any correct for e.g. the loading rate.
         countToCameraPhotonEM = 0.018577 / (emGainSetting/200) # the float is is EM200. 
@@ -305,23 +305,28 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
 
         if onlyThisPic is not None:
             # calculate number of photons
-            amp = h_amp[:,onlyThisPic]*len(expansionPics[0][0]) # Horizontal "un"normalization for number of columns begin averaged.
-            sigpx = hSigmas[:,onlyThisPic]/(16/64) # Convert from um back to to pixels.
-            totalCountsPerPic = bump.area_under(amp, sigpx)
-            totalPhotons = countToScatteredPhotonEM*totalCountsPerPic            
+            hamp = h_amp[:,onlyThisPic]*len(expansionPics[0][0]) # Horizontal "un"normalization for number of columns begin averaged.
+            vamp = v_amp[:,onlyThisPic]*len(expansionPics[0]) 
+            hsigpx = hSigmas[:,onlyThisPic]/(16/64) # Convert from um back to to pixels.
+            vsigpx = vSigmas[:,onlyThisPic]/(16/64)
+            htotalCountsPerPic = bump.area_under(hamp, hsigpx)
+            vtotalCountsPerPic = bump.area_under(vamp, vsigpx)
+            hTotalPhotons = countToScatteredPhotonEM*htotalCountsPerPic
+            vTotalPhotons = countToScatteredPhotonEM*vtotalCountsPerPic
             ax.plot(keyPlt, totalSignal[:,onlyThisPic], marker='o', linestyle='', label=titles[onlyThisPic]);
-            photon_axis.plot(keyPlt, totalPhotons, marker='o', linestyle='', color = 'r')
+            photon_axis.plot(keyPlt, hTotalPhotons, marker='o', linestyle='', color = 'r', label='Horizontal')
+            photon_axis.plot(keyPlt, vTotalPhotons, marker='o', linestyle='', color = 'orange', label='Vertical')
         else:
             for whichPic in range(4):
                 # See above comments
                 amp = h_amp[:,whichPic]*len(expansionPics[0][0]) 
                 sig = hSigmas[:,whichPic]/(16/64) 
                 totalCountsPerPic = bump.area_under(amp, sig)
-                totalPhotons = countToScatteredPhotonEM*totalCountsPerPic
+                hTotalPhotons = countToScatteredPhotonEM*totalCountsPerPic
                 ax.plot(keyPlt, totalSignal[:,whichPic], marker='o', linestyle='', label=titles[whichPic]);
-                photon_axis.plot(keyPlt, totalPhotons, marker='o', linestyle='', color = colors[whichPic])               
-                ax.legend()
-                photon_axis.legend()
+                photon_axis.plot(keyPlt, hTotalPhotons, marker='o', linestyle='', color = colors[whichPic])               
+        ax.legend()
+        photon_axis.legend()
         [tick.set_color('red') for tick in photon_axis.yaxis.get_ticklines()]
         [tick.set_color('red') for tick in photon_axis.yaxis.get_ticklabels()]
         photon_axis.set_ylabel(r'Fit-Based Avg Scattered Photon/Img', color = 'r')
@@ -380,9 +385,9 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
     if transferAnalysisOpts is not None:
         colors, colors2 = misc.getColors(len(transferAnalysisOpts.initLocs()) + 2)#, cmStr=dataColor)
         pltShape = (transferAnalysisOpts.initLocsIn[-1], transferAnalysisOpts.initLocsIn[-2])
-        mp.plotThresholdHists([initThresholds[0][0],initThresholds[1][0]], colors, shape=pltShape)    
+        #mp.plotThresholdHists([initThresholds[0][0],initThresholds[1][0]], colors, shape=pltShape)    
     return {'images':images, 'fits':hFitParams, 'cov':hFitCovs, 'pics':sortedStackedPics, 'hSigmas':hSigmas, 'sigmaErrors':hSigmaErrs, 'dataKey':keyPlt, 
-            'totalPhotons':totalPhotons, 'tempCalc':tempCalc, 'tempCalcErr':tempCalcErr, 'initThresholds':initThresholds[0]}
+            'hTotalPhotons':hTotalPhotons, 'tempCalc':tempCalc, 'tempCalcErr':tempCalcErr, 'initThresholds':initThresholds[0]}
 
 def getBgImgs(bgSource, startPic=1, picsPerRep=2):
     """ Expects either a file ID number or a list (or an array) of images as input.
@@ -397,3 +402,5 @@ def getBgImgs(bgSource, startPic=1, picsPerRep=2):
     avgBg = np.mean(pics2,0)
     avgPcBg = photonCounting(pics2, 120)[0] / len(pics2)
     return avgBg, avgPcBg
+
+
