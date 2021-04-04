@@ -1,8 +1,9 @@
 # stuff created by pycharm.
 .idea/
 __pycache__/
-# jupyter notebooks are not meant to be syncronized with this repository.
+# Data analysis notebooks aren't meant to be synced with the notebook (they aren't meant to be here permanently), but the other ones can be. 
 Data_Analysis_Notebooks/*
+Temp/*
 !CalibrationModules/*.ipynb
 Figures/
 Data/

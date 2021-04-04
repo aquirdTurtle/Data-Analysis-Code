@@ -11,15 +11,12 @@ from scipy.optimize import curve_fit as fit
 from matplotlib.patches import Ellipse
 import IPython
 import IPython.display as disp
-from scipy.optimize import OptimizeWarning
-
 
 from . import MainAnalysis as ma
-from .MainAnalysis import analyzeNiawgWave, standardAssemblyAnalysis, AnalyzeRearrangeMoves
 from . import TransferAnalysis
-#from .Miscellaneous import getColors, getMarkers, errString
 from . import Miscellaneous as misc
 
+from .MainAnalysis import analyzeNiawgWave, standardAssemblyAnalysis, AnalyzeRearrangeMoves
 from .LoadingFunctions import loadDataRay, loadCompoundBasler, loadDetailedKey
 from .AnalysisHelpers import (processSingleImage, orderData,
                               normalizeData, getBinData, fitDoubleGaussian,
@@ -27,6 +24,7 @@ from .AnalysisHelpers import (processSingleImage, orderData,
                               getEnsembleStatistics, processImageData,
                               fitPictures, fitGaussianBeamWaist, integrateData, 
                               computeMotNumber, getFitsDataFrame, genAvgDiscrepancyImage, getGridDims)
+
 from . import TransferAnalysisOptions as tao
 from . import ThresholdOptions as to
 from . import AnalysisHelpers as ah
@@ -89,7 +87,7 @@ def makeAvgPlts(avgPlt1, avgPlt2, avgPics, analysisOpts, colors):
 def fancyImshow( fig, ax, image, avgSize='20%', pad_=0, cb=True, imageArgs={}, hAvgArgs={'color':'orange'}, vAvgArgs={'color':'orange'}, 
                  ticklabels=True,do_vavg=True, do_havg=True, hFitParams=None, vFitParams=None, 
                  subplotsAdjustArgs=dict(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0), 
-                 fitModule=bump, flipVAx = False):
+                 fitModule=bump, flipVAx = False, fitParams2D=None):
     """
     Expand a normal image plot of the image input, giving it a colorbar, a horizontal-averaged step plot to the left
     and a vertically-averaged step plot below.
@@ -138,6 +136,13 @@ def fancyImshow( fig, ax, image, avgSize='20%', pad_=0, cb=True, imageArgs={}, h
             hax.plot(fypts, fxpts)
         if flipVAx:
             hax.invert_yaxis()
+    if fitParams2D is not None:
+        x = np.arange(len(image[0]))
+        y = np.arange(len(image))
+        X, Y = np.meshgrid(x,y)
+        data_fitted = gaussian_2d.f_notheta((X,Y), *fitParams2D)
+        ax.contour(x, y, data_fitted.reshape(image.shape[0],image.shape[1]), 
+                   levels=np.linspace(min(data_fitted),max(data_fitted),4), colors='w', alpha=0.2)
     return ax, cax, hax, vax, hAvg, vAvg, im, vline, hline
 
 def rotateTicks(plot):
@@ -1181,141 +1186,6 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     return { 'Key': key, 'All_Populations': allPops, 'All_Populations_Error': allPopsErr, 'Pixel_Counts':locCounts, 
             'Atom_Images':atomImages, 'Thresholds':thresholds, 'Atom_Data':atomData, 'Raw_Data':rawData, 
             'Average_Population': avgPop, 'Average_Population_Error': avgPopErr }
-
-
-def Assembly(fileNumber, atomLocs1, pic1Num, partialCredit=False, **standardAssemblyArgs):
-    """
-    I have not used this function in a while. August 25th, 2019
-    
-    This function checks the efficiency of generating a picture
-    I.e. finding atoms at multiple locations at the same time.
-    """
-    res = standardAssemblyAnalysis(fileNumber, atomLocs1, pic1Num, partialCredit=partialCredit, **standardAssemblyArgs)
-    (atomLocs1, atomLocs2, key, thresholds, pic1Data, pic2Data, fit, ensembleStats, avgPic, atomCounts, keyName,
-     indvStatistics, lossAvg, lossErr, fitModule, enhancementStats) = res
-
-    if not show:
-        return key, survivalData, survivalErrs
-    colors, colors2 = misc.getColors(len(atomLocs1)+1)
-    f = figure()
-    # Setup grid
-    grid1 = mpl.gridspec.GridSpec(12, 16)
-    grid1.update(left=0.05, right=0.95, wspace=1.2, hspace=1000)
-    gridLeft = mpl.gridspec.GridSpec(12, 16)
-    gridLeft.update(left=0.001, right=0.95, hspace=1000)
-    gridRight = mpl.gridspec.GridSpec(12, 16)
-    gridRight.update(left=0.2, right=0.946, wspace=0, hspace=1000)
-    # Main Plot
-    mainPlot = subplot(grid1[:, :12])
-    for stats, label, c in zip((ensembleStats, enhancementStats), ('Assembly', 'Enhancement'), colors):
-        mainPlot.errorbar( key, stats['avg'], yerr=stats['err'], color=c, ls='',
-                           marker='o', capsize=6, elinewidth=3, label=label )
-    if partialCredit:
-        mainPlot.set_ylim({-0.02, len(atomLocs1)+0.01})
-    else:
-        mainPlot.set_ylim({-0.02, 1.01})
-    if not min(key) == max(key):
-        mainPlot.set_xlim(left=min(key) - (max(key) - min(key)) / len(key), right=max(key) + (max(key) - min(key)) / len(key))
-    mainPlot.set_xticks(key)
-    rotateTicks(mainPlot)
-    titletxt = keyName + " Atom Ensemble Scan"
-    if len(ensembleStats['avg']) == 1:
-        titletxt = keyName + " Atom Ensemble Point. Ensemble % = \n"
-        for atomData in ensembleStats['avg']:
-            titletxt += str(atomData) + ", "
-    mainPlot.set_title(titletxt, fontsize=30)
-    mainPlot.set_ylabel("Ensemble Probability", fontsize=20)
-    mainPlot.set_xlabel(keyName, fontsize=20)
-    mainPlot.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), fancybox=True, ncol=4)
-    legend()
-    # Loading Plot
-    """
-    loadingPlot = subplot(grid1[0:3, 12:16])
-    for i, loc in enumerate(atomLocs1):
-        loadingPlot.plot(key, captureArray[i], ls='', marker='o', color=colors[i])
-        loadingPlot.axhline(np.mean(captureArray[i]), color=colors[i])
-    loadingPlot.set_ylim({0, 1})
-    if not min(key) == max(key):
-        loadingPlot.set_xlim(left=min(key) - (max(key) - min(key)) / len(key), right=max(key) 
-                             + (max(key) - min(key)) / len(key))
-    loadingPlot.set_xlabel("Key Values")
-    loadingPlot.set_ylabel("Capture %")
-    loadingPlot.set_xticks(key)
-    loadingPlot.set_title("Loading: Avg$ = " + str(round_sig(np.mean(captureArray[0]))) + '$')
-    for item in ([loadingPlot.title, loadingPlot.xaxis.label, loadingPlot.yaxis.label] +
-             loadingPlot.get_xticklabels() + loadingPlot.get_yticklabels()):
-        item.set_fontsize(10)
-    """
-    # ### Count Series Plot
-    countPlot = subplot(gridRight[4:8, 12:15])
-    for i, loc in enumerate(atomLocs1):
-        countPlot.plot(pic1Data[i], color=colors[i], ls='', marker='.', markersize=1, alpha=1)
-        countPlot.plot(pic2Data[i], color=colors2[i], ls='', marker='.', markersize=1, alpha=0.8)
-        countPlot.axhline(thresholds[i], color='w')
-    countPlot.set_xlabel("Picture #")
-    countPlot.set_ylabel("Camera Signal")
-    countPlot.set_title("Thresh.=" + str(misc.round_sig(thresholds[i]))) 
-    ticksForVis = countPlot.xaxis.get_major_ticks()
-    ticksForVis[-1].label1.set_visible(False)
-    for item in ([countPlot.title, countPlot.xaxis.label, countPlot.yaxis.label] + countPlot.get_xticklabels()
-                     + countPlot.get_yticklabels()):
-        item.set_fontsize(10)
-    countPlot.set_xlim((0, len(pic1Data[0])))
-    tickVals = np.linspace(0, len(pic1Data[0]), len(key) + 1)
-    countPlot.set_xticks(tickVals[::2])
-    rotateTicks(countPlot)
-    # Count Histogram Plot
-    countHist = subplot(gridLeft[4:8, 15:16], sharey=countPlot)
-    for i, atomLoc in enumerate(atomLocs1):
-        countHist.hist(pic1Data[i], 50, color=colors[i], orientation='horizontal', alpha=0.5,histtype='stepfilled')
-        countHist.hist(pic2Data[i], 50, color=colors2[i], orientation='horizontal', alpha=0.3,histtype='stepfilled')
-        countHist.axhline(thresholds[i], color='w')
-    for item in ([countHist.title, countHist.xaxis.label, countHist.yaxis.label] + countHist.get_xticklabels()
-                  + countHist.get_yticklabels()):
-        item.set_fontsize(10)
-    rotateTicks(countHist)
-    setp(countHist.get_yticklabels(), visible=False)
-    # average image
-    avgPlt = subplot(gridRight[8:12, 12:15])
-    avgPlt.imshow(avgPic, origin='lower');
-    avgPlt.grid(False)
-    for loc in atomLocs1:
-        circ = Circle((loc[1], loc[0]), 0.2, color='r')
-        avgPlt.add_artist(circ)
-    for loc in atomLocs2:
-        circ = Circle((loc[1], loc[0]), 0.1, color='g')
-        avgPlt.add_artist(circ)
-    avgPlt.set_xticks([])
-    avgPlt.set_yticks([])
-    
-    f.subplots_adjust(bottom=0, top=1, hspace=0)
-    return key, survivalData, survivalErrs
-
-
-def Rearrange(rerngInfoAddress, fileNumber, locations,splitByNumberOfMoves=False, **rearrangeArgs):
-    """
-    I have not used this function in a while. August 25th, 2019
-    """
-    res = AnalyzeRearrangeMoves(rerngInfoAddress, fileNumber, locations, splitByNumberOfMoves=splitByNumberOfMoves, **rearrangeArgs)
-    allData, fits, pics, moves = res
-    f, ax = subplots(1)
-    for loc in allData:
-        ax.errorbar( allData[loc].transpose().columns, allData[loc]['success'], yerr=allData[loc]['error'], 
-                     marker='o', ls='', capsize=6, elinewidth=3, color='b' )
-        if splitByNumberOfMoves:
-            for i,h,t in zip(allData[loc].transpose().columns, allData[loc]['success'], allData[loc]['occurances']):
-                ax.text(i+0.25, h, int(t))            
-        else:
-            for i, (h, t) in enumerate(zip(allData[loc]['success'], allData[loc]['occurances'])):
-                ax.text(i+0.25, h, int(t))
-    for _, d in allData.items():
-        display(d)
-    ax.set_xlabel('Moves Involved in Assembly')
-    ax.set_ylabel('Assembly Success Rate')
-    ax.set_title('Rearranging Individual Move Fidelity Analysis')
-    rotateTicks(ax)
-    return allData, pics, moves
-        
 
 def showPics(data, key, fitParams=None, indvColorBars=False, colorMax=-1, fancy=True, hFitParams=None, vFitParams=None):
     """

@@ -200,7 +200,7 @@ def temperatureAnalysis( data, magnification, temperatureGuess=100e-6, **standar
     (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, fitCov, plottedData, v_params, v_errs, h_params, h_errs, intRawData) = res
     # convert to meters, convert from sigma to waist
     waists = 2 * mc.baslerScoutPixelSize * np.sqrt((pictureFitParams[:, 3]**2+pictureFitParams[:, 4]**2)/2) * magnification
-    #waists_1D = 2 * mc.baslerScoutPixelSize * np.sqrt((v_params[:, 2]**2+h_params[:, 2]**2)/2) * magnification
+    # waists_1D = 2 * mc.baslerScoutPixelSize * np.sqrt((v_params[:, 2]**2+h_params[:, 2]**2)/2) * magnification
     waists_1D = 2 * mc.baslerScoutPixelSize * v_params[:, 2] * magnification
     # convert to s
     times = key / 1000
@@ -569,9 +569,9 @@ def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1, guess_x=None, 
         warn('Horizontal Average Picture Fitting Failed!')
         
     if showFit:
-        data_fitted = gaussian_2d.f_notheta((x, y), *popt)
-        fig, ax = subplots(1, 1)
-        grid(False)
+        data_fitted = gaussian_2d.f_notheta((X,Y), *popt)
+        fig, ax = plt.subplots(1, 1)
+        plt.grid(False)
         im = ax.pcolormesh(picture)#, extent=(x.min(), x.max(), y.min(), y.max()))
         ax.contour(x, y, data_fitted.reshape(picture.shape[0],picture.shape[1]), 4, colors='w', alpha=0.2)
         fig.colorbar(im)
@@ -1805,8 +1805,6 @@ def sliceMultidimensionalData(dimSlice, origKey, rawData, varyingDim=None):
     :param varyingDim:
     :return:
     """
-    
-    print('vary',varyingDim)
     key = origKey[:]
     if dimSlice is not None:
         runningKey = key[:]

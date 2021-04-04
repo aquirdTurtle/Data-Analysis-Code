@@ -36,6 +36,7 @@ def f_noravel(coordinates, amplitude, xo, yo, sigma_x, sigma_y, theta, offset):
 
     x = coordinates[0]
     y = coordinates[1]
+    #print('xy',x,y)
     xo = float(xo)
     yo = float(yo)
     a = (np.cos(theta)**2)/(2*sigma_x**2) + (np.sin(theta)**2)/(2*sigma_y**2)
