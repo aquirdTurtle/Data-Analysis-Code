@@ -569,9 +569,9 @@ def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1, guess_x=None, 
         warn('Horizontal Average Picture Fitting Failed!')
         
     if showFit:
-        data_fitted = gaussian_2d.f_notheta((x, y), *popt)
-        fig, ax = subplots(1, 1)
-        grid(False)
+        data_fitted = gaussian_2d.f_notheta((X,Y), *popt)
+        fig, ax = plt.subplots(1, 1)
+        plt.grid(False)
         im = ax.pcolormesh(picture)#, extent=(x.min(), x.max(), y.min(), y.max()))
         ax.contour(x, y, data_fitted.reshape(picture.shape[0],picture.shape[1]), 4, colors='w', alpha=0.2)
         fig.colorbar(im)

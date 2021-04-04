@@ -87,7 +87,7 @@ def makeAvgPlts(avgPlt1, avgPlt2, avgPics, analysisOpts, colors):
 def fancyImshow( fig, ax, image, avgSize='20%', pad_=0, cb=True, imageArgs={}, hAvgArgs={'color':'orange'}, vAvgArgs={'color':'orange'}, 
                  ticklabels=True,do_vavg=True, do_havg=True, hFitParams=None, vFitParams=None, 
                  subplotsAdjustArgs=dict(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0), 
-                 fitModule=bump, flipVAx = False):
+                 fitModule=bump, flipVAx = False, fitParams2D=None):
     """
     Expand a normal image plot of the image input, giving it a colorbar, a horizontal-averaged step plot to the left
     and a vertically-averaged step plot below.
@@ -136,6 +136,13 @@ def fancyImshow( fig, ax, image, avgSize='20%', pad_=0, cb=True, imageArgs={}, h
             hax.plot(fypts, fxpts)
         if flipVAx:
             hax.invert_yaxis()
+    if fitParams2D is not None:
+        x = np.arange(len(image[0]))
+        y = np.arange(len(image))
+        X, Y = np.meshgrid(x,y)
+        data_fitted = gaussian_2d.f_notheta((X,Y), *fitParams2D)
+        ax.contour(x, y, data_fitted.reshape(image.shape[0],image.shape[1]), 
+                   levels=np.linspace(min(data_fitted),max(data_fitted),4), colors='w', alpha=0.2)
     return ax, cax, hax, vax, hAvg, vAvg, im, vline, hline
 
 def rotateTicks(plot):

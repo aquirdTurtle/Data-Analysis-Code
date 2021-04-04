@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import scipy.optimize as opt
 import IPython.display as disp
 
-from .fitters.Gaussian import bump3, bump
+from .fitters.Gaussian import bump3, bump, gaussian_2d
 from .fitters import LargeBeamMotExpansion 
 
 from . import Miscellaneous as misc
@@ -67,7 +67,8 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
                             plotSigmas=False, plotCounts=False, manualColorRange=None, calcTemperature=False, clearOutput=True, 
                             dataRange=None, guessTemp=10e-6, trackFitCenter=False, picsPerRep=1, startPic=0, binningParams=None, 
                             win=pw.PictureWindow(), transferAnalysisOpts=None, tferBinningParams=None, tferWin= pw.PictureWindow(),
-                            extraTferAnalysisArgs={}, emGainSetting=300, lastConditionIsBackGround=True):
+                            extraTferAnalysisArgs={}, emGainSetting=300, lastConditionIsBackGround=True, showTferAnalysisPlots=True,
+                            show2dFitsAndResiduals=True, plotFitAmps=False):
     if type(fids) == int:
         fids = [fids]
     if keys is None:
@@ -84,8 +85,9 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             for varPics in groupedPostSelectedPics:
                 picsForBg += varPics[-1 if lastConditionIsBackGround else 0]
             allFSIPics = [ varpics[0][startPic::picsPerRep] for varpics in groupedPostSelectedPics]
-            fig, axs = plt.subplots(1,2)
-            mp.makeAvgPlts(axs[0],axs[1], avgPics, transferAnalysisOpts, ['r','g','b']) 
+            if showTferAnalysisPlots:
+                fig, axs = plt.subplots(1,2)
+                mp.makeAvgPlts(axs[0],axs[1], avgPics, transferAnalysisOpts, ['r','g','b']) 
             allFSIPics = [win.window( np.array(pics) ) for pics in allFSIPics]
             allFSIPics = ah.softwareBinning( binningParams, allFSIPics )
         elif type(fid) == int:
@@ -144,7 +146,7 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
     if len(np.array(bgPcInput).shape) == 2 or bgPcInput == None:
         bgPcInput = [bgPcInput for _ in range(numVars)]
     
-    datalen, avgFitSigmas, images, hFitParams, hFitCovs, vFitParams, vFitCovs = [{} for _ in range(7)]
+    datalen, avgFitSigmas, images, hFitParams, hFitErrs, vFitParams, vFitErrs, fitParams2D, fitErrs2D = [{} for _ in range(9)]
     titles = ['Bare', 'Photon-Count', 'Bare-mbg', 'Photon-Count-mbg']
     assert(len(sortedKey)>0)
     for vari, keyV in enumerate(sortedKey):
@@ -164,22 +166,18 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
         avg_mbg = expAvg - bgAvg
         avg_mbgpc = expPhotonCountImage - bgPhotonCountImage
         images[keyV] = [expAvg, expPhotonCountImage, avg_mbg, avg_mbgpc]
-        hFitParams[keyV], hFitCovs[keyV], vFitParams[keyV], vFitCovs[keyV] = [[] for _ in range(4)]
+        hFitParams[keyV], hFitErrs[keyV], vFitParams[keyV], vFitErrs[keyV], fitParams2D[keyV], fitErrs2D[keyV] = [[] for _ in range(6)]
         for im, guess in zip(images[keyV], guesses[vari]):
-            hAvg, vAvg = ah.collapseImage(im)
             if fit:
-                guess = fitModule.guess(np.arange(len(hAvg)), hAvg) if guess is None else guess
-                try:
-                    hparams, hcov = opt.curve_fit(fitModule.f, np.arange(len(hAvg)), hAvg, p0=guess)
-                    vparams, vcov = opt.curve_fit(fitModule.f, np.arange(len(vAvg)), vAvg, p0=guess)
-                except RuntimeError:
-                    warnings.warn('1D Fit Failed!')
-                    vparams = hparams = guess
-                    vcov = hcov = np.zeros((len(guess), len(guess)))
-                hFitParams[keyV].append(hparams)
-                hFitCovs[keyV].append(hcov)
-                vFitParams[keyV].append(vparams)
-                vFitCovs[keyV].append(vcov)
+                _, pictureFitParams2d, pictureFitErrors2d, v_params, v_errs, h_params, h_errs = ah.fitPic(
+                    im, guessSigma_x=5, guessSigma_y=5, showFit=False)
+                fitParams2D[keyV].append(pictureFitParams2d)
+                fitErrs2D[keyV].append(pictureFitErrors2d)
+                
+                hFitParams[keyV].append(h_params)
+                hFitErrs[keyV].append(h_errs)
+                vFitParams[keyV].append(v_params)
+                vFitErrs[keyV].append(v_errs)
     # conversion from the num of pixels on the camera to microns at the focus of the tweezers
     cf = 16e-6/64
     mins, maxes = [[], []]
@@ -202,34 +200,47 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
         fig, axs = plt.subplots(numRows, 4 if numVariations>1 else 3, figsize=(20, pltVSize*numRows))
         bgAxs = [axs.flatten()[-1], axs.flatten()[-2]]
         bgFig = fig
-    
+    if show2dFitsAndResiduals:
+        fig2d, axs2d = plt.subplots(2,numVariations)
     keyPlt = np.zeros(len(images))
     (totalSignal, hfitCenter, hFitCenterErrs, hSigmas, hSigmaErrs, h_amp, hAmpErrs, vfitCenter, vFitCenterErrs, vSigmas, vSigmaErrs, v_amp, 
-     vAmpErrs) = [np.zeros((len(images), 4)) for _ in range(13)]
-    for vari, ((keyV,ims), hParamSet, hCov_set, vParamSet, vCov_set) in enumerate(zip(images.items(), hFitParams.values(), hFitCovs.values(),
-                                                                                      vFitParams.values(), vFitCovs.values())):
+     vAmpErrs, hSigma2D, hSigma2dErr, vSigma2D, vSigma2dErr) = [np.zeros((len(images), 4)) for _ in range(17)]
+    
+    for vari, ((keyV,ims), hParamSet, hErr_set, vParamSet, vErr_set, paramSet2D, errSet2D) in enumerate(zip(
+                images.items(), *[dic.values() for dic in [hFitParams, hFitErrs, vFitParams, vFitErrs, fitParams2D, fitErrs2D]])):
         for which in range(4):
             if onlyThisPic is None:
-                (im, ax, title, min_, max_, hparams, hcovs, vparams, 
-                 vcovs) = [obj[which] for obj in (ims, axs[vari], titles, mins, maxes, hParamSet, hCov_set, vParamSet, vCov_set)] 
+                (im, ax, title, min_, max_, hparams, hErrs, vparams, vErrs, param2d, err2d
+                 ) = [obj[which] for obj in (ims, axs[vari], titles, mins, maxes, hParamSet, hErr_set, vParamSet, vErr_set, paramSet2D, errSet2D)] 
             else:
                 which = onlyThisPic
                 ax = axs.flatten()[vari]
-                (im, title, min_, max_, hparams, hcovs, vparams, 
-                 vcovs) = [obj[which] for obj in (ims, titles, mins, maxes, hParamSet, hCov_set, vParamSet, vCov_set)] 
-            v_errs, h_errs = np.sqrt(np.diag(vcovs)), np.sqrt(np.diag(hcovs))
+                (im, title, min_, max_, hparams, hErrs, vparams, vErrs, param2d, err2d
+                ) = [obj[which] for obj in (ims, titles, mins, maxes, hParamSet, hErr_set, vParamSet, vErr_set, paramSet2D, errSet2D)] 
             h_amp[vari][which], hfitCenter[vari][which], hSigmas[vari][which] = hparams[0], hparams[1], hparams[2]*cf*1e6
-            hAmpErrs[vari][which], hFitCenterErrs[vari][which], hSigmaErrs[vari][which] = h_errs[0], h_errs[1], h_errs[2]*cf*1e6
+            hAmpErrs[vari][which], hFitCenterErrs[vari][which], hSigmaErrs[vari][which] = hErrs[0], hErrs[1], hErrs[2]*cf*1e6
             v_amp[vari][which], vfitCenter[vari][which], vSigmas[vari][which] = vparams[0], vparams[1], vparams[2]*cf*1e6
-            vAmpErrs[vari][which], vFitCenterErrs[vari][which], vSigmaErrs[vari][which] = v_errs[0], v_errs[1], v_errs[2]*cf*1e6
+            vAmpErrs[vari][which], vFitCenterErrs[vari][which], vSigmaErrs[vari][which] = vErrs[0], vErrs[1], vErrs[2]*cf*1e6
+            hSigma2D[vari][which], hSigma2dErr[vari][which], vSigma2D[vari][which], vSigma2dErr[vari][which] = [
+                val*cf*1e6 for val in [param2d[-3], err2d[-3], param2d[-2], err2d[-2]]]
+            
             totalSignal[vari][which] = np.sum(im.flatten())
             keyPlt[vari] = keyV
             res = mp.fancyImshow(fig, ax, im, imageArgs={'cmap':dark_viridis_cmap, 'vmin':min_, 'vmax':max_}, 
-                                 hFitParams=hparams, vFitParams=vparams, fitModule=fitModule, flipVAx = True)
+                                 hFitParams=hparams, vFitParams=vparams, fitModule=fitModule, flipVAx = True, fitParams2D=param2d)
             ax.set_title(keyV + ': ' + str(datalen[keyV]) + ';\n' + title + ': ' + misc.errString(hSigmas[vari][which],hSigmaErrs[vari][which]) 
                 + r'$\mu m$ sigma, ' + misc.round_sig_str(totalSignal[vari][which],5), fontsize=12)            
+            if show2dFitsAndResiduals:
+                x, y  = np.arange(len(im[0])), np.arange(len(im))
+                X, Y = np.meshgrid(x,y)
+                data_fitted = gaussian_2d.f_notheta((X,Y), *param2d)
+                fitProper = data_fitted.reshape(im.shape[0],im.shape[1])
+                axs2d[0,vari].imshow(fitProper, vmin=min_, vmax=max_)
+                axs2d[0,vari].contour(x, y, fitProper, 4, colors='w', alpha=0.2)
+                axs2d[1,vari].imshow(fitProper-im)
+                axs2d[1,vari].contour(x, y, fitProper, 4, colors='w', alpha=0.2)
             if onlyThisPic is not None:
-                break
+                break            
     ### Plotting background and photon counted background
     mp.fancyImshow(bgFig, bgAxs[0], bgAvg, imageArgs={'cmap':dark_viridis_cmap},flipVAx = True) 
     bgAxs[0].set_title('Background image (' + str(len(picsForBg)/picsPerRep) + ')')
@@ -238,40 +249,49 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
     fig.subplots_adjust(left=0,right=1,bottom=0.1, hspace=0.2, **({'top': 0.7, 'wspace': 0.4} if (onlyThisPic is None) else {'top': 0.9, 'wspace': 0.3}))
     
     disp.display(fig)
+    temps, tempErrs, tempFitVs,  = [],[],[]
     if calcTemperature: 
-        mbgSigmas = np.array([elt[2] for elt in hSigmas])
-        mbgSigmaErrs = np.array([elt[2] for elt in hSigmaErrs])
-        myGuess = [0.0, min((mbgSigmas)*1e-6), guessTemp]
-        temp, fitV, cov = ah.calcBallisticTemperature(keyPlt*1e-3, (mbgSigmas)*1e-6, guess = myGuess, sizeErrors = mbgSigmaErrs)
-        error = np.sqrt(np.diag(cov))
+        for sigmas, sigmaerrs in zip([hSigmas, vSigmas, hSigma2D, vSigma2D],[hSigmaErrs, vSigmaErrs, hSigma2dErr, vSigma2dErr]):
+            mbgSigmas = np.array([elt[2] for elt in sigmas])
+            mbgSigmaErrs = np.array([elt[2] for elt in sigmaerrs])
+            myGuess = [0.0, min((mbgSigmas)*1e-6), guessTemp]
+            temp, fitV, cov = ah.calcBallisticTemperature(keyPlt*1e-3, (mbgSigmas)*1e-6, guess = myGuess, sizeErrors = mbgSigmaErrs)
+            error = np.sqrt(np.diag(cov))
+            temps.append(temp)
+            tempErrs.append(error[2])
+            tempFitVs.append(fitV)
     numAxisCol = int(plotSigmas) + int(plotCounts) + int(trackFitCenter)
     if numAxisCol != 0:
         fig2, axs = plt.subplots(1, numAxisCol, figsize = (15, 5)) 
         fig2.subplots_adjust(top=0.75, wspace = 0.4)
+    colors = ['b','k','c','purple']
     if plotSigmas:
         ax = (axs if numAxisCol == 1 else axs[0])        
         stdStyle = dict(marker='o',linestyle='',capsize=3)
         if onlyThisPic is not None:
-            ax.errorbar(keyPlt, hSigmas[:,onlyThisPic], hSigmaErrs[:,onlyThisPic], color='b', label='h '+titles[onlyThisPic], **stdStyle);
-            ax.errorbar(keyPlt, vSigmas[:,onlyThisPic], vSigmaErrs[:,onlyThisPic], color='c', label='v '+titles[onlyThisPic], **stdStyle);
+            ax.errorbar(keyPlt, hSigmas[:,onlyThisPic], hSigmaErrs[:,onlyThisPic], color=colors[0], label='h '+titles[onlyThisPic], **stdStyle);
+            ax.errorbar(keyPlt, hSigma2D[:,onlyThisPic], hSigma2dErr[:,onlyThisPic], color=colors[1], label='2dh '+titles[onlyThisPic], **stdStyle);
+            ax.errorbar(keyPlt, vSigmas[:,onlyThisPic], vSigmaErrs[:,onlyThisPic], color=colors[2], label='v '+titles[onlyThisPic], **stdStyle);
+            ax.errorbar(keyPlt, vSigma2D[:,onlyThisPic], vSigma2dErr[:,onlyThisPic], color=colors[3], label='2dv '+titles[onlyThisPic], **stdStyle);
         else:
             for whichPic in range(4):
                 ax.errorbar(keyPlt, hSigmas[:,whichPic], hSigmaErrs[:,whichPic], color='b', label='h '+titles[whichPic], **stdStyle);
                 ax.errorbar(keyPlt, vSigmas[:,whichPic], vSigmaErrs[:,whichPic], color='c', label='v '+titles[whichPic], **stdStyle);
-        ax.legend()
+        ax.set_ylim(0,min([ax.get_ylim()[1],2]))
         ax.set_ylabel(r'Fit Sigma ($\mu m$)')
             
         if calcTemperature:
             # converting time to s, hSigmas in um 
             xPoints = np.linspace(min(keyPlt), max(keyPlt))*1e-3
-            yPoints = LargeBeamMotExpansion.f(xPoints, *fitV)*1e6
-            yGuess = LargeBeamMotExpansion.f(xPoints, *myGuess)*1e6
-            ax.plot(xPoints*1e3, yGuess, label = 'guess')
-            ax.plot(xPoints*1e3, yPoints, label = 'fit')
-            ax.legend()
-            
+            for num, fitV in enumerate(tempFitVs):
+                #ax.plot(xPoints*1e3, LargeBeamMotExpansion.f(xPoints, *myGuess)*1e6, label = 'guess')
+                ax.plot(xPoints*1e3, LargeBeamMotExpansion.f(xPoints, *fitV)*1e6, color=colors[num])
+        ax.legend()
+
+    if plotFitAmps: 
+        ax = (axs if numAxisCol == 1 else axs[0])
         ampAx = ax.twinx()
-        
+
         if onlyThisPic is not None:
             ampAx.errorbar(keyPlt, h_amp[:,onlyThisPic], hAmpErrs[:,onlyThisPic], label='h '+titles[onlyThisPic], color = 'orange', **stdStyle);
             ampAx.errorbar(keyPlt, v_amp[:,onlyThisPic], vAmpErrs[:,onlyThisPic], label='v '+titles[onlyThisPic], color = 'r', **stdStyle);
@@ -301,7 +321,7 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
         colors = ['red', 'orange', 'yellow', 'pink']
         # This is not currently doing any correct for e.g. the loading rate.
         countToCameraPhotonEM = 0.018577 / (emGainSetting/200) # the float is is EM200. 
-        countToScatteredPhotonEM = 0.018577/0.07 / (emGainSetting/200)
+        countToScatteredPhotonEM = 0.018577 / 0.07 / (emGainSetting/200)
 
         if onlyThisPic is not None:
             # calculate number of photons
@@ -366,12 +386,8 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
         disp.clear_output()
     
     if calcTemperature: 
-        tempCalc = temp*1e6
-        tempCalcErr = error[2]*1e6
-        print('temperature = ' + misc.errString(tempCalc, tempCalcErr) + 'uk')
-    else:
-        tempCalc = None
-        tempCalcErr = None
+        for temp, err, label in zip(temps, tempErrs, ['Hor', 'Vert', 'Hor2D', 'Vert2D']): 
+            print(label + ' temperature = ' + misc.errString(temp*1e6, err*1e6) + 'uk')
 
     for fid in fids:
         if type(fid) == int:
@@ -386,8 +402,8 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
         colors, colors2 = misc.getColors(len(transferAnalysisOpts.initLocs()) + 2)#, cmStr=dataColor)
         pltShape = (transferAnalysisOpts.initLocsIn[-1], transferAnalysisOpts.initLocsIn[-2])
         #mp.plotThresholdHists([initThresholds[0][0],initThresholds[1][0]], colors, shape=pltShape)    
-    return {'images':images, 'fits':hFitParams, 'cov':hFitCovs, 'pics':sortedStackedPics, 'hSigmas':hSigmas, 'sigmaErrors':hSigmaErrs, 'dataKey':keyPlt, 
-            'hTotalPhotons':hTotalPhotons, 'tempCalc':tempCalc, 'tempCalcErr':tempCalcErr, 'initThresholds':initThresholds[0]}
+    return {'images':images, 'fits':hFitParams, 'errs':hFitErrs, 'pics':sortedStackedPics, 'hSigmas':hSigmas, 'sigmaErrors':hSigmaErrs, 'dataKey':keyPlt, 
+            'hTotalPhotons':hTotalPhotons, 'tempCalc':temps, 'tempCalcErr':tempErrs, 'initThresholds':initThresholds[0]}
 
 def getBgImgs(bgSource, startPic=1, picsPerRep=2):
     """ Expects either a file ID number or a list (or an array) of images as input.
