@@ -102,6 +102,10 @@ def setPath(day, month, year, repoAddress="\\\\jilafile.colorado.edu\\scratch\\r
     :return:
     """
     global dataAddress
+    if type(day) == int:
+        day = str(day)
+    if type(year) == int:
+        year = str(year)
     dataAddress = repoAddress + "\\" + year + "\\" + month + "\\" + month + " " + day + "\\Raw Data\\"
     #print("Setting new data address:" + dataAddress)
     return dataAddress
@@ -132,7 +136,7 @@ class ExpFile:
     """
     a wrapper around an hdf5 file for easier handling and management.
     """
-    def __init__(self, file_id=None, expFile_version=currentVersion, useBaseA=True):
+    def __init__(self, file_id=None, expFile_version=currentVersion, useBaseA=True, keyParameter=None):
         """
         if you give the constructor a file_id, it will automatically fill the relevant member variables.
         """
@@ -156,7 +160,7 @@ class ExpFile:
             if self.version==1:
                 self.key_name, self.key = self.__get_old_key()
             else:
-                self.key_name, self.key = self.get_key()
+                self.key_name, self.key = self.get_key(keyParameter=keyParameter)
             self.pics = self.get_pics()
             self.reps = self.get_reps()
             self.exp_start_date, self.exp_start_time, self.exp_stop_date, self.exp_stop_time = self.get_experiment_time_and_date()
@@ -197,7 +201,7 @@ class ExpFile:
     def get_params(self):
         return self.f['Master-Runtime']['Parameters'] if self.version >= 4 else (self.f['Master-Runtime']['Seq #1 Parameters'] if self.version>=3 else self.f['Master-Parameters']['Seq #1 Variables'])
     
-    def get_key(self):
+    def get_key(self, keyParameter=None):
         """
         :param file:
         :return:
@@ -223,13 +227,17 @@ class ExpFile:
                 if len(keyNames) > 1:
                     return keyNames, arr(misc.transpose(arr(keyValues)))
                 else:
-                    #if self.version >= 4:
-                    #    print(keyValues, len(keyValues))
-                    #    return keyNames, arr(keyValues)
-                    #else:
                     return keyNames[0], arr(keyValues[0])
             else:
-                return nokeyreturn
+                if keyParameter is None:
+                    return nokeyreturn
+                else:
+                    for var in params:
+                        name = ''.join([char.decode('utf-8') for char in params[var]['Name']])
+                        print(name)
+                        if name == keyParameter:
+                            return name , arr(params[var]['Key Values'])
+                    return "Key not found!", arr([1])
         except KeyError:
             return nokeyreturn
     

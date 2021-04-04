@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import scipy.optimize as opt
 import scipy.special as special
 import scipy.interpolate as interp
+import warnings
 
 from . import MarksConstants as mc
 from . import Miscellaneous as misc
@@ -46,9 +47,30 @@ import matplotlib as mpl
 import matplotlib.cm
 from IPython.display import Image, HTML, display
 
-
+def softwareBinning(binningParams, rawData):
+    if binningParams is not None:
+        sb = binningParams
+        if len(np.array(rawData).shape) == 3: 
+            if not ((rawData.shape[1]/sb[0]).is_integer()): 
+                raise ValueError('Vertical size ' + str(rawData.shape[1]) +  ' not divisible by binning parameter ' + str(sb[0]))
+            if not ((rawData.shape[2]/sb[1]).is_integer()):
+                raise ValueError('Horizontal size ' + str(rawData.shape[2]) +  ' not divisible by binning parameter ' + str(sb[1]))
+            rawData = rawData.reshape(rawData.shape[0], rawData.shape[1]//sb[0], sb[0], rawData.shape[2]//sb[1], sb[1]).sum(4).sum(2)
+        elif len(np.array(rawData).shape) == 2:
+            if not ((rawData.shape[0]/sb[0]).is_integer()): 
+                raise ValueError('Vertical size ' + str(rawData.shape[0]) +  ' not divisible by binning parameter ' + str(sb[0]))
+            if not ((rawData.shape[1]/sb[1]).is_integer()):
+                raise ValueError('Horizontal size ' + str(rawData.shape[1]) +  ' not divisible by binning parameter ' + str(sb[1]))
+            rawData = rawData.reshape(rawData.shape[0]//sb[0], sb[0], rawData.shape[1]//sb[1], sb[1]).sum(3).sum(1)
+        else:
+            raise ValueError('Raw data must either 2 or 3 dimensions')            
+    return rawData
+    
 def windowImage(image, window):
-    return image[window[0]:window[1], window[2]:window[3]]
+    if len(np.array(image).shape) == 2:
+        return image[window[0]:window[1], window[2]:window[3]]
+    else: 
+        return image[:,window[0]:window[1], window[2]:window[3]]
 
 def makeVid(pics, gifAddress, videoType, fileAddress=None, dur=1, lim=None, includeCount=True, lowLim=None, 
             finLabels=[], finTxt="Atom Reservoir Depleted", vidMap='inferno', maxMult=1, offset=0,
@@ -173,7 +195,7 @@ def fitManyGaussianImage(im, numGauss, neighborhood_size=20, threshold=1, direct
     ax[4].set_title('Fit-Diff')
     return optParam
 
-def temperatureAnalysis( data, magnification, **standardImagesArgs ):
+def temperatureAnalysis( data, magnification, temperatureGuess=100e-6, **standardImagesArgs ):
     res = ma.standardImages(data, scanType="Time(ms)", majorData='fits', fitPics=True, manualAccumulation=True, quiet=True, **standardImagesArgs)
     (key, rawData, dataMinusBg, dataMinusAvg, avgPic, pictureFitParams, fitCov, plottedData, v_params, v_errs, h_params, h_errs, intRawData) = res
     # convert to meters, convert from sigma to waist
@@ -182,8 +204,8 @@ def temperatureAnalysis( data, magnification, **standardImagesArgs ):
     waists_1D = 2 * mc.baslerScoutPixelSize * v_params[:, 2] * magnification
     # convert to s
     times = key / 1000
-    temp, fitVals, fitCov = newCalcMotTemperature(times, waists / 2)
-    temp_1D, fitVals_1D, fitCov_1D = newCalcMotTemperature(times, waists_1D / 2)
+    temp, fitVals, fitCov = calcBallisticTemperature(times, waists / 2, guess = [*LargeBeamMotExpansion.guess()[:-1], temperatureGuess])
+    temp_1D, fitVals_1D, fitCov_1D = calcBallisticTemperature(times, waists_1D / 2, guess = [*LargeBeamMotExpansion.guess()[:-1], temperatureGuess])
     return ( temp, fitVals, fitCov, times, waists, rawData, pictureFitParams, key, plottedData, dataMinusBg, v_params, v_errs, h_params, h_errs,
              waists_1D, temp_1D, fitVals_1D, fitCov_1D )
 
@@ -220,21 +242,36 @@ def Temperature(show=True):
     ax1 = fig.add_subplot(2,1,1)
     ax2 = fig.add_subplot(2,1,2, sharex=ax1)
     ax1.clear()
-    for i, l in zip(np.arange(3,13,3), legends):
-        ax1.plot(xpts, df[i], label=l)
+    for ind, leg in zip(np.arange(3,13,3), legends):
+        pltx, data = [], []
+        for num, dp in enumerate(df[ind]):
+            try:
+                data.append(float(dp))
+                pltx.append(xpts[num])
+            except ValueError:
+                print('Bad Value!', dp, xpts[num])
+                pass
+        ax1.plot(pltx, data, label=leg)
     ax1.legend(loc='upper center', bbox_to_anchor=(0.5,1.2),ncol=4, fontsize=10)
     ax1.set_ylabel('Temperature (C)')
     plt.setp(ax1.get_xticklabels(), visible=False)
 
     ax2.clear()
-    for i, l in zip(np.arange(4,14,3), legends):
-        ax2.plot(xpts, df[i], label=l)
+    for ind, leg in zip(np.arange(4,14,3), legends):
+        pltx, data = [], []
+        for num, dp in enumerate(df[ind]):
+            try:
+                data.append(float(dp))
+                pltx.append(xpts[num])
+            except ValueError:
+                print('Bad Value!', dp, xpts[num])
+        ax2.plot(pltx, data, label=leg)
     ax2.set_ylabel('Humidity (%)')
     incr = int(len(xpts)/20)+1
     ax2.set_xticks(xpts[::incr])
     plt.xlabel('Time (hour:minute)')
     plt.xticks(rotation=75);
-    return xpts, df
+    return xpts, df, ax1, ax2
 
 def splitData(data, picsPerSplit, picsPerRep, runningOverlap=0):
     data = np.reshape(data, (picsPerSplit, int(data.shape[1]/picsPerSplit), data.shape[2], data.shape[3]))
@@ -280,7 +317,11 @@ def parseRearrangeInfo(addr, limitedMoves=-1):
                 readyForAtomList = False
     return moveList
 
-def handleKeyModifications(hdf5Key, numVariations, keyInput=None, keyOffset=0, groupData=False, keyConversion=None ):
+def handleKeyModifications(hdf5Key, numVariations, keyInput=None, keyOffset=0, groupData=False, keyConversion=None, keySlice=None ):
+    """
+    keySlice: mostly for handling the case of two concurrent variables that are varying the same, so it's not quite a multidimensional
+    slice but I need to specify which value to use for the x-axis etc.
+    """
     key = None
     key = hdf5Key if keyInput is None else keyInput
     if key is None: 
@@ -296,6 +337,8 @@ def handleKeyModifications(hdf5Key, numVariations, keyInput=None, keyOffset=0, g
         raise ValueError("ERROR: The Length of the key doesn't match the data found. "
                          "Did you want to use a transfer-based function instead of a population-based function? Key:", 
                          len(key), "vars:", numVariations)
+    if keySlice is not None:
+        key = key[:,keySlice]
     return key
 
 def modFitFunc(sign, hBiasIn, vBiasIn, depthIn, *testBiases):
@@ -414,7 +457,7 @@ def extrapolateModDepth(sign, hBiasIn, vBiasIn, depthIn, testBiases):
         modDepth[:, colInc] = modDepth[:, colInc] * (1-sign * dif)
     return modDepth
 
-def fitWithModule(module, key, vals, errs=None, guess=None, getF_args=[None]):
+def fitWithModule(module, key, vals, errs=None, guess=None, getF_args=[None], maxfev=2000):
     # this also works with class objects which have all the required member functions. 
     key = arr(key)
     xFit = (np.linspace(min(key), max(key), 1000) if len(key.shape) == 1 else np.linspace(min(misc.transpose(key)[0]),
@@ -427,7 +470,7 @@ def fitWithModule(module, key, vals, errs=None, guess=None, getF_args=[None]):
         if len(key) < len(signature(fitF).parameters) - 1:
             raise RuntimeError('Not enough data points to constrain a fit!')
         guessUsed = guess if guess is not None else module.guess(key,vals)
-        fitValues, fitCovs = opt.curve_fit(fitF, key, vals, p0=guessUsed)
+        fitValues, fitCovs = opt.curve_fit(fitF, key, vals, p0=guessUsed, maxfev=maxfev)
         fitErrs = np.sqrt(np.diag(fitCovs))
         corr_vals = unc.correlated_values(fitValues, fitCovs)
         fitUncObject = fitF_unc(xFit, *corr_vals)
@@ -442,8 +485,8 @@ def fitWithModule(module, key, vals, errs=None, guess=None, getF_args=[None]):
     except (RuntimeError, LinAlgError, ValueError) as e:
         fitF = module.getF(*getF_args) if hasattr(module, 'getF') else module.f
         fitF_unc = module.getF_unc(*getF_args) if hasattr(module, 'getF_unc') else module.f_unc
-        warn('Data Fit Failed!')
-        print(e)
+        warn('Data Fit Failed! ' + str(e))
+        print('stuff',key, vals, guessUsed)
         fitValues = module.guess(key, vals)
         fitNom = fitF(xFit, *fitValues)
         fitFinished = False        
@@ -588,13 +631,13 @@ def fitDoubleGaussian(binCenters, binnedData, fitGuess, quiet=False):
         fitVals, fitCovNotUsed = opt.curve_fit( lambda x, a1, a2, a3, a4, a5, a6:
                                             double_gaussian.f(x, a1, a2, a3, a4, a5, a6, 0),
                                             binCenters, binnedData, fitGuess )
-    except opt.OptimizeWarning:
+    except opt.OptimizeWarning as err:
         if not quiet:
-            print('Double-Gaussian Fit Failed! (Optimization Warning)')
+            print('Double-Gaussian Fit Failed! (Optimization Warning)', err)
         fitVals = (0, 0, 0, 0, 0, 0)
-    except RuntimeError:
+    except RuntimeError as err:
         if not quiet:
-            print('Double-Gaussian Fit Failed! (Runtime error)')
+            print('Double-Gaussian Fit Failed! (Runtime error)', err)
         fitVals = (0, 0, 0, 0, 0, 0)        
     return [*fitVals,0]
 
@@ -923,41 +966,44 @@ def computeMotNumber(sidemotPower, diagonalPower, motRadius, exposure, imagingLo
     motNumber = fluorescence / rate
     return motNumber, fluorescence
 
-def newCalcMotTemperature(times, sigmas):
+
+def calcBallisticTemperature(times, sizeSigmas, guess = LargeBeamMotExpansion.guess(), sizeErrors=None):
     """ Small wrapper around a fit 
+    expects time in s, sigma in m
     return temp, vals, cov
     """
-    guess = LargeBeamMotExpansion.guess()
+    warnings.simplefilter("error", opt.OptimizeWarning)
     try:
-        fitVals, fitCovariances = opt.curve_fit(LargeBeamMotExpansion.f, times, sigmas, p0=guess)
+        fitVals, fitCovariances = opt.curve_fit(LargeBeamMotExpansion.f, times, sizeSigmas, p0=guess, sigma = sizeErrors)
+        temperature = fitVals[2]
+    except opt.OptimizeWarning as error:
+        warn('Mot Temperature Expansion Fit Failed!' + str(error))
+        try:
+            fitValsTemp, fitCovTemp = opt.curve_fit(lambda t,x,y: LargeBeamMotExpansion.f(t, x, 0, y), times, sizeSigmas, p0=[guess[0], guess[2]], sigma = sizeErrors)
+            temperature = fitValsTemp[1]
+            fitVals = [fitValsTemp[0], 0, fitValsTemp[1]]
+            fitCovariances = np.zeros((len(guess),len(guess)))
+            fitCovariances[0,0] = fitCovTemp[0,0]
+            fitCovariances[2,0] = fitCovTemp[1,0]
+            fitCovariances[0,2] = fitCovTemp[0,1]
+            fitCovariances[2,2] = fitCovTemp[1,1]
+        except opt.OptimizeWarning:
+            fitVals = np.zeros(len(guess))
+            fitCovariances = np.zeros((len(guess), len(guess)))
+            temperature = 0
+            warn('Restricted Mot Temperature Expansion Fit Failed Too with optimize error!')
+        except RuntimeError:
+            fitVals = np.zeros(len(guess))
+            fitCovariances = np.zeros((len(guess), len(guess)))
+            temperature = 0
+            warn('Mot Temperature Expansion Fit Failed with Runtime error!')
     except RuntimeError:
         fitVals = np.zeros(len(guess))
         fitCovariances = np.zeros((len(guess), len(guess)))
+        temperature = 0
         warn('Mot Temperature Expansion Fit Failed!')
-    return fitVals[2], fitVals, fitCovariances
-
-
-def calcMotTemperature(times, sigmas):
-    guess = [sigmas[0], 0.1]
-    # guess = [0.001, 0.1]
-    # in cm...?
-    # sidemotWaist = .33 / (2*np.sqrt(2))
-    # sidemotWaist = 8 / (2*np.sqrt(2))
-    sidemotWaist = 1000 / (2*np.sqrt(2))
-    # sidemotWaist^2/2 = 2 sigma_sidemot^2
-    # different gaussian definitions
-    sigma_I = sidemotWaist / 2
-    # convert to m
-    sigma_I /= 100
-    # modify roughly for angle of sidemot
-    # sigma_I /= np.cos(2*pi/3)
-    sigma_I /= np.cos(consts.pi/4)
-    sigma_I = 100
-    fitVals, fitCovariances = opt.curve_fit(lambda x, a, b: ballisticMotExpansion(x, a, b, sigma_I), times, sigmas, p0=guess)
-    simpleVals, simpleCovariances = opt.curve_fit(simpleMotExpansion, times, sigmas, p0=guess)
-    temperature = consts.Rb87_M / consts.k_B * fitVals[1]**2
-    tempFromSimple = consts.Rb87_M / consts.k_B * simpleVals[1]**2
-    return temperature, tempFromSimple, fitVals, fitCovariances, simpleVals, simpleCovariances
+    warnings.simplefilter("default", opt.OptimizeWarning)
+    return temperature, fitVals, fitCovariances
 
 
 def orderData(data, key, keyDim=None, otherDimValues=None):
@@ -1005,8 +1051,8 @@ def groupMultidimensionalData(key, varyingDim, atomLocations, survivalData, surv
     # make list of unique indexes for each dimension
     uniqueSecondaryAxisValues = []
     newKey = []
-    for i, secondaryValues in enumerate(misc.transpose(key)):
-        if i == varyingDim:
+    for keyValNum, secondaryValues in enumerate(misc.transpose(key)):
+        if keyValNum == varyingDim:
             for val in secondaryValues:
                 if val not in newKey:
                     newKey.append(val)
@@ -1107,53 +1153,54 @@ def getFitsDataFrame(fits, fitModules, avgFit):
     return fitDataFrames
 
     
-def getThresholds( picData, binWidth, tOptions=ThresholdOptions.ThresholdOptions()):
-    t = AtomThreshold.AtomThreshold()
-    t.rawData = picData
-    t.binCenters, t.binHeights = getBinData( binWidth, t.rawData )
-    # inner outwards
-    binGuessIteration = [t.binCenters[(len(t.binCenters) + (~i, i)[i%2]) // 2] for i in range(len(t.binCenters))]
+def getThresholds( picData, tOptions=ThresholdOptions.ThresholdOptions(), quiet=True):
+    th = AtomThreshold.AtomThreshold()
+    th.rawData = picData
+    th.binCenters, th.binHeights = getBinData( tOptions.histBinSize, th.rawData )
+    # inner outwards. e.g. [0,1,2,3,4] -> [2,1,3,0,4]
+    binGuessIteration = [th.binCenters[(len(th.binCenters) + (~i, i)[i%2]) // 2] for i in range(len(th.binCenters))]
     # binGuessIteration = list(reversed(bins[:len(bins)//2]))
     # binGuessIteration = list(bins[len(bins)//2:])
     gWidth = 25
     ampFac = 0.35
     if not tOptions.manualThreshold:
-        guess1, guess2 = guessGaussianPeaks( t.binCenters, t.binHeights )
-        guess = arr([max(t.binHeights), guess1, gWidth, max(t.binHeights)*ampFac, guess2, gWidth])
-        t.fitVals = fitDoubleGaussian(t.binCenters, t.binHeights, guess, quiet=True)
-        t.t, t.fidelity = calculateAtomThreshold(t.fitVals)
-        t.rmsResidual = getNormalizedRmsDeviationOfResiduals(t.binCenters, t.binHeights, double_gaussian.f, t.fitVals)
+        guessPos1, guessPos2 = guessGaussianPeaks( th.binCenters, th.binHeights )
+        if guessPos1 == guessPos2:
+            guessPos2 += 1
+        guess = arr([max(th.binHeights), guessPos1, gWidth, max(th.binHeights)*ampFac, guessPos2, gWidth])
+        th.fitVals = fitDoubleGaussian(th.binCenters, th.binHeights, guess, quiet=quiet)
+        th.t, th.fidelity = calculateAtomThreshold(th.fitVals)
+        th.rmsResidual = getNormalizedRmsDeviationOfResiduals(th.binCenters, th.binHeights, double_gaussian.f, th.fitVals)
         if tOptions.rigorousThresholdFinding:
-            for r in range(len(binGuessIteration)):
-                if  t.fidelity - t.rmsResidual*0.05 > 0.97:
-                    break
-                g_r = binGuessIteration[r]
-                guess = arr([max(t.binHeights), guess1, gWidth, max(t.binHeights)*ampFac, g_r, gWidth])
-                t2 = copy(t)
-                t2.fitVals = fitDoubleGaussian(t2.binCenters, t2.binHeights, guess, quiet=True)
+            for guessNum in range(len(binGuessIteration)):
+                if th.fidelity - th.rmsResidual*0.05 > 0.97:
+                    break # good enough. When fitting is good, Fidelity should be high and residual should be low. 
+                newGuessPosition = binGuessIteration[guessNum]
+                guess = arr([max(th.binHeights), guessPos1, gWidth, max(th.binHeights)*ampFac, newGuessPosition, gWidth])
+                t2 = copy(th)
+                t2.fitVals = fitDoubleGaussian(t2.binCenters, t2.binHeights, guess, quiet=quiet)
                 t2.t, t2.fidelity = calculateAtomThreshold(t2.fitVals)
                 t2.rmsResidual = getNormalizedRmsDeviationOfResiduals(t2.binCenters, t2.binHeights, double_gaussian.f, t2.fitVals)
-                
-                if t2.fidelity - t2.rmsResidual > t.fidelity - t.rmsResidual:
-                    t.t, t.fitVals, t.fidelity, t.rmsResidual = t2.t, t2.fitVals, t2.fidelity, t2.rmsResidual
+                if t2.fidelity - t2.rmsResidual > th.fidelity - th.rmsResidual: # keep track of the best result in the t variable.
+                    th.t, th.fitVals, th.fidelity, th.rmsResidual = t2.t, t2.fitVals, t2.fidelity, t2.rmsResidual
                 else:
                     pass
     elif tOptions.autoHardThreshold:
-        t.fitVals = None
-        t.t, t.fidelity = ((max(t.rawData) + min(t.rawData))/2.0, 0) 
-        t.rmsResidual=0
+        th.fitVals = None
+        th.t, th.fidelity = ((max(th.rawData) + min(th.rawData))/2.0, 0) 
+        th.rmsResidual=0
     elif tOptions.autoThresholdFittingGuess:
-        guess = arr([max(t.binHeights), (max(t.rawData) + min(t.rawData))/4.0, gWidth,
-                     max(t.binHeights)*0.5, 3*(max(t.rawData) + min(t.rawData))/4.0, gWidth])
-        t.fitVals = fitDoubleGaussian(t.binCenters, t.binHeights, guess, quiet=False)
-        t.t, t.fidelity = calculateAtomThreshold(t.fitVals)
-        t.rmsResidual = getNormalizedRmsDeviationOfResiduals(t.binCenters, t.binHeights, double_gaussian.f, t.fitVals)
+        guess = arr([max(th.binHeights), (max(th.rawData) + min(th.rawData))/4.0, gWidth,
+                     max(th.binHeights)*0.5, 3*(max(th.rawData) + min(th.rawData))/4.0, gWidth])
+        th.fitVals = fitDoubleGaussian(th.binCenters, th.binHeights, guess, quiet=quiet)
+        th.t, th.fidelity = calculateAtomThreshold(th.fitVals)
+        th.rmsResidual = getNormalizedRmsDeviationOfResiduals(th.binCenters, th.binHeights, double_gaussian.f, th.fitVals)
     else:
-        t.fitVals = None
-        t.t, t.fidelity = (tOptions.manualThresholdValue, 0)
-        t.rmsResidual=0
-    
-    return t
+        print('no option???')
+        th.fitVals = None
+        th.t, th.fidelity = (tOptions.manualThresholdValue, 0)
+        th.rmsResidual=0
+    return th
 
 def getNormalizedRmsDeviationOfResiduals(xdata, ydata, function, fitVals):
     """
@@ -1220,39 +1267,53 @@ def getMaxFidelityThreshold(fitVals):
     return threshold, fidelity
 
 
-def postSelectOnAssembly( pic1AtomData, pic2AtomData, analysisOpts, justReformat=False ):
+def postSelectOnAssembly( pic1AtomData, pic2AtomData, analysisOpts, justReformat=False, extraDataToPostSelect=None ): 
+    totalRepNum = len(pic1AtomData[0])
+    dataSetTotalNum = len(analysisOpts.postSelectionConditions)
+    if extraDataToPostSelect is not None:
+        if len(extraDataToPostSelect) != totalRepNum:
+            raise ValueError('extraDataToPostSelect must have a value for every repetition. Length of extraDataToPostSelect = ' 
+                             + str(len(extraDataToPostSelect)) + ' while totalRepNum = ' + str(totalRepNum))
     # the "justReformat" arg is a bit hackish here. 
     if analysisOpts.postSelectionConditions is None:
         analysisOpts.postSelectionConditions = [[] for _ in analysisOpts.positiveResultConditions]
     # 2d conditions... ps for post-selected
-    psPic1AtomData, psPic2AtomData = [[[] for atom in analysisOpts.postSelectionConditions] for _ in range(2)]
-    for dataSetInc, _ in enumerate(analysisOpts.postSelectionConditions):
+    psPic1AtomData, psPic2AtomData, postSelectedExtraData = [[[] for _ in analysisOpts.postSelectionConditions] for _ in range(3)]    
+    for dataSetInc in range(dataSetTotalNum):
         conditionHits = [None for condition in analysisOpts.postSelectionConditions[dataSetInc]]
         for conditionInc, condition in enumerate(analysisOpts.postSelectionConditions[dataSetInc]):
             # see getEnsembleHits for more discussion on how the post-selection is working here. 
-            conditionHits[conditionInc] = getConditionHits([pic1AtomData, pic2AtomData], condition)
-        for picInc, _ in enumerate(pic1AtomData[0]):
-            valid = True
+            conditionHits[conditionInc] = getConditionHits([pic1AtomData, pic2AtomData], condition)        
+        #print('hello, world!')
+        #print(conditionHits, pic1AtomData, analysisOpts.postSelectionConditions[dataSetInc])        
+        for repNum in range(totalRepNum):
+            allCondMatch = True
             for condition in conditionHits:
-                if condition[picInc] == False:
-                    valid = False
-            if valid or justReformat:
+                if condition[repNum] == False:
+                    allCondMatch = False
+            #print('!' if allCondMatch else '.', end='')
+            if allCondMatch or justReformat:
                 indvAtoms1, indvAtoms2 = [], []
                 for atomInc in range(len(pic1AtomData)):
-                    indvAtoms1.append(pic1AtomData[atomInc][picInc])
-                    indvAtoms2.append(pic2AtomData[atomInc][picInc])
+                    indvAtoms1.append(pic1AtomData[atomInc][repNum])
+                    indvAtoms2.append(pic2AtomData[atomInc][repNum])
                 psPic1AtomData[dataSetInc].append(indvAtoms1)
                 psPic2AtomData[dataSetInc].append(indvAtoms2)
+                if extraDataToPostSelect is not None:
+                    postSelectedExtraData[dataSetInc].append(extraDataToPostSelect[repNum])  
+                    
             # else nothing! discard the data.
         if len(psPic1AtomData[dataSetInc]) == 0:
             print("No data left after post-selection! Data Set #" + str(dataSetInc))
             indvAtoms1, indvAtoms2 = [], []
             for atomInc in range(len(pic1AtomData)):
-                indvAtoms1.append(pic1AtomData[atomInc][picInc])
-                indvAtoms2.append(pic2AtomData[atomInc][picInc])
+                indvAtoms1.append(pic1AtomData[atomInc][repNum])
+                indvAtoms2.append(pic2AtomData[atomInc][repNum])
             psPic1AtomData[dataSetInc].append(indvAtoms1)
             psPic2AtomData[dataSetInc].append(indvAtoms2)
-    return psPic1AtomData, psPic2AtomData, None
+            if extraDataToPostSelect is not None:
+                postSelectedExtraData[dataSetInc].append(extraDataToPostSelect[repNum])       
+    return psPic1AtomData, psPic2AtomData, postSelectedExtraData
 
 def getConditionHits(atomPresenceData, hitCondition, verbose=False):
     """
@@ -1341,7 +1402,6 @@ def getEnsembleHits(atomPresenceData, hitCondition=None, requireConsecutive=Fals
             for inc, atoms in enumerate(misc.transpose(atomPresenceData)):
                 ensembleHits.append(sum(atoms)) # / len(atoms))
         else:
-            #print('hitCondition:',hitCondition)
             for inc, atoms in enumerate(misc.transpose(atomPresenceData)):
                 ensembleHits.append(True)
                 for atom, needAtom in zip(atoms, hitCondition):
@@ -1351,7 +1411,6 @@ def getEnsembleHits(atomPresenceData, hitCondition=None, requireConsecutive=Fals
                         ensembleHits[inc] = False
                     if atom and not needAtom:
                         ensembleHits[inc] = False
-                #print(atoms, hitCondition, ensembleHits[inc])
                         
     return ensembleHits
 
@@ -1414,6 +1473,8 @@ def guessGaussianPeaks(binCenters, binnedData):
     :param binnedData: the binned data data points.
     :return: the two guesses.
     """
+    if len(binCenters) == 0 or len(binnedData) == 0:
+        raise ValueError("inputted data was empty?!?" + str(binCenters) + str(binnedData))
     # This offset is to prevent negative x values while working with the poissonian. If set wrong guesses can start to work funny.
     # The offset is only use to get an appropriate width for the no-atoms peak. Arguably since I use this to manually shift the width, I should
     # just use a gaussian instead of a poissonian.
@@ -1435,9 +1496,11 @@ def guessGaussianPeaks(binCenters, binnedData):
     return guess1Location - randomOffset, guess2Location - randomOffset
 
 def getBinData(binWidth, data):
+    # I feel like there's probably a better built in way to do this...
+    if min(data) == max(data):
+        raise ValueError("Data for binning was all same value of " + str(min(data)))
     binBorderLocation = min(data)
     binsBorders = arr([])
-    tt = TimeTracker()
     while binBorderLocation < max(data):
         binsBorders = np.append(binsBorders, binBorderLocation)
         binBorderLocation = binBorderLocation + binWidth
@@ -1736,27 +1799,28 @@ def getGridDims(locs):
 
 def sliceMultidimensionalData(dimSlice, origKey, rawData, varyingDim=None):
     """
-
     :param dimSlice: e.g. [80, None]
     :param origKey:
     :param rawData:
     :param varyingDim:
     :return:
     """
+    
+    print('vary',varyingDim)
     key = origKey[:]
     if dimSlice is not None:
         runningKey = key[:]
         runningData = rawData[:]
-        for i, dimSpec in enumerate(dimSlice):
+        for dimnum, dimSpec in enumerate(dimSlice):
             if dimSpec is None:
-                varyingDim = i
+                varyingDim = dimnum
                 continue
             tempKey = []
             tempData = []
-            for j, elem in enumerate(misc.transpose(runningKey)[i]):
+            for elemnum, elem in enumerate(misc.transpose(runningKey)[dimnum]):
                 if abs(elem - dimSpec) < 1e-6:
-                    tempKey.append(runningKey[j])
-                    tempData.append(runningData[j])
+                    tempKey.append(runningKey[elemnum])
+                    tempData.append(runningData[elemnum])
             runningKey = tempKey[:]
             runningData = tempData[:]
         key = runningKey[:]
@@ -1764,10 +1828,11 @@ def sliceMultidimensionalData(dimSlice, origKey, rawData, varyingDim=None):
     otherDimValues = None
     if varyingDim is not None:
         otherDimValues = []
+        print('key',key)
         for keyVal in key:
             otherDimValues.append('')
-            for i, dimVal in enumerate(keyVal):
-                if not i == varyingDim:
+            for valNum, dimVal in enumerate(keyVal):
+                if not valNum == varyingDim:
                     otherDimValues[-1] += str(dimVal) + ","
     if dimSlice is not None:
         key = arr(misc.transpose(key)[varyingDim])
@@ -1776,14 +1841,26 @@ def sliceMultidimensionalData(dimSlice, origKey, rawData, varyingDim=None):
     return arr(key), arr(rawData), otherDimValues, varyingDim
 
 def applyDataRange(dataRange, groupedDataRaw, key):
+    
     if dataRange is not None:
-        groupedData, newKey = [[] for _ in range(2)]
-        for count, variation in enumerate(groupedDataRaw):
-            if count in dataRange:
-                groupedData.append(variation)
-                newKey.append(key[count])
-        groupedData = arr(groupedData)
-        key = arr(newKey)
+        if type(groupedDataRaw) == type({}):
+            
+            groupedData, newKey = {}, []
+            for variNum, keyVal in enumerate(key):
+                keyValStr = misc.round_sig_str(keyVal)
+                if variNum in dataRange:
+                    groupedData[keyValStr] = groupedDataRaw[keyValStr]
+                    newKey.append(key[variNum])
+            key = arr(newKey)
+        else:
+            #Expects a multidimensional array
+            groupedData, newKey = [[] for _ in range(2)]
+            for variNum, varPics in enumerate(groupedDataRaw):
+                if variNum in dataRange:
+                    groupedData.append(varPics)
+                    newKey.append(key[variNum])
+            groupedData = arr(groupedData)
+            key = arr(newKey)
     else:
         groupedData = groupedDataRaw
     return key, groupedData

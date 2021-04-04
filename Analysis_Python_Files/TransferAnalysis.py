@@ -10,14 +10,18 @@ from .Miscellaneous import what
 
 def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWindow(), dataRange=None, keyOffset=0, 
                           dimSlice=None, varyingDim=None, groupData=False, quiet=False, picsPerRep=2, repRange=None, 
-                          keyConversion=None, softwareBinning=None, removePics=None, expFile_version=4, useBaseA=True):
+                          keyConversion=None, binningParams=None, removePics=None, expFile_version=4, useBase=True, 
+                         keyParameter=None, keySlice=None):
+                         
     """
     Unpack inputs, properly shape the key, picture array, and run some initial checks on the consistency of the settings.
     """
-    with exp.ExpFile(fileNumber, expFile_version=expFile_version, useBaseA=useBaseA) as f:
+    with exp.ExpFile(fileNumber, expFile_version=expFile_version, useBaseA=useBase, keyParameter=keyParameter) as f:
         rawData, keyName, hdf5Key, repetitions = f.pics, f.key_name, f.key, f.reps
         if not quiet:
             basicInfoStr = f.get_basic_info()
+        if (rawData[0] == np.zeros(rawData[0].shape)).all():
+            raise ValueError("Pictures in Data are all zeros?!")
     if removePics is not None:
         for index in reversed(sorted(removePics)):
             rawData = np.delete(rawData, index, 0)
@@ -26,18 +30,18 @@ def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWind
     if repRange is not None:
         repetitions = repRange[1] - repRange[0]
         rawData = rawData[repRange[0]*picsPerRep:repRange[1]*picsPerRep]
-    if softwareBinning is not None:
-        sb = softwareBinning
-        rawData = rawData.reshape(rawData.shape[0], rawData.shape[1]//sb[0], sb[0], rawData.shape[2]//sb[1], sb[1]).sum(4).sum(2)
-    rawData = np.array([win.window(pic) for pic in rawData])
+    # rawData = np.array([win.window(pic) for pic in rawData])
+    windowedData = win.window(rawData)
+    binnedData = ah.softwareBinning(binningParams, windowedData)
     # Group data into variations.
-    numberOfPictures = int(rawData.shape[0])
+    numberOfPictures = int(binnedData.shape[0])
     if groupData:
         repetitions = int(numberOfPictures / picsPerRep)
     numberOfVariations = int(numberOfPictures / (repetitions * picsPerRep))
-    key = ah.handleKeyModifications(hdf5Key, numberOfVariations, keyInput=key, keyOffset=keyOffset, groupData=groupData, keyConversion=keyConversion )
-    groupedDataRaw = rawData.reshape((numberOfVariations, repetitions * picsPerRep, rawData.shape[1], rawData.shape[2]))
-    res = ah.sliceMultidimensionalData(dimSlice, key, groupedDataRaw, varyingDim=varyingDim)
+    key = ah.handleKeyModifications(hdf5Key, numberOfVariations, keyInput=key, keyOffset=keyOffset, groupData=groupData, keyConversion=keyConversion, keySlice=keySlice )
+    groupedBinnedData = binnedData.reshape((numberOfVariations, repetitions * picsPerRep, binnedData.shape[1], binnedData.shape[2]))
+    groupedRawData = rawData.reshape((numberOfVariations, repetitions * picsPerRep, rawData.shape[1], rawData.shape[2]))
+    res = ah.sliceMultidimensionalData(dimSlice, key, groupedBinnedData, varyingDim=varyingDim)
     (_, slicedData, otherDimValues, varyingDim) = res
     slicedOrderedData = slicedData
     key, groupedData = ah.applyDataRange(dataRange, slicedOrderedData, key)
@@ -47,7 +51,7 @@ def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWind
     numOfPictures = groupedData.shape[0] * groupedData.shape[1]
     allAvgPics = ah.getAvgPics(groupedData, picsPerRep=picsPerRep)
     avgPics = [allAvgPics[analysisOpts.initPic], allAvgPics[analysisOpts.tferPic]]
-    return rawData, groupedData, keyName, repetitions, key, numOfPictures, avgPics, basicInfoStr, analysisOpts
+    return binnedData, groupedData, keyName, repetitions, key, numOfPictures, avgPics, basicInfoStr, analysisOpts, groupedRawData
 
 def getGeneralEvents(pic1Atoms, pic2Atoms, positiveResultCondition):
     eventList = ah.getConditionHits( [pic1Atoms, pic2Atoms], positiveResultCondition);
@@ -68,7 +72,6 @@ def getTransferStats(tferList):
         transferErrors = ah.jeffreyInterval(transferAverages, len(tferVarList))
     return transferAverages, transferErrors
 
-
 def getTransferThresholds(analysisOpts, rawData, groupedData, picsPerRep, tOptions=[to.ThresholdOptions()]):
     # some initialization...
     (initThresholds, tferThresholds) =  np.array([[None] * len(analysisOpts.initLocs())] * 2)
@@ -82,12 +85,14 @@ def getTransferThresholds(analysisOpts, rawData, groupedData, picsPerRep, tOptio
         opt = tOptions[i]
         if opt.indvVariationThresholds:
             for j, variationData in enumerate(groupedData):
-                initPixelCounts = ah.getAtomCountsData( variationData, picsPerRep, analysisOpts.initPic, loc1, subtractEdges=opt.subtractEdgeCounts )
-                initThresholds[i][j] = ah.getThresholds( initPixelCounts, 5, opt )        
+                initPixelCounts = ah.getAtomCountsData( variationData, picsPerRep, analysisOpts.initPic, loc1, 
+                                                       subtractEdges=opt.subtractEdgeCounts )
+                initThresholds[i][j] = ah.getThresholds( initPixelCounts, opt )        
         else:
             # calculate once with full raw data and then copy to all slots. 
-            initPixelCounts = ah.getAtomCountsData( rawData, picsPerRep, analysisOpts.initPic, loc1, subtractEdges=opt.subtractEdgeCounts )
-            initThresholds[i][0] = ah.getThresholds( initPixelCounts, 5, opt )        
+            initPixelCounts = ah.getAtomCountsData( rawData, picsPerRep, analysisOpts.initPic, loc1, 
+                                                   subtractEdges=opt.subtractEdgeCounts )
+            initThresholds[i][0] = ah.getThresholds( initPixelCounts, opt )        
             for j, _ in enumerate(groupedData):
                 initThresholds[i][j] = initThresholds[i][0]
         if opt.tferThresholdSame:
@@ -97,11 +102,11 @@ def getTransferThresholds(analysisOpts, rawData, groupedData, picsPerRep, tOptio
                 for j, variationData in enumerate(groupedData):
                     tferPixelCounts = ah.getAtomCountsData( variationData, picsPerRep, analysisOpts.tferPic, loc2, 
                                                            subtractEdges=opt.subtractEdgeCounts )
-                    tferThresholds[i][j] = ah.getThresholds( tferPixelCounts, 5, opt )
+                    tferThresholds[i][j] = ah.getThresholds( tferPixelCounts, opt )
             else:
                 tferPixelCounts = ah.getAtomCountsData( rawData, picsPerRep, analysisOpts.tferPic, loc1, 
                                                        subtractEdges=opt.subtractEdgeCounts )
-                tferThresholds[i][0] = ah.getThresholds( tferPixelCounts, 5, opt )        
+                tferThresholds[i][0] = ah.getThresholds( tferPixelCounts, opt )        
                 for j, _ in enumerate(groupedData):
                     tferThresholds[i][j] = tferThresholds[i][0]
     if tOptions[0].subtractEdgeCounts:
@@ -166,7 +171,8 @@ def handleTransferFits(analysisOpts, fitModules, key, avgTferData, fitguess, get
             raise ValueError("ERROR: length of fitmodules should be" + str(numDataSets+1) + "(Includes avg fit)")
         for i, (loc, module) in enumerate(zip(range(analysisOpts.numDataSets()), fitModules)):
             fits[i], _ = ah.fitWithModule(module, key, tferAtomsVarAvg[i], guess=fitguess[i], getF_args=getFitterArgs[i])
-        avgFit, _ = ah.fitWithModule(fitModules[-1], key, avgTferData, guess=fitguess[-1], getF_args=getFitterArgs[-1])
+        #print('fitguess',fitguess,fitguess[-1])
+        avgFit, _ = ah.fitWithModule(fitModules[-1], key, avgTferData, guess=fitguess[-1], getF_args=getFitterArgs[-1], maxfev=100000)
     return fits, avgFit, fitModules
 
 def getTransferAvgs(analysisOpts, initAtomsPs, tferAtomsPs, prConditions=None):
@@ -178,7 +184,7 @@ def getTransferAvgs(analysisOpts, initAtomsPs, tferAtomsPs, prConditions=None):
             print('using default positive result condition...')
         for varInc in range(len(initAtomsPs)):
             if prConditions[dsetInc] is None:
-                prConditions[dsetInc] = ao.condition(name='Default Survival Condition', whichPic=[1],
+                prConditions[dsetInc] = ao.condition(name='Def. Sv', whichPic=[1],
                                                      whichAtoms=[dsetInc],conditions=[True],numRequired=-1);
             tferList[dsetInc][varInc] = getGeneralEvents(misc.transpose(initAtomsPs[varInc][dsetInc]), misc.transpose(tferAtomsPs[varInc][dsetInc]),
                                                          prConditions[dsetInc])
@@ -203,30 +209,47 @@ def getTransferAvgs(analysisOpts, initAtomsPs, tferAtomsPs, prConditions=None):
         tferVarErr.append(ah.jeffreyInterval(mv, len(np.array(varData).flatten())))
     return avgTferData, avgTferErr, tferVarAvg, tferVarErr, tferAtomsVarAvg, tferAtomsVarErrs, tferList
 
-
-def standardTransferAnalysis( fileNumber, analysisOpts, picsPerRep=2, fitModules=[None], varyingDim=None, getGenerationStats=False, 
-                              fitguess=[None], forceAnnotation=True, tOptions=[to.ThresholdOptions()], getFitterArgs=[None], **organizerArgs ):
+def stage1TransferAnalysis(fileNumber, analysisOpts, picsPerRep=2, varyingDim=None, tOptions=[to.ThresholdOptions()], **organizerArgs ):
     """
-    "Survival" is a special case of transfer where the initial location and the transfer location are the same location.
+    This stage is re-used in the fsi analysis. It's all the analysis up to the post-selection.
     """
-    assert(type(analysisOpts) == ao.TransferAnalysisOptions)
+    #assert(type(analysisOpts) == ao.TransferAnalysisOptions)
     print("sta: Organizing Transfer Data...")
-    ( rawData, groupedData, keyName, repetitions, key, numOfPictures, avgPics, 
-      basicInfoStr, analysisOpts ) = organizeTransferData( fileNumber, analysisOpts, picsPerRep=picsPerRep, varyingDim=varyingDim, **organizerArgs )
+    ( binnedData, groupedData, keyName, repetitions, key, numOfPictures, avgPics, basicInfoStr, analysisOpts, 
+     groupedRawData ) = organizeTransferData( fileNumber, analysisOpts, picsPerRep=picsPerRep, varyingDim=varyingDim, **organizerArgs )
     print("sta: Getting Transfer Thresholds...")
-    res = getTransferThresholds( analysisOpts, rawData, groupedData, picsPerRep, tOptions )
+    res = getTransferThresholds( analysisOpts, binnedData, groupedData, picsPerRep, tOptions )
     borders_init, borders_tfer, initThresholds, tferThresholds = res
     print("sta: Determining Atom Prescence...")
     res = determineTransferAtomPrescence( analysisOpts, groupedData, picsPerRep, borders_init, borders_tfer, initThresholds, tferThresholds)
     initAtoms, tferAtoms, initPicCounts, tferPicCounts = res
     print("sta: Getting Transfer Atom Images...")
     initAtomImages, tferAtomImages = getTransferAtomImages( analysisOpts, groupedData, numOfPictures, picsPerRep, initAtoms, tferAtoms )    
-    initAtomsPs, tferAtomsPs, ensembleHits = [[None for _ in initAtoms] for _ in range(3)]
+    initAtomsPs, tferAtomsPs, ensembleHits, groupedPostSelectedPics = [[None for _ in initAtoms] for _ in range(4)]
     print("sta: Post-Selecting...",end='')
     for varInc in range(len(initAtoms)):
         print('.',end='')
-        initAtomsPs[varInc], tferAtomsPs[varInc], ensembleHits[varInc] = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], analysisOpts )
+        extraDataToPostSelectIn = list(zip(*[groupedRawData[varInc][picNum::picsPerRep] for picNum in range(picsPerRep)]))
+        ensembleHits[varInc] = None # Used to be assigned in postSelectOnAssembly
+        initAtomsPs[varInc], tferAtomsPs[varInc], tempPS = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], analysisOpts, 
+                                                                                   extraDataToPostSelect = extraDataToPostSelectIn )
+        groupedPostSelectedPics[varInc] = [[] for _ in tempPS]
+        for conditionnum, conditionPics in enumerate(tempPS):
+            for repPics in conditionPics:
+                for picNum in range(picsPerRep):
+                    groupedPostSelectedPics[varInc][conditionnum].append(repPics[picNum])
         initAtoms[varInc], tferAtoms[varInc], _ = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], analysisOpts, justReformat=True)
+    return (initAtoms, tferAtoms, initAtomsPs, tferAtomsPs, key, keyName, initPicCounts, tferPicCounts, repetitions, initThresholds,
+            avgPics, tferThresholds, initAtomImages, tferAtomImages, basicInfoStr, ensembleHits, groupedPostSelectedPics)
+
+def standardTransferAnalysis( fileNumber, analysisOpts, picsPerRep=2, fitModules=[None], varyingDim=None, getGenerationStats=False, 
+                              fitguess=[None], forceAnnotation=True, tOptions=[to.ThresholdOptions()], getFitterArgs=[None], **organizerArgs ):
+    """
+    "Survival" is a special case of transfer where the initial location and the transfer location are the same location.
+    """
+    res = stage1TransferAnalysis( fileNumber, analysisOpts, picsPerRep, varyingDim, tOptions, **organizerArgs )
+    (initAtoms, tferAtoms, initAtomsPs, tferAtomsPs, key, keyName, initPicCounts, tferPicCounts, repetitions, initThresholds,
+            avgPics, tferThresholds, initAtomImages, tferAtomImages, basicInfoStr, ensembleHits, groupedPostSelectedPics)  = res
     print("sta: Getting Transfer Averages...")
     res = getTransferAvgs(analysisOpts, initAtomsPs, tferAtomsPs)
     avgTferData, avgTferErr, tferVarAvg, tferVarErr, tferAtomsVarAvg, tferAtomsVarErrs, tferList = res

@@ -48,3 +48,11 @@ def guess(key, values):
     """
     return exponential_decay.guess(key,values)[:-1]
 
+def fitCharacter(params):
+    return params[1]
+
+def fitCharacterErr(params, errors):
+    return errors[1]
+
+def getFitCharacterString():
+    return "Decay constant"
