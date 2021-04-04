@@ -2,7 +2,7 @@
 .idea/
 __pycache__/
 # jupyter notebooks are not meant to be syncronized with this repository.
-*.ipynb
+Data_Analysis_Notebooks/*
 !CalibrationModules/*.ipynb
 Figures/
 Data/
