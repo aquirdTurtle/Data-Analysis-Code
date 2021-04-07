@@ -15,7 +15,7 @@ def f(coordinates, amplitude, xo, yo, sigma_x, sigma_y, theta, offset):
     The normal function call for this function. Performs checks on valid arguments, then calls the "raw" function.
     :return:
     """
-    if sigma_x > 50 or sigma_y > 50:
+    if sigma_x > 50 or sigma_y > 50 or sigma_x < 0 or sigma_y < 0:
         #print('!',end='')
         return 1e10*np.ones(len(coordinates[0])*len(coordinates[0][0]))
     # limit the angle to a small range to prevent unncecessary flips of the axes. The 2D gaussian has two axes of

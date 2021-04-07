@@ -235,10 +235,20 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
                 X, Y = np.meshgrid(x,y)
                 data_fitted = gaussian_2d.f_notheta((X,Y), *param2d)
                 fitProper = data_fitted.reshape(im.shape[0],im.shape[1])
-                axs2d[0,vari].imshow(fitProper, vmin=min_, vmax=max_)
-                axs2d[0,vari].contour(x, y, fitProper, 4, colors='w', alpha=0.2)
-                axs2d[1,vari].imshow(fitProper-im)
-                axs2d[1,vari].contour(x, y, fitProper, 4, colors='w', alpha=0.2)
+                if numVariations == 1:
+                    imr = axs2d[0].imshow(fitProper, vmin=min_, vmax=max_)
+                    mp.addAxColorbar(fig2d, axs2d[0], imr)
+                    axs2d[0].contour(x, y, fitProper, 4, colors='w', alpha=0.2)
+                    imr = axs2d[1].imshow(fitProper-im)
+                    mp.addAxColorbar(fig2d, axs2d[1], imr)
+                    axs2d[1].contour(x, y, fitProper, 4, colors='w', alpha=0.2)
+                else:
+                    imr = axs2d[0,vari].imshow(fitProper, vmin=min_, vmax=max_)
+                    mp.addAxColorbar(fig2d, axs2d[0,vari], imr)
+                    axs2d[0,vari].contour(x, y, fitProper, 4, colors='w', alpha=0.2)
+                    imr = axs2d[1,vari].imshow(fitProper-im)
+                    mp.addAxColorbar(fig2d, axs2d[1,vari], imr)
+                    axs2d[1,vari].contour(x, y, fitProper, 4, colors='w', alpha=0.2)
             if onlyThisPic is not None:
                 break            
     ### Plotting background and photon counted background
@@ -277,7 +287,7 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             for whichPic in range(4):
                 ax.errorbar(keyPlt, hSigmas[:,whichPic], hSigmaErrs[:,whichPic], color='b', label='h '+titles[whichPic], **stdStyle);
                 ax.errorbar(keyPlt, vSigmas[:,whichPic], vSigmaErrs[:,whichPic], color='c', label='v '+titles[whichPic], **stdStyle);
-        ax.set_ylim(0,min([ax.get_ylim()[1],2]))
+        ax.set_ylim(max(0,ax.get_ylim()[0]),min([ax.get_ylim()[1],5]))
         ax.set_ylabel(r'Fit Sigma ($\mu m$)')
             
         if calcTemperature:
@@ -401,9 +411,10 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
     if transferAnalysisOpts is not None:
         colors, colors2 = misc.getColors(len(transferAnalysisOpts.initLocs()) + 2)#, cmStr=dataColor)
         pltShape = (transferAnalysisOpts.initLocsIn[-1], transferAnalysisOpts.initLocsIn[-2])
-        #mp.plotThresholdHists([initThresholds[0][0],initThresholds[1][0]], colors, shape=pltShape)    
+        #mp.plotThresholdHists([initThresholds[0][0],initThresholds[1][0]], colors, shape=pltShape)
     return {'images':images, 'fits':hFitParams, 'errs':hFitErrs, 'pics':sortedStackedPics, 'hSigmas':hSigmas, 'sigmaErrors':hSigmaErrs, 'dataKey':keyPlt, 
-            'hTotalPhotons':hTotalPhotons, 'tempCalc':temps, 'tempCalcErr':tempErrs, 'initThresholds':initThresholds[0]}
+            'hTotalPhotons':hTotalPhotons, 'tempCalc':temps, 'tempCalcErr':tempErrs, 'initThresholds':initThresholds[0], 
+            '2DFit':paramSet2D, '2DErr':errSet2D}
 
 def getBgImgs(bgSource, startPic=1, picsPerRep=2):
     """ Expects either a file ID number or a list (or an array) of images as input.
