@@ -16,14 +16,12 @@ def f(coordinates, amplitude, xo, yo, sigma_x, sigma_y, theta, offset):
     :return:
     """
     if sigma_x > 50 or sigma_y > 50:
-        #print('!',end='')
         return 1e10*np.ones(len(coordinates[0])*len(coordinates[0][0]))
     # limit the angle to a small range to prevent unncecessary flips of the axes. The 2D gaussian has two axes of
     # symmetry, so only a quarter of the 2pi is needed.
     if theta > np.pi/4 or theta < -np.pi/4:
         return 1e10*np.ones(len(coordinates[0])*len(coordinates[0][0]))
     res = f_raw(coordinates, amplitude, xo, yo, sigma_x, sigma_y, theta, offset)
-    #print('{0: 3.16f}   {1: 3.16f}   {2: 3.16f}   {3: 3.16f}   {4: 3.16f}   {5: 3.16f}   {6: 3.16f}'.format(amplitude, xo, yo, sigma_x, sigma_y, theta, offset))
     return res
 
 def f_notheta(coordinates, amplitude, xo, yo, sigma_x, sigma_y, offset):
