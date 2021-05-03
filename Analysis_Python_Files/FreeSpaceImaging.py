@@ -49,14 +49,15 @@ def photonCounting(pics, threshold):
     pcPicTotal = np.sum(pcPics,axis=0)
     return np.array(pcPicTotal), pcPics
 
-def getBgImgs(fid, incr=2,startPic=1):
+def getBgImgs(fid, incr=2,startPic=1, rmHighCounts=True):
     if type(fid) == int:
         with exp.ExpFile(fid) as file:
             pics = file.get_pics()
     else:
         pics = fid
     pics2 = pics[startPic::incr]
-    pics2 = rmHighCountPics(pics2, 7000)
+    if rmHighCounts:
+        pics2 = rmHighCountPics(pics2, 7000)
     avgBg = np.mean(pics2,0)
     avgPcBg = photonCounting(pics2, 120)[0] / len(pics2)
     return avgBg, avgPcBg
@@ -68,7 +69,7 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
                             dataRange=None, guessTemp=10e-6, trackFitCenter=False, picsPerRep=1, startPic=0, binningParams=None, 
                             win=pw.PictureWindow(), transferAnalysisOpts=None, tferBinningParams=None, tferWin= pw.PictureWindow(),
                             extraTferAnalysisArgs={}, emGainSetting=300, lastConditionIsBackGround=True, showTferAnalysisPlots=True,
-                            show2dFitsAndResiduals=True, plotFitAmps=False, indvColorRanges=False, fitF2D=gaussian_2d.f_notheta):
+                            show2dFitsAndResiduals=True, plotFitAmps=False, indvColorRanges=False, fitF2D=gaussian_2d.f_notheta, rmHighCounts=True):
     if type(fids) == int:
         fids = [fids]
     if keys is None:
@@ -117,9 +118,9 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             sortedStackedPics[keyV] = np.append(sortedStackedPics[keyV], allFSIPics[i],axis=0) if (keyV in sortedStackedPics) else allFSIPics[i]         
 
     if lastConditionIsBackGround:
-        bgInput, pcBgInput = getBgImgs(picsForBg, startPic = startPic, picsPerRep = picsPerRep)
+        bgInput, pcBgInput = getBgImgs(picsForBg, startPic = startPic, picsPerRep = picsPerRep, rmHighCounts=rmHighCounts)
     elif bgInput == 'lastPic':
-        bgInput, pcBgInput = getBgImgs(picsForBg, startPic = picsPerRep-1, picsPerRep = picsPerRep)
+        bgInput, pcBgInput = getBgImgs(picsForBg, startPic = picsPerRep-1, picsPerRep = picsPerRep, rmHighCounts=rmHighCounts)
     if bgInput is not None: # was broken and not working if not given bg
         bgInput = win.window(bgInput)
         bgInput = ah.softwareBinning(binningParams, bgInput)
@@ -155,7 +156,10 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             initKeyv = keyV
         varPics = sortedStackedPics[keyV]
         # 0 is init atom pics for post-selection on atom number... if we wanted to.
-        expansionPics = rmHighCountPics(varPics,7000)
+        if rmHighCounts:
+            expansionPics = rmHighCountPics(varPics,7000)
+        else:
+            expansionPics = varPics
         datalen[keyV] = len(expansionPics)
         expPhotonCountImage = photonCounting(expansionPics, 120)[0] / len(expansionPics)
         bgPhotonCountImage = np.zeros(expansionPics[0].shape) if bgPcInput[vari] is None else bgPcInput[vari]
@@ -403,7 +407,6 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
                 exp.annotate(fid)
     if clearOutput:
         disp.clear_output()
-    
     if calcTemperature: 
         for temp, err, label in zip(temps, tempErrs, ['Hor', 'Vert', 'Hor2D', 'Vert2D']): 
             print(label + ' temperature = ' + misc.errString(temp*1e6, err*1e6) + 'uk')
@@ -420,13 +423,13 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
     if transferAnalysisOpts is not None and showTferAnalysisPlots:
         colors, colors2 = misc.getColors(len(transferAnalysisOpts.initLocs()) + 2)#, cmStr=dataColor)
         pltShape = (transferAnalysisOpts.initLocsIn[-1], transferAnalysisOpts.initLocsIn[-2])
-        #mp.plotThresholdHists([initThresholds[0][0],initThresholds[1][0]], colors, shape=pltShape)
+        # mp.plotThresholdHists([initThresholds[0][0],initThresholds[1][0]], colors, shape=pltShape)
         mp.plotThresholdHists([initThresholds[0][0], initThresholds[0][0]], colors, shape=[1,2])
     return {'images':images, 'fits':hFitParams, 'errs':hFitErrs, 'pics':sortedStackedPics, 'hSigmas':hSigmas, 'sigmaErrors':hSigmaErrs, 'dataKey':keyPlt, 
             'hTotalPhotons':hTotalPhotons, 'tempCalc':temps, 'tempCalcErr':tempErrs, 'initThresholds':initThresholds[0], 
-            '2DFit':paramSet2D, '2DErr':errSet2D, 'bgPics':picsForBg}
+            '2DFit':fitParams2D, '2DErr':fitErrs2D, 'bgPics':picsForBg}
 
-def getBgImgs(bgSource, startPic=1, picsPerRep=2):
+def getBgImgs(bgSource, startPic=1, picsPerRep=2, rmHighCounts=True):
     """ Expects either a file ID number or a list (or an array) of images as input.
     """
     if type(bgSource) == int:
@@ -435,7 +438,8 @@ def getBgImgs(bgSource, startPic=1, picsPerRep=2):
     if type(bgSource) == type(np.array([])) or type(bgSource) == type([]):
         pics = bgSource
     pics2 = pics[startPic::picsPerRep]
-    pics2 = rmHighCountPics(pics2, 7000)
+    if rmHighCounts:
+        pics2 = rmHighCountPics(pics2, 7000)
     avgBg = np.mean(pics2,0)
     avgPcBg = photonCounting(pics2, 120)[0] / len(pics2)
     return avgBg, avgPcBg
