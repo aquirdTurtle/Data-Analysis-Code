@@ -102,7 +102,7 @@ def fancyImshow( fig, ax, image, avgSize='20%', pad_=0, cb=True, imageArgs={}, h
     ax.grid(False)
     ax.set_xticklabels([])
     ax.set_yticklabels([])
-    ax.axis('off')
+    #ax.axis('off')
     divider = mpl_toolkits.axes_grid1.make_axes_locatable(ax)
     cax = hax = vax = None
     hAvg, vAvg = ah.collapseImage(image)

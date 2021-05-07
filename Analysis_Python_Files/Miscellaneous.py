@@ -240,8 +240,9 @@ def round_sig_str(x, sig=3):
 
 def errString(val, err, precision=None):
     """
-    takes the input value and error and makes a nice error string. e.g.
-    inputs of
+    takes the input value and error and makes a nice error string. 
+    precision is the precision to display the value. if none it tries to be smart.
+    e.g. inputs of
     1.423, 0.086, 3 gives
     1.42(9)
     :param val:
@@ -269,6 +270,9 @@ def errString(val, err, precision=None):
     if precision is None:
         # determine first significant digit of error and use one more than that. 
         precision = int(valE - errE + 2)
+        #print(precision)
+        #if precision <= 0: 
+        #    precision = 1
     if np.isinf(valE):
         return "?(?)"
     try:
@@ -283,7 +287,13 @@ def errString(val, err, precision=None):
     if expFactor <= 0:
         expFactor = 0
     errNum = int(round(err*10**expFactor))
-    result = round_sig_str(val, precision) + '(' + round_sig_str(errNum, num) + ')'
+    valStr = round_sig_str(val, precision)
+    if valStr == "0":
+        # this is a weird case where the error is larger than the value, so the precision ends up being funny.
+        # alternatively could set precision to always simply be >0, but I don't actually want it to display something like 
+        # 0.000000000000000001(40000000000000000) I'd much rather 0.0(4)
+        valStr = round_sig_str(0, int(expFactor+num-1))
+    result = valStr + '(' + round_sig_str(errNum, num) + ')'
     return result
 
 

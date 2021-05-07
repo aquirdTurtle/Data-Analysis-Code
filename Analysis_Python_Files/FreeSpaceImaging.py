@@ -94,6 +94,7 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
         elif type(fid) == int:
             ### For looking at either PGC imgs or FSI imgs 
             with exp.ExpFile(fid) as file:
+                # I think this only makes sense if there is a specific bg pic in the rotation
                 picsForBg += list(file.get_pics())
                 allFSIPics = file.get_pics()[startPic::picsPerRep]
                 _, key = file.get_key()
@@ -105,6 +106,7 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             allFSIPics = np.reshape( allFSIPics, (len(key), int(allFSIPics.shape[0]/len(key)), allFSIPics.shape[1], allFSIPics.shape[2]) )
         else:
             ### Assumes given pics have the same start pic and increment (picsPerRep).
+            # doesn't combine well w/ transfer analysis
             picsForBg += fid
             allFSIPics = fid[startPic::picsPerRep]
             print("Assuming input is list of all pics, then splices to get FSI pics. Old code assumed the given were FSI pics.")

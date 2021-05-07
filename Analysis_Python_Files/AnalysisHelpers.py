@@ -16,6 +16,7 @@ import scipy.special as special
 import scipy.interpolate as interp
 import warnings
 
+from . import MatplotlibPlotters as mp
 from . import MarksConstants as mc
 from . import Miscellaneous as misc
 from .Miscellaneous import what
@@ -522,7 +523,7 @@ def combineData(data, key):
             newData.append(newItem)
     return arr(newData), arr(newKey)
 
-def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1, guess_x=None, guess_y=None, fitF=gaussian_2d.f_notheta, guessOffset=None):
+def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1, guess_x=None, guess_y=None, fitF=gaussian_2d.f_notheta, guessOffset=None, extraGuess=None):
     """
         Fit an individual picture with a 2d gaussian, and fit the horizontal and vertical averages with 1d gaussians
     """
@@ -536,6 +537,9 @@ def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1, guess_x=None, 
     X, Y = np.meshgrid(x, y)
     ### 2D Fit
     initial_guess = [(np.max(pic) - np.min(pic)), pos[1], pos[0], guessSigma_x, guessSigma_y, np.min(pic) if guessOffset is None else guessOffset]
+    # for fitting functions with more arguments
+    if extraGuess is not None:
+        initial_guess += extraGuess
     try:
         print('fitting...')
         popt, pcov = opt.curve_fit(fitF, (X, Y), pic, p0=initial_guess)#, epsfcn=0.01, ftol=0)
@@ -570,14 +574,24 @@ def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1, guess_x=None, 
         warn('Horizontal Average Picture Fitting Failed!')
         
     if showFit:
+        print(fitF)
         data_fitted = fitF((X,Y), *popt)
-        fig, axs = plt.subplots(1, 2)
+        fig, axs = plt.subplots(1, 3)
         plt.grid(False)
-        im = axs[0].pcolormesh(picture)#, extent=(x.min(), x.max(), y.min(), y.max()))
+        im = axs[0].imshow(picture, origin='lower')#, extent=(x.min(), x.max(), y.min(), y.max()))
         data_fitted = data_fitted.reshape(picture.shape[0],picture.shape[1])
         axs[0].contour(x, y, data_fitted, 4, colors='w', alpha=0.2)
-        fig.colorbar(im)
-        axs[1].imshow(data_fitted)
+        mp.addAxColorbar(fig, axs[0], im)
+        axs[0].set_title('Raw Data')
+        
+        im = axs[1].imshow( data_fitted, origin='lower')
+        mp.addAxColorbar(fig, axs[1], im)
+        axs[1].set_title('Fit')
+        
+        im = axs[2].imshow( picture - data_fitted, origin='lower' )
+        mp.addAxColorbar(fig, axs[2], im)
+        axs[2].contour(x, y, data_fitted, 4, colors='w', alpha=0.2)
+        axs[2].set_title('Residuals')
         
     return initial_guess, popt, np.sqrt(np.diag(pcov)), popt_v, np.sqrt(np.diag(pcov_v)), popt_h, np.sqrt(np.diag(pcov_h))
 
@@ -605,7 +619,7 @@ def fitPictures(pictures, dataRange, guessSigma_x=1, guessSigma_y=1, quiet=False
             v_param, v_err, h_param, h_err = [np.zeros(4) for _ in range(4)]
         else:
             try:
-                if firstIsGuide and picInc is not 0:
+                if firstIsGuide and picInc != 0:
                     # amplitude, xo, yo, sigma_x, sigma_y, theta, offset
                     _, parameters, errors, v_param, v_err, h_param, h_err = fitPic(picture, showFit=False, 
                                                                                    guess_x = fitParameters[0][1], guess_y = fitParameters[0][2], 
