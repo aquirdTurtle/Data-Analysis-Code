@@ -14,14 +14,16 @@ def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWind
                          keyParameter=None, keySlice=None):
                          
     """
-    Unpack inputs, properly shape the key, picture array, and run some initial checks on the consistency of the settings.
+        Unpack inputs, properly shape the key, picture array, and run some initial checks on the consistency of the settings.
     """
-    with exp.ExpFile(fileNumber, expFile_version=expFile_version, useBaseA=useBase, keyParameter=keyParameter) as f:
+    
+    with exp.ExpFile(fileNumber, expFile_version=expFile_version, useBase=useBase, keyParameter=keyParameter) as f:
         rawData, keyName, hdf5Key, repetitions = f.pics, f.key_name, f.key, f.reps
         if not quiet:
             basicInfoStr = f.get_basic_info()
         if (rawData[0] == np.zeros(rawData[0].shape)).all():
             raise ValueError("Pictures in Data are all zeros?!")
+        isAnn = f.isAnnotated()
     if removePics is not None:
         for index in reversed(sorted(removePics)):
             rawData = np.delete(rawData, index, 0)
@@ -51,7 +53,7 @@ def organizeTransferData( fileNumber, analysisOpts, key=None, win=pw.PictureWind
     numOfPictures = groupedData.shape[0] * groupedData.shape[1]
     allAvgPics = ah.getAvgPics(groupedData, picsPerRep=picsPerRep)
     avgPics = [allAvgPics[analysisOpts.initPic], allAvgPics[analysisOpts.tferPic]]
-    return binnedData, groupedData, keyName, repetitions, key, numOfPictures, avgPics, basicInfoStr, analysisOpts, groupedRawData
+    return binnedData, groupedData, keyName, repetitions, key, numOfPictures, avgPics, basicInfoStr, analysisOpts, groupedRawData, isAnn
 
 def getGeneralEvents(pic1Atoms, pic2Atoms, positiveResultCondition):
     eventList = ah.getConditionHits( [pic1Atoms, pic2Atoms], positiveResultCondition);
@@ -171,7 +173,6 @@ def handleTransferFits(analysisOpts, fitModules, key, avgTferData, fitguess, get
             raise ValueError("ERROR: length of fitmodules should be" + str(numDataSets+1) + "(Includes avg fit)")
         for i, (loc, module) in enumerate(zip(range(analysisOpts.numDataSets()), fitModules)):
             fits[i], _ = ah.fitWithModule(module, key, tferAtomsVarAvg[i], guess=fitguess[i], getF_args=getFitterArgs[i])
-        #print('fitguess',fitguess,fitguess[-1])
         avgFit, _ = ah.fitWithModule(fitModules[-1], key, avgTferData, guess=fitguess[-1], getF_args=getFitterArgs[-1], maxfev=100000)
     return fits, avgFit, fitModules
 
@@ -216,7 +217,7 @@ def stage1TransferAnalysis(fileNumber, analysisOpts, picsPerRep=2, varyingDim=No
     #assert(type(analysisOpts) == ao.TransferAnalysisOptions)
     print("sta: Organizing Transfer Data...")
     ( binnedData, groupedData, keyName, repetitions, key, numOfPictures, avgPics, basicInfoStr, analysisOpts, 
-     groupedRawData ) = organizeTransferData( fileNumber, analysisOpts, picsPerRep=picsPerRep, varyingDim=varyingDim, **organizerArgs )
+     groupedRawData, isAnnotated ) = organizeTransferData( fileNumber, analysisOpts, picsPerRep=picsPerRep, varyingDim=varyingDim, **organizerArgs )
     print("sta: Getting Transfer Thresholds...")
     res = getTransferThresholds( analysisOpts, binnedData, groupedData, picsPerRep, tOptions )
     borders_init, borders_tfer, initThresholds, tferThresholds = res
@@ -240,7 +241,7 @@ def stage1TransferAnalysis(fileNumber, analysisOpts, picsPerRep=2, varyingDim=No
                     groupedPostSelectedPics[varInc][conditionnum].append(repPics[picNum])
         initAtoms[varInc], tferAtoms[varInc], _ = ah.postSelectOnAssembly(initAtoms[varInc], tferAtoms[varInc], analysisOpts, justReformat=True)
     return (initAtoms, tferAtoms, initAtomsPs, tferAtomsPs, key, keyName, initPicCounts, tferPicCounts, repetitions, initThresholds,
-            avgPics, tferThresholds, initAtomImages, tferAtomImages, basicInfoStr, ensembleHits, groupedPostSelectedPics)
+            avgPics, tferThresholds, initAtomImages, tferAtomImages, basicInfoStr, ensembleHits, groupedPostSelectedPics, isAnnotated)
 
 def standardTransferAnalysis( fileNumber, analysisOpts, picsPerRep=2, fitModules=[None], varyingDim=None, getGenerationStats=False, 
                               fitguess=[None], forceAnnotation=True, tOptions=[to.ThresholdOptions()], getFitterArgs=[None], **organizerArgs ):
@@ -249,7 +250,7 @@ def standardTransferAnalysis( fileNumber, analysisOpts, picsPerRep=2, fitModules
     """
     res = stage1TransferAnalysis( fileNumber, analysisOpts, picsPerRep, varyingDim, tOptions, **organizerArgs )
     (initAtoms, tferAtoms, initAtomsPs, tferAtomsPs, key, keyName, initPicCounts, tferPicCounts, repetitions, initThresholds,
-            avgPics, tferThresholds, initAtomImages, tferAtomImages, basicInfoStr, ensembleHits, groupedPostSelectedPics)  = res
+            avgPics, tferThresholds, initAtomImages, tferAtomImages, basicInfoStr, ensembleHits, groupedPostSelectedPics, isAnnotated)  = res
     print("sta: Getting Transfer Averages...")
     res = getTransferAvgs(analysisOpts, initAtomsPs, tferAtomsPs)
     avgTferData, avgTferErr, tferVarAvg, tferVarErr, tferAtomsVarAvg, tferAtomsVarErrs, tferList = res
@@ -269,4 +270,4 @@ def standardTransferAnalysis( fileNumber, analysisOpts, picsPerRep=2, fitModules
     return (tferAtomsVarAvg, tferAtomsVarErrs, loadAtomsVarAvg, initPicCounts, keyName, key, repetitions, initThresholds, 
             fits, avgTferData, avgTferErr, avgFit, avgPics, genAvgs, genErrs, tferVarAvg, tferVarErr, initAtomImages, 
             tferAtomImages, tferPicCounts, tferThresholds, fitModules, basicInfoStr, ensembleHits, tOptions, analysisOpts,
-            tferAtomsPs, tferAtomsPs, tferList)
+            tferAtomsPs, tferAtomsPs, tferList, isAnnotated)

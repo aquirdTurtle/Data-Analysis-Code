@@ -487,7 +487,6 @@ def fitWithModule(module, key, vals, errs=None, guess=None, getF_args=[None], ma
         fitF = module.getF(*getF_args) if hasattr(module, 'getF') else module.f
         fitF_unc = module.getF_unc(*getF_args) if hasattr(module, 'getF_unc') else module.f_unc
         warn('Data Fit Failed! ' + str(e))
-        print('stuff',key, vals, guessUsed)
         fitValues = module.guess(key, vals)
         fitNom = fitF(xFit, *fitValues)
         fitFinished = False        
@@ -541,7 +540,6 @@ def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1, guess_x=None, 
     if extraGuess is not None:
         initial_guess += extraGuess
     try:
-        print('fitting...')
         popt, pcov = opt.curve_fit(fitF, (X, Y), pic, p0=initial_guess)#, epsfcn=0.01, ftol=0)
     except RuntimeError:
         popt = np.zeros(len(initial_guess))
@@ -574,7 +572,6 @@ def fitPic(picture, showFit=True, guessSigma_x=1, guessSigma_y=1, guess_x=None, 
         warn('Horizontal Average Picture Fitting Failed!')
         
     if showFit:
-        print(fitF)
         data_fitted = fitF((X,Y), *popt)
         fig, axs = plt.subplots(1, 3)
         plt.grid(False)
@@ -1302,14 +1299,11 @@ def postSelectOnAssembly( pic1AtomData, pic2AtomData, analysisOpts, justReformat
         for conditionInc, condition in enumerate(analysisOpts.postSelectionConditions[dataSetInc]):
             # see getEnsembleHits for more discussion on how the post-selection is working here. 
             conditionHits[conditionInc] = getConditionHits([pic1AtomData, pic2AtomData], condition)        
-        #print('hello, world!')
-        #print(conditionHits, pic1AtomData, analysisOpts.postSelectionConditions[dataSetInc])        
         for repNum in range(totalRepNum):
             allCondMatch = True
             for condition in conditionHits:
                 if condition[repNum] == False:
                     allCondMatch = False
-            #print('!' if allCondMatch else '.', end='')
             if allCondMatch or justReformat:
                 indvAtoms1, indvAtoms2 = [], []
                 for atomInc in range(len(pic1AtomData)):

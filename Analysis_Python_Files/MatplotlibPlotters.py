@@ -37,7 +37,7 @@ from . import ExpFile as exp
 
 def addAxColorbar(fig, ax, im):
     cax = mpl_toolkits.axes_grid1.make_axes_locatable(ax).append_axes('right', size='5%', pad=0.05)
-    fig.colorbar(im, cax=cax, orientation='vertical')
+    return fig.colorbar(im, cax=cax, orientation='vertical'), cax
 
 def makeAvgPlts(avgPlt1, avgPlt2, avgPics, analysisOpts, colors):        
     print("Making Avg Plots...")
@@ -584,7 +584,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
     (transferData, transferErrs, initPopulation, pic1Data, keyName, key, repetitions, initThresholds, 
      fits, avgTransferData, avgTransferErr, avgFit, avgPics, genAvgs, genErrs, transVarAvg, transVarErr, 
      initAtomImages, transAtomImages, pic2Data, transThresholds, fitModules, basicInfoStr, ensembleHits, 
-     tOptions, analysisOpts, initAtoms, tferAtoms, tferList) = res
+     tOptions, analysisOpts, initAtoms, tferAtoms, tferList, isAnnotated) = res
     print('key:',key)
     if flattenKeyDim != None:
         key = key[:,flattenKeyDim]
@@ -676,7 +676,6 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
             leg += ps.name +','
         leg += ")"
         unevenErrs = [[err[0] for err in transferErrs[dataSetInc]], [err[1] for err in transferErrs[dataSetInc]]]
-        print('!!!!', key, transferData[dataSetInc], unevenErrs)
         mainPlot.errorbar ( key, transferData[dataSetInc], yerr=unevenErrs, color=color, ls='',
                             capsize=6, elinewidth=3, label=leg, 
                            alpha=0.3 if plotAvg else 0.9, marker=markers[dataSetInc%len(markers)], markersize=15,
@@ -771,7 +770,6 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
                 avgInitPopPic, l30, l31 = genAvgDiscrepancyImage(avgPops, avgPics[0].shape, analysisOpts.initLocs())
                 
                 if genAvgs is not None:
-                    print('genavgs',genAvgs)
                     genAtomAvgs = [np.mean(dp) for dp in genAvgs] if genAvgs[0] is not None else [0]
                     genImage, _, l41 = genAvgDiscrepancyImage(genAtomAvgs, avgPics[0].shape, 
                                                               analysisOpts.initLocs()) if genAvgs[0] is not None else (np.zeros(avgPics[0].shape), 0, 1)
@@ -815,7 +813,6 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
             avgInitPopPic, l30, l31 = genAvgDiscrepancyImage(avgPops, avgPics[0].shape, analysisOpts.initLocs())
 
             if genAvgs is not None:
-                print('genavgs',genAvgs)
                 genAtomAvgs = [np.mean(dp) for dp in genAvgs] if genAvgs[0] is not None else [0]
                 genImage, _, l41 = genAvgDiscrepancyImage(genAtomAvgs, avgPics[0].shape, 
                                                           analysisOpts.initLocs()) if genAvgs[0] is not None else (np.zeros(avgPics[0].shape), 0, 1)
@@ -907,7 +904,6 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
         fid.get_basic_info()
     
     if fitModules[-1] is not None and avgFit['errs'] is not None:
-        print(avgFit['errs'])
         print("Avg Fit R-Squared: " + misc.round_sig_str(avgFit["R-Squared"]))
         fitInfoString = ""
         for label, fitVal, err in zip(fitModules[-1].args(), avgFit['vals'], avgFit['errs']):
@@ -937,13 +933,11 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
             'Ensemble_Hits':ensembleHits, 'InitAtoms':initAtoms, 'TferAtoms':tferAtoms, 'tferList':tferList, 'Main_Axis':mainPlot,
             'Figures':[fig, *f_imgPlots]}
 
-
 def Loading(fileID, atomLocs, **TransferArgs):
     """
     A small wrapper, partially for the extra defaults in this case partially for consistency with old function definitions.
     """
     return Transfer(fileID, tao.getStandardLoadingOptions(atomLocs), atomLocs, **TransferArgs)
-
 
 def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=True, legendOption=None, showImagePlots=True,
                plotIndvHists=False, showFitDetails=False, showFitCharacterPlot=True, show=True, histMain=False,
@@ -1014,7 +1008,6 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
                 #leg += (typeName + " % = " + str(round_sig(allPops[i][0])) + "$\pm$ "
                 #        + str(round_sig(allPopsErr[i][0])))
             unevenErrs = [[err[0] for err in allPopsErr[i]], [err[1] for err in allPopsErr[i]]]
-            print(unevenErrs)
             mainPlot.errorbar(key, allPops[i], yerr=unevenErrs, color=colors[i], ls='',
                               capsize=6, elinewidth=3, label=leg, alpha=mainAlpha, marker=markers[i%len(markers)],markersize=5)
             if module is not None:
