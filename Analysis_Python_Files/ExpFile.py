@@ -8,15 +8,15 @@ import datetime
 dataAddress = None
 currentVersion = 4
 
-def annotate(fileID=None, expFile_version=currentVersion, useBaseA=True):
+def annotate(fileID=None, expFile_version=currentVersion, useBase=True):
     #hashNum = int(input("Title-Level: "))
     hashNum = 3
     #titleStr = ''.join('#' for _ in range(hashNum)) + ' ' + title
     with ExpFile(expFile_version=expFile_version) as file:
         print('annotating file ' + str(fileID));
-        file.open_hdf5(fileID, openFlag='a', useBase=useBaseA)
+        file.open_hdf5(fileID, openFlag='a', useBase=useBase)
         if checkAnnotation(fileID, force=False, expFile_version=expFile_version):        
-            title, notes, num = getAnnotation(fileID, expFile_version=expFile_version, useBaseA=useBaseA)
+            title, notes, num = getAnnotation(fileID, expFile_version=expFile_version, useBase=useBase)
             title = input("Run Title (\"q\" to Quit) (prev was \""+title+"\"):")
             if title == 'q':
                 raise RuntimeError("Annotation Quit")
@@ -47,9 +47,9 @@ def annotate(fileID=None, expFile_version=currentVersion, useBaseA=True):
         dset4[0] = hashNum
 
         
-def checkAnnotation(fileNum, force=True, quiet=False, expFile_version=currentVersion):
+def checkAnnotation(fileNum, force=True, useBase=True, quiet=False, expFile_version=currentVersion):
     try:
-        with ExpFile(fileNum, expFile_version=expFile_version) as f:
+        with ExpFile(fileNum, useBase=useBase, expFile_version=expFile_version) as f:
             if (   'Experiment_Notes' not in f.f['Miscellaneous']
                 or 'Experiment_Title' not in f.f['Miscellaneous']):
                 #pass
@@ -67,9 +67,9 @@ def checkAnnotation(fileNum, force=True, quiet=False, expFile_version=currentVer
     return True
 
 
-def getAnnotation(fid, expFile_version=currentVersion, useBaseA=True):
+def getAnnotation(fid, expFile_version=currentVersion, useBase=True):
     with ExpFile() as f:
-        f.open_hdf5(fid, useBase=useBaseA)
+        f.open_hdf5(fid, useBase=useBase)
         f_misc = f.f['Miscellaneous']
         if (   'Experiment_Notes' not in f_misc
             or 'Experiment_Title' not in f_misc):
@@ -82,16 +82,18 @@ def getAnnotation(fid, expFile_version=currentVersion, useBaseA=True):
                 f_misc['Experiment_Notes'][0].decode("utf-8"),
                 expTitleLevel)
     
-def getConfiguration(fid, expFile_version=currentVersion, useBaseA=True):
+def getConfiguration(fid, expFile_version=currentVersion, useBase=True):
     with ExpFile() as file:
-        file.open_hdf5(fid, useBase=useBaseA)
+        file.open_hdf5(fid, useBase=useBase)
         f_MI = file.f['Master-Input']
         if ('Configuration' not in f_MI):
             return ""
         return ''.join([char.decode('utf-8') for char in f_MI['Configuration']])
     
 #"J:\\Data repository\\New Data Repository"
-def setPath(day, month, year, repoAddress="\\\\jilafile.colorado.edu\\scratch\\regal\\common\\LabData\\Quantum Gas Assembly\\Data repository\\New Data Repository"):
+#r'\\DESKTOP-ASQ07EB\Local_Data_Repository'
+#"\\\\jilafile.colorado.edu\\scratch\\regal\\common\\LabData\\Quantum Gas Assembly\\Data repository\\New Data Repository"
+def setPath(day, month, year, repoAddress=r'\\DESKTOP-ASQ07EB\Local_Data_Repository'):
     """
     This function sets the location of where all of the data files are stored. It is occasionally called more
     than once in a notebook if the user needs to work past midnight.
@@ -107,7 +109,6 @@ def setPath(day, month, year, repoAddress="\\\\jilafile.colorado.edu\\scratch\\r
     if type(year) == int:
         year = str(year)
     dataAddress = repoAddress + "\\" + year + "\\" + month + "\\" + month + " " + day + "\\Raw Data\\"
-    #print("Setting new data address:" + dataAddress)
     return dataAddress
 
 
@@ -136,13 +137,12 @@ class ExpFile:
     """
     a wrapper around an hdf5 file for easier handling and management.
     """
-    def __init__(self, file_id=None, expFile_version=currentVersion, useBaseA=True, keyParameter=None):
+    def __init__(self, file_id=None, expFile_version=currentVersion, useBase=True, keyParameter=None):
         """
         if you give the constructor a file_id, it will automatically fill the relevant member variables.
         """
         if expFile_version is None:
             expFile_version = currentVersion
-        #print('expfile version:', expFile_version)
         # copy the current value of the address
         self.version = expFile_version
         self.f = None
@@ -156,7 +156,7 @@ class ExpFile:
         self.exp_stop_date = None
         self.data_addr = dataAddress
         if file_id is not None:
-            self.f = self.open_hdf5(fileID=file_id, useBase=useBaseA)
+            self.f = self.open_hdf5(fileID=file_id, useBase=useBase)
             if self.version==1:
                 self.key_name, self.key = self.__get_old_key()
             else:
@@ -175,10 +175,12 @@ class ExpFile:
             return self.f.close()
         except AttributeError:
             return
-            
+    
+    def isAnnotated(self):
+        if ('Experiment_Notes' not in self.f['Miscellaneous'] or 'Experiment_Title' not in self.f['Miscellaneous']):
+            return False
     
     def open_hdf5(self, fileID=None, useBase=True, openFlag='r'):      
-        
         if type(fileID) == int:
             path = self.data_addr + "data_" + str(fileID) + ".h5"
         elif useBase:

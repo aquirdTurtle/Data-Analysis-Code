@@ -50,10 +50,9 @@ def f_unc(x, A, tau, freq, phi, offset):
 def guess(key, vals):
     A_g = 0.3
     # A_g = (max(vals) - min(vals)) / 2
-    tau_g = 10
+    tau_g = 5
     # tau_g = (max(key) - min(key)) * 2
-    # assumes starts at zero then goes to max value or so. May need to modify.
-    f_g = 0.65
+    f_g = 0.3
     phi_g = 1
     offset_g = 0.5
     return [0.8, 10, 0.45, 1, 0.5]

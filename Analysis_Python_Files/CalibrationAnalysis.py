@@ -43,9 +43,7 @@ def loadAllTemperatureData():
                         times.append(datetime.strptime(year_+':'+month_+':'+day_ + ':' + x, '%Y:%B:%d:%H:%M'))
                     for i in range(4):
                         temps[i] += list(data[3*(i+1)])
-                except FileNotFoundError:
-                    pass
-                except ValueError:
+                except (FileNotFoundError, TypeError, ValueError):
                     pass
 
     cTemps, cTimes = [[],[]]

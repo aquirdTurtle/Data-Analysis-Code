@@ -1,3 +1,4 @@
+# data analysis code v
 from matplotlib.colors import ListedColormap
 from matplotlib import cm
 import numpy as np
@@ -27,11 +28,11 @@ for i in range(256):
     dark_viridis[-1][2] = dark_viridis[-1][2] *(bl+(1-bl)*i/255)
 dark_viridis_cmap = ListedColormap(dark_viridis)
 
-def rmHighCountPics(pics, threshold):
+def rmHighCountPics(pics, maxThreshold=7000, sumThreshold=200):
     deleteList = []
-    discardThreshold = 7000
+    numPix = len(pics[0].flatten())
     for i, p in enumerate(pics):
-        if max(p.flatten()) > discardThreshold:
+        if max(p.flatten()) > maxThreshold or sum(p.flatten())/numPix > sumThreshold:
             deleteList.append(i)
     if len(deleteList) != 0:
         print('Not using suspicious data:', deleteList)
@@ -49,14 +50,15 @@ def photonCounting(pics, threshold):
     pcPicTotal = np.sum(pcPics,axis=0)
     return np.array(pcPicTotal), pcPics
 
-def getBgImgs(fid, incr=2,startPic=1):
+def getBgImgs(fid, incr=2,startPic=1, rmHighCounts=True):
     if type(fid) == int:
         with exp.ExpFile(fid) as file:
             pics = file.get_pics()
     else:
         pics = fid
     pics2 = pics[startPic::incr]
-    pics2 = rmHighCountPics(pics2, 7000)
+    if rmHighCounts:
+        pics2 = rmHighCountPics(pics2, 7000)
     avgBg = np.mean(pics2,0)
     avgPcBg = photonCounting(pics2, 120)[0] / len(pics2)
     return avgBg, avgPcBg
@@ -68,32 +70,39 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
                             dataRange=None, guessTemp=10e-6, trackFitCenter=False, picsPerRep=1, startPic=0, binningParams=None, 
                             win=pw.PictureWindow(), transferAnalysisOpts=None, tferBinningParams=None, tferWin= pw.PictureWindow(),
                             extraTferAnalysisArgs={}, emGainSetting=300, lastConditionIsBackGround=True, showTferAnalysisPlots=True,
-                            show2dFitsAndResiduals=True, plotFitAmps=False):
-    if type(fids) == int:
-        fids = [fids]
-    if keys is None:
-        keys = [None for _ in fids]
+                            show2dFitsAndResiduals=True, plotFitAmps=False, indvColorRanges=False, fitF2D=gaussian_2d.f_notheta, 
+                            rmHighCounts=True, useBase=True, weightBackgroundByLoading=True, returnPics=False, forceNoAnnotation=False):
+    """
+    returnPics is false by default in order to conserve memory. The total picture arrays of lots of experiments can take up a lot of RAM and are usually unnecessary,
+    """
+    fids = [fids] if type(fids) == int else fids
+    keys = [None for _ in fids] if keys is None else keys
     sortedStackedPics = {}
     initThresholds = [None]
     picsForBg = []
+    bgWeights = []
+    isAnnotatedList = []
     for filenum, fid in enumerate(fids):
         if transferAnalysisOpts is not None:
-            res = ta.stage1TransferAnalysis( fid, transferAnalysisOpts, **extraTferAnalysisArgs )
+            res = ta.stage1TransferAnalysis( fid, transferAnalysisOpts, useBase=useBase, **extraTferAnalysisArgs )
             (initAtoms, tferAtoms, initAtomsPs, tferAtomsPs, key, keyName, initPicCounts, tferPicCounts, repetitions, initThresholds,
-             avgPics, tferThresholds, initAtomImages, tferAtomImages, basicInfoStr, ensembleHits, groupedPostSelectedPics) = res
+             avgPics, tferThresholds, initAtomImages, tferAtomImages, basicInfoStr, ensembleHits, groupedPostSelectedPics, isAnnotated) = res
+            isAnnotatedList.append(isAnnotated)
             # assumes that you only want to look at the first condition. 
-            for varPics in groupedPostSelectedPics:
-                picsForBg += varPics[-1 if lastConditionIsBackGround else 0]
+            for varPics in groupedPostSelectedPics: # don't remember why 0 works if false...
+                picsForBg.append(varPics[-1 if lastConditionIsBackGround else 0])
+                bgWeights.append(len(varPics[0]))
             allFSIPics = [ varpics[0][startPic::picsPerRep] for varpics in groupedPostSelectedPics]
             if showTferAnalysisPlots:
                 fig, axs = plt.subplots(1,2)
-                mp.makeAvgPlts(axs[0],axs[1], avgPics, transferAnalysisOpts, ['r','g','b']) 
+                mp.makeAvgPlts( axs[0], axs[1], avgPics, transferAnalysisOpts, ['r','g','b'] ) 
             allFSIPics = [win.window( np.array(pics) ) for pics in allFSIPics]
             allFSIPics = ah.softwareBinning( binningParams, allFSIPics )
         elif type(fid) == int:
             ### For looking at either PGC imgs or FSI imgs 
             with exp.ExpFile(fid) as file:
-                picsForBg += list(file.get_pics())
+                # I think this only makes sense if there is a specific bg pic in the rotation
+                picsForBg.append(list(file.get_pics()))
                 allFSIPics = file.get_pics()[startPic::picsPerRep]
                 _, key = file.get_key()
                 if len(np.array(key).shape) == 2:
@@ -104,22 +113,25 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             allFSIPics = np.reshape( allFSIPics, (len(key), int(allFSIPics.shape[0]/len(key)), allFSIPics.shape[1], allFSIPics.shape[2]) )
         else:
             ### Assumes given pics have the same start pic and increment (picsPerRep).
-            picsForBg += fid
+            # doesn't combine well w/ transfer analysis
+            picsForBg.append(fid)
             allFSIPics = fid[startPic::picsPerRep]
             print("Assuming input is list of all pics, then splices to get FSI pics. Old code assumed the given were FSI pics.")
             allFSIPics = win.window( allFSIPics )
             allFSIPics = ah.softwareBinning( binningParams, allFSIPics )
             allFSIPics = np.reshape( allFSIPics, (len(key), int(allFSIPics.shape[0]/len(key)), allFSIPics.shape[1], allFSIPics.shape[2]) )
+        # ##############
         if keys[filenum] is not None:
             key = keys[filenum]
         for i, keyV in enumerate(key):
             keyV = misc.round_sig_str(keyV)
             sortedStackedPics[keyV] = np.append(sortedStackedPics[keyV], allFSIPics[i],axis=0) if (keyV in sortedStackedPics) else allFSIPics[i]         
-
     if lastConditionIsBackGround:
-        bgInput, pcBgInput = getBgImgs(picsForBg, startPic = startPic, picsPerRep = picsPerRep)
+        bgInput, pcBgInput = getBgImgs(picsForBg, startPic = startPic, picsPerRep = picsPerRep, rmHighCounts=rmHighCounts, bgWeights=bgWeights, 
+                                       weightBackgrounds=weightBackgroundByLoading)
     elif bgInput == 'lastPic':
-        bgInput, pcBgInput = getBgImgs(picsForBg, startPic = picsPerRep-1, picsPerRep = picsPerRep)
+        bgInput, pcBgInput = getBgImgs(picsForBg, startPic = picsPerRep-1, picsPerRep = picsPerRep, rmHighCounts=rmHighCounts, bgWeights=bgWeights,
+                                       weightBackgrounds=weightBackgroundByLoading )
     if bgInput is not None: # was broken and not working if not given bg
         bgInput = win.window(bgInput)
         bgInput = ah.softwareBinning(binningParams, bgInput)
@@ -134,8 +146,7 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             for keyV, pics in dictionary.items():
                 sortedStackedPics[keyV] = (np.append(sortedStackedPics[keyV], pics,axis=0) if keyV in sortedStackedPics else pics)    
     sortedStackedKeyFl = [float(keyStr) for keyStr in sortedStackedPics.keys()]
-    sortedKey = list(sorted(sortedStackedKeyFl))
-    sortedKey, sortedStackedPics = ah.applyDataRange(dataRange, sortedStackedPics, sortedKey)
+    sortedKey, sortedStackedPics = ah.applyDataRange(dataRange, sortedStackedPics, list(sorted(sortedStackedKeyFl)))
     numVars = len(sortedStackedPics.items())
     if len(np.array(shapes).shape) == 1:
         shapes = [shapes for _ in range(numVars)]       
@@ -151,9 +162,11 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
     assert(len(sortedKey)>0)
     for vari, keyV in enumerate(sortedKey):
         keyV=misc.round_sig_str(keyV)
+        if vari==0:
+            initKeyv = keyV
         varPics = sortedStackedPics[keyV]
         # 0 is init atom pics for post-selection on atom number... if we wanted to.
-        expansionPics = rmHighCountPics(varPics,7000)
+        expansionPics = rmHighCountPics(varPics,7000) if rmHighCounts else varPics
         datalen[keyV] = len(expansionPics)
         expPhotonCountImage = photonCounting(expansionPics, 120)[0] / len(expansionPics)
         bgPhotonCountImage = np.zeros(expansionPics[0].shape) if bgPcInput[vari] is None else bgPcInput[vari]
@@ -167,13 +180,15 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
         avg_mbgpc = expPhotonCountImage - bgPhotonCountImage
         images[keyV] = [expAvg, expPhotonCountImage, avg_mbg, avg_mbgpc]
         hFitParams[keyV], hFitErrs[keyV], vFitParams[keyV], vFitErrs[keyV], fitParams2D[keyV], fitErrs2D[keyV] = [[] for _ in range(6)]
-        for im, guess in zip(images[keyV], guesses[vari]):
+        for imnum, (im, guess) in enumerate(zip(images[keyV], guesses[vari])):
             if fit:
+                # fancy guess_x and guess_y values use the initial fitted value, typically short time, as a guess.
                 _, pictureFitParams2d, pictureFitErrors2d, v_params, v_errs, h_params, h_errs = ah.fitPic(
-                    im, guessSigma_x=5, guessSigma_y=5, showFit=False)
+                    im, guessSigma_x=5, guessSigma_y=5, showFit=False, 
+                    guess_x=None if vari==0 else fitParams2D[initKeyv][imnum][1], guess_y=None if vari==0 else fitParams2D[initKeyv][imnum][2],
+                    fitF=fitF2D)
                 fitParams2D[keyV].append(pictureFitParams2d)
                 fitErrs2D[keyV].append(pictureFitErrors2d)
-                
                 hFitParams[keyV].append(h_params)
                 hFitErrs[keyV].append(h_errs)
                 vFitParams[keyV].append(v_params)
@@ -183,7 +198,10 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
     mins, maxes = [[], []]
     imgs_ = np.array(list(images.values()))
     for imgInc in range(4):
-        if manualColorRange is None:
+        if indvColorRanges:
+            mins.append(None)
+            maxes.append(None)
+        elif manualColorRange is None:
             mins.append(min(imgs_[:,imgInc].flatten()))
             maxes.append(max(imgs_[:,imgInc].flatten()))
         else:
@@ -196,12 +214,14 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             axs = np.array([axs])
         bgFig, bgAxs = plt.subplots(1, 2, figsize=(20, pltVSize))
     else:
-        numRows = int(np.ceil((numVariations+2)/4))
+        numRows = int(np.ceil((numVariations+3)/4))
         fig, axs = plt.subplots(numRows, 4 if numVariations>1 else 3, figsize=(20, pltVSize*numRows))
+        avgPicAx = axs.flatten()[-3]
+        avgPicFig = fig
         bgAxs = [axs.flatten()[-1], axs.flatten()[-2]]
         bgFig = fig
     if show2dFitsAndResiduals:
-        fig2d, axs2d = plt.subplots(2,numVariations)
+        fig2d, axs2d = plt.subplots(*((2,numVariations) if numVariations>1 else (1,2)))
     keyPlt = np.zeros(len(images))
     (totalSignal, hfitCenter, hFitCenterErrs, hSigmas, hSigmaErrs, h_amp, hAmpErrs, vfitCenter, vFitCenterErrs, vSigmas, vSigmaErrs, v_amp, 
      vAmpErrs, hSigma2D, hSigma2dErr, vSigma2D, vSigma2dErr) = [np.zeros((len(images), 4)) for _ in range(17)]
@@ -222,7 +242,7 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             v_amp[vari][which], vfitCenter[vari][which], vSigmas[vari][which] = vparams[0], vparams[1], vparams[2]*cf*1e6
             vAmpErrs[vari][which], vFitCenterErrs[vari][which], vSigmaErrs[vari][which] = vErrs[0], vErrs[1], vErrs[2]*cf*1e6
             hSigma2D[vari][which], hSigma2dErr[vari][which], vSigma2D[vari][which], vSigma2dErr[vari][which] = [
-                val*cf*1e6 for val in [param2d[-3], err2d[-3], param2d[-2], err2d[-2]]]
+                                            val*cf*1e6 for val in [param2d[-3], err2d[-3], param2d[-2], err2d[-2]]]
             
             totalSignal[vari][which] = np.sum(im.flatten())
             keyPlt[vari] = keyV
@@ -231,26 +251,22 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             ax.set_title(keyV + ': ' + str(datalen[keyV]) + ';\n' + title + ': ' + misc.errString(hSigmas[vari][which],hSigmaErrs[vari][which]) 
                 + r'$\mu m$ sigma, ' + misc.round_sig_str(totalSignal[vari][which],5), fontsize=12)            
             if show2dFitsAndResiduals:
-                x, y  = np.arange(len(im[0])), np.arange(len(im))
-                X, Y = np.meshgrid(x,y)
-                data_fitted = gaussian_2d.f_notheta((X,Y), *param2d)
+                X, Y = np.meshgrid(np.arange(len(im[0])), np.arange(len(im)))
+                data_fitted = fitF2D((X,Y), *param2d)
                 fitProper = data_fitted.reshape(im.shape[0],im.shape[1])
-                if numVariations == 1:
-                    imr = axs2d[0].imshow(fitProper, vmin=min_, vmax=max_)
-                    mp.addAxColorbar(fig2d, axs2d[0], imr)
-                    axs2d[0].contour(x, y, fitProper, 4, colors='w', alpha=0.2)
-                    imr = axs2d[1].imshow(fitProper-im)
-                    mp.addAxColorbar(fig2d, axs2d[1], imr)
-                    axs2d[1].contour(x, y, fitProper, 4, colors='w', alpha=0.2)
-                else:
-                    imr = axs2d[0,vari].imshow(fitProper, vmin=min_, vmax=max_)
-                    mp.addAxColorbar(fig2d, axs2d[0,vari], imr)
-                    axs2d[0,vari].contour(x, y, fitProper, 4, colors='w', alpha=0.2)
-                    imr = axs2d[1,vari].imshow(fitProper-im)
-                    mp.addAxColorbar(fig2d, axs2d[1,vari], imr)
-                    axs2d[1,vari].contour(x, y, fitProper, 4, colors='w', alpha=0.2)
+                ax1 = axs2d[0] if numVariations == 1 else axs2d[0,vari]
+                ax2 = axs2d[1] if numVariations == 1 else axs2d[1,vari]
+                imr = ax1.imshow(fitProper, vmin=min_, vmax=max_)
+                mp.addAxColorbar(fig2d, ax1, imr)
+                ax1.contour(np.arange(len(im[0])), np.arange(len(im)), fitProper, 4, colors='w', alpha=0.2)
+                imr = ax2.imshow(fitProper-im)
+                mp.addAxColorbar(fig2d, ax2, imr)
+                ax2.contour(np.arange(len(im[0])), np.arange(len(im)), fitProper, 4, colors='w', alpha=0.2)
             if onlyThisPic is not None:
-                break            
+                break
+    
+    mp.fancyImshow(avgPicFig, avgPicAx, np.mean([img[onlyThisPic] for img in images.values()],axis=0), imageArgs={'cmap':dark_viridis_cmap},flipVAx = True)
+    avgPicAx.set_title('Average Over Variations')
     ### Plotting background and photon counted background
     mp.fancyImshow(bgFig, bgAxs[0], bgAvg, imageArgs={'cmap':dark_viridis_cmap},flipVAx = True) 
     bgAxs[0].set_title('Background image (' + str(len(picsForBg)/picsPerRep) + ')')
@@ -328,7 +344,6 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
         # Create axis to plot photon counts
         ax.set_ylabel(r'Integrated signal')
         photon_axis = ax.twinx()
-        colors = ['red', 'orange', 'yellow', 'pink']
         # This is not currently doing any correct for e.g. the loading rate.
         countToCameraPhotonEM = 0.018577 / (emGainSetting/200) # the float is is EM200. 
         countToScatteredPhotonEM = 0.018577 / 0.07 / (emGainSetting/200)
@@ -354,7 +369,7 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
                 totalCountsPerPic = bump.area_under(amp, sig)
                 hTotalPhotons = countToScatteredPhotonEM*totalCountsPerPic
                 ax.plot(keyPlt, totalSignal[:,whichPic], marker='o', linestyle='', label=titles[whichPic]);
-                photon_axis.plot(keyPlt, hTotalPhotons, marker='o', linestyle='', color = colors[whichPic])               
+                photon_axis.plot(keyPlt, hTotalPhotons, marker='o', linestyle='', color = ['red', 'orange', 'yellow', 'pink'][whichPic])               
         ax.legend()
         photon_axis.legend()
         [tick.set_color('red') for tick in photon_axis.yaxis.get_ticklines()]
@@ -365,36 +380,35 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
         #numaxcol = 2: trackfitcenter + plothSigmas: ax = axs[1]
         #numaxcol = 2: trackfitcenter + plotCounts: ax = axs[1]
         #numaxcol = 3: ax = axs[2]
-        if numAxisCol == 1:
-            ax = axs
-        else:
-            ax = axs[-1]     
+        ax = (axs if numAxisCol == 1 else axs[-1])
         if onlyThisPic is not None:
-            ax.errorbar(keyPlt, hfitCenter[:,onlyThisPic], hFitCenterErrs[:,onlyThisPic], marker='o', linestyle='', capsize=3, label=titles[onlyThisPic]);
-            def accel(t, x0, a):
-                return x0 + 0.5*a*t**2
-            accelFit, AccelCov = opt.curve_fit(accel, keyPlt*1e-3, hfitCenter[:,onlyThisPic], sigma = hFitCenterErrs[:,onlyThisPic])
-            fitx = np.linspace(keyPlt[0], keyPlt[-1])*1e-3
-            fity = accel(fitx, *accelFit)
-            ax.plot(fitx*1e3, fity)
+            #ax.errorbar(keyPlt, hfitCenter[:,onlyThisPic], hFitCenterErrs[:,onlyThisPic], marker='o', linestyle='', capsize=3, label=titles[onlyThisPic]);
+            ax.errorbar(keyPlt, vfitCenter[:,onlyThisPic], vFitCenterErrs[:,onlyThisPic], marker='o', linestyle='', capsize=3, label=titles[onlyThisPic]);
+            #def accel(t, x0, a):
+            #    return x0 + 0.5*a*t**2
+            #accelFit, AccelCov = opt.curve_fit(accel, keyPlt*1e-3, hfitCenter[:,onlyThisPic], sigma = hFitCenterErrs[:,onlyThisPic])
+            #fitx = np.linspace(keyPlt[0], keyPlt[-1])*1e-3
+            #fity = accel(fitx, *accelFit)
+            #ax.plot(fitx*1e3, fity)
         else:
             for whichPic in range(4):
                 ax.errorbar(keyPlt, hfitCenter[:,whichPic], hFitCenterErrs[:,whichPic], marker='o', linestyle='', capsize=3, label=titles[whichPic]);
-        accelErr = np.sqrt(np.diag(AccelCov))
+        #accelErr = np.sqrt(np.diag(AccelCov))
         fig2.legend()
-        ax.set_ylabel(b'Fit Centers (pix)')
+        ax.set_ylabel(r'Fit Centers (pix)')
         ax.set_xlabel('time (ms)')
        
     if numAxisCol != 0:
         disp.display(fig2) 
     
-    for fid in fids:
-        if type(fid) == int:
-            if newAnnotation or not exp.checkAnnotation(fid, force=False, quiet=True):
-                exp.annotate(fid)
+    if not forceNoAnnotation:
+        for fid, isAnnotated in zip(fids, isAnnotatedList):
+            if not isAnnotated:
+                if type(fid) == int or type(fid) == type(''):
+                    if newAnnotation or not exp.checkAnnotation(fid, force=False, quiet=True, useBase=useBase):
+                        exp.annotate(fid, useBase=useBase)
     if clearOutput:
         disp.clear_output()
-    
     if calcTemperature: 
         for temp, err, label in zip(temps, tempErrs, ['Hor', 'Vert', 'Hor2D', 'Vert2D']): 
             print(label + ' temperature = ' + misc.errString(temp*1e6, err*1e6) + 'uk')
@@ -407,27 +421,41 @@ def freespaceImageAnalysis( fids, guesses = None, fit=True, bgInput=None, bgPcIn
             with exp.ExpFile(fid) as file:
                 file.get_basic_info()
     if trackFitCenter:
-        print('Acceleration in Mpix/s^2 = ' + misc.errString(accelFit[1], accelErr[1]))
-    if transferAnalysisOpts is not None:
+        pass
+        #print('Acceleration in Mpix/s^2 = ' + misc.errString(accelFit[1], accelErr[1]))
+    if transferAnalysisOpts is not None and showTferAnalysisPlots:
         colors, colors2 = misc.getColors(len(transferAnalysisOpts.initLocs()) + 2)#, cmStr=dataColor)
         pltShape = (transferAnalysisOpts.initLocsIn[-1], transferAnalysisOpts.initLocsIn[-2])
-        #mp.plotThresholdHists([initThresholds[0][0],initThresholds[1][0]], colors, shape=pltShape)
-    return {'images':images, 'fits':hFitParams, 'errs':hFitErrs, 'pics':sortedStackedPics, 'hSigmas':hSigmas, 'sigmaErrors':hSigmaErrs, 'dataKey':keyPlt, 
+        # mp.plotThresholdHists([initThresholds[0][0],initThresholds[1][0]], colors, shape=pltShape)
+        mp.plotThresholdHists([initThresholds[0][0], initThresholds[0][0]], colors, shape=[1,2])
+    returnDictionary = {'images':images, 'fits':hFitParams, 'errs':hFitErrs, 'hSigmas':hSigmas, 'sigmaErrors':hSigmaErrs, 'dataKey':keyPlt, 
             'hTotalPhotons':hTotalPhotons, 'tempCalc':temps, 'tempCalcErr':tempErrs, 'initThresholds':initThresholds[0], 
-            '2DFit':paramSet2D, '2DErr':errSet2D}
+            '2DFit':fitParams2D, '2DErr':fitErrs2D, 'bgPics':picsForBg, 'dataLength':datalen}
+    if returnPics: 
+        returnDictionary['pics'] = sortedStackedPics
+    return returnDictionary
 
-def getBgImgs(bgSource, startPic=1, picsPerRep=2):
-    """ Expects either a file ID number or a list (or an array) of images as input.
+def getBgImgs(bgSource, startPic=1, picsPerRep=2, rmHighCounts=True, bgWeights=[], weightBackgrounds=True):
+    """ Probably should test with old-fashioned methods, but as of now basically just expects the source to be a 2D array of pictures, i.e. a 4d array.
     """
     if type(bgSource) == int:
         with exp.ExpFile(bgSource) as file:
-            pics = file.get_pics()
+            allpics = file.get_pics() # probably fails
     if type(bgSource) == type(np.array([])) or type(bgSource) == type([]):
-        pics = bgSource
-    pics2 = pics[startPic::picsPerRep]
-    pics2 = rmHighCountPics(pics2, 7000)
-    avgBg = np.mean(pics2,0)
-    avgPcBg = photonCounting(pics2, 120)[0] / len(pics2)
+        allpics = bgSource
+    #bgPics = allpics[startPic::picsPerRep]
+    bgPics = [setPics[startPic::picsPerRep] for setPics in allpics]
+    if rmHighCounts:
+        bgPics = [rmHighCountPics(setPics, 7000) for setPics in bgPics]
+    if weightBackgrounds:
+        assert(len(bgPics) == len(bgWeights))
+        avgPcBg = avgBg = np.zeros(np.array(bgPics[0][0]).shape)
+        for weight, setPics in zip(bgWeights, bgPics):
+            avgBg += weight/sum(bgWeights) * np.mean(setPics,0)
+            avgPcBg += weight/sum(bgWeights)*photonCounting(setPics, 120)[0] / len(setPics)
+    else:
+        avgBg = np.mean(bgPics,0)
+        avgPcBg = photonCounting(bgPics, 120)[0] / len(bgPics)
     return avgBg, avgPcBg
 
 

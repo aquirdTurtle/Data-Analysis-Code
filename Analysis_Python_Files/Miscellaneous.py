@@ -60,9 +60,10 @@ def printExperimentFileInfo(loc="J:/Data repository/New Data Repository/2020/Feb
                 print(filename[5:-3], "Bad File")
                 
                 
-def loopProgress(inc, total):
-    IPython.display.clear_output(wait=True)
-    print(round_sig_str(inc/total*100), '% Complete...')
+def loopProgress(inc, total, extraText="", clear=False):
+    if clear:
+        IPython.display.clear_output(wait=True)
+    print(extraText, round_sig_str(inc/total*100), '% Complete...')
     
 def rebin(arr, new_shape):
     shape = (new_shape[0], arr.shape[0] // new_shape[0],
@@ -239,8 +240,9 @@ def round_sig_str(x, sig=3):
 
 def errString(val, err, precision=None):
     """
-    takes the input value and error and makes a nice error string. e.g.
-    inputs of
+    takes the input value and error and makes a nice error string. 
+    precision is the precision to display the value. if none it tries to be smart.
+    e.g. inputs of
     1.423, 0.086, 3 gives
     1.42(9)
     :param val:
@@ -268,6 +270,9 @@ def errString(val, err, precision=None):
     if precision is None:
         # determine first significant digit of error and use one more than that. 
         precision = int(valE - errE + 2)
+        #print(precision)
+        #if precision <= 0: 
+        #    precision = 1
     if np.isinf(valE):
         return "?(?)"
     try:
@@ -282,7 +287,13 @@ def errString(val, err, precision=None):
     if expFactor <= 0:
         expFactor = 0
     errNum = int(round(err*10**expFactor))
-    result = round_sig_str(val, precision) + '(' + round_sig_str(errNum, num) + ')'
+    valStr = round_sig_str(val, precision)
+    if valStr == "0":
+        # this is a weird case where the error is larger than the value, so the precision ends up being funny.
+        # alternatively could set precision to always simply be >0, but I don't actually want it to display something like 
+        # 0.000000000000000001(40000000000000000) I'd much rather 0.0(4)
+        valStr = round_sig_str(0, int(expFactor+num-1))
+    result = valStr + '(' + round_sig_str(errNum, num) + ')'
     return result
 
 
@@ -427,7 +438,3 @@ def dblAsymErrString(val, err_L1, err_U1, err_L2, err_U2, precision=None):
     result = (r'$'+round_sig_str(val, precision) + '^{(' + round_sig_str(errNumU1, numU1) + ')('+round_sig_str(errNumU2, numU2)+')}' 
               + '_{(' + round_sig_str(errNumL1, numL1) + ')('+ round_sig_str(errNumL2, numL2) + ')}$')
     return result
-
-def reportProgress(num, total):
-    print( round_sig_str(num/total*100) + '%                     ',  end='\r' )
-    #IPython.display.clear_output(wait=True)
