@@ -23,11 +23,12 @@ class AtomThreshold:
                         + [self.binCenters[-1] + self.binWidth()]) + self.binWidth()/2
     def binEdgeHeights(self):
         return np.array([0] + list(self.binHeights) + [0])
+    
     def __copy__(self):
         return type(self)(th=self.th, fidelity=self.fidelity, binCenters=self.binCenters, binHeights=self.binHeights, 
                           fitVals=self.fitVals, rmsResidual=self.rmsResidual, rawData=self.rawData)
     def __str__(self):
-        return ('[AtomThrehsold with t='+str(self.th) + ', fid='
+        return ('[AtomThrehsold conspicous extra text with th='+str(self.th) + ', fid='
                 + str(self.fidelity) + ', fitVals=' + str(self.fitVals) + ']')
     def __repr__(self):
         return self.__str__()

@@ -48,6 +48,8 @@ def f(x, Offset, Amp1, Sigma1, Amp2, Sigma2, Amp3, Sigma3, Center, Spread):
             # penalize fit centers outside of the data range (assuming if you want to see these that you've
             # at least put the gaussian in the scan)
             return penalty
+        if params[3*i+3] < 1:
+            return penalty
     #if params[0] < 0:
         # penalize negative offset
     #    return penalty
@@ -76,9 +78,9 @@ def guess(key, values):
     """
     #a = (max(values)-min(values))/10
     return [0.1,
-            0.4, 10,
-            0.4, 10,
-            0.2, 10, 
+            0.4, 20,
+            0.4, 20,
+            0.2, 20, 
             105, 60]    
 
 def areas(A1, x01, sig1, A2, x02, sig2):

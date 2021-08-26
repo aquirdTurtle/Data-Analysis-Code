@@ -403,20 +403,9 @@ def getBetterBiases(prevDepth, prev_V_Bias, prev_H_Bias, sign=1, hFreqs=None, vF
         print(h, ' ', end=' ')
     print(']\n')
 
-    if hFreqs is None:
-        return
-    if not (len(new_H_Bias) == len(hFreqs) == len(hPhases)):
-        raise ValueError('Lengths of horizontal data dont match')
-    if not (len(new_V_Bias) == len(vFreqs) == len(vPhases)):
-        raise ValueError('Lengths of vertical data dont match')
     with open('\\\\jilafile.colorado.edu\\scratch\\regal\\common\\LabData\\Quantum Gas Assembly\\Code_Files\\New-Depth-Evening-Config.txt','w') as file:
-        file.write('HORIZONTAL:\n')
-        for f, b, p in zip(hFreqs, new_H_Bias, hPhases):
-            file.write(str(f) + '\t' + str(b) + '\t' + str(p) + '\n')
-        file.write('VERTICAL:\n')
-        for f, b, p in zip(vFreqs, reversed(new_V_Bias), vPhases):
-            file.write(str(f) + '\t' + str(b) + '\t' + str(p) + '\n')
-
+           file.write("[ " + " ".join([str(bias) for bias in new_H_Bias]) + " ]")            
+    
 def extrapolateEveningBiases(hBiasIn, vBiasIn, depthIn, sign=1):
     """
     depth in is some measure of the trap depth which is assumed to be roughly linear with the trap depth. It need not be in the right units.
@@ -1184,7 +1173,7 @@ def getThresholds( picData, tOptions=ThresholdOptions.ThresholdOptions(), quiet=
             guessPos2 += 1
         guess = arr([max(th.binHeights), guessPos1, gWidth, max(th.binHeights)*ampFac, guessPos2, gWidth])
         th.fitVals = fitDoubleGaussian(th.binCenters, th.binHeights, guess, quiet=quiet)
-        th.t, th.fidelity = calculateAtomThreshold(th.fitVals)
+        th.th, th.fidelity = calculateAtomThreshold(th.fitVals)
         th.rmsResidual = getNormalizedRmsDeviationOfResiduals(th.binCenters, th.binHeights, double_gaussian.f, th.fitVals)
         if tOptions.rigorousThresholdFinding:
             for guessNum in range(len(binGuessIteration)):
@@ -1194,26 +1183,26 @@ def getThresholds( picData, tOptions=ThresholdOptions.ThresholdOptions(), quiet=
                 guess = arr([max(th.binHeights), guessPos1, gWidth, max(th.binHeights)*ampFac, newGuessPosition, gWidth])
                 t2 = copy(th)
                 t2.fitVals = fitDoubleGaussian(t2.binCenters, t2.binHeights, guess, quiet=quiet)
-                t2.t, t2.fidelity = calculateAtomThreshold(t2.fitVals)
+                t2.th, t2.fidelity = calculateAtomThreshold(t2.fitVals)
                 t2.rmsResidual = getNormalizedRmsDeviationOfResiduals(t2.binCenters, t2.binHeights, double_gaussian.f, t2.fitVals)
                 if t2.fidelity - t2.rmsResidual > th.fidelity - th.rmsResidual: # keep track of the best result in the t variable.
-                    th.t, th.fitVals, th.fidelity, th.rmsResidual = t2.t, t2.fitVals, t2.fidelity, t2.rmsResidual
+                    th.th, th.fitVals, th.fidelity, th.rmsResidual = t2.th, t2.fitVals, t2.fidelity, t2.rmsResidual
                 else:
                     pass
     elif tOptions.autoHardThreshold:
         th.fitVals = None
-        th.t, th.fidelity = ((max(th.rawData) + min(th.rawData))/2.0, 0) 
+        th.th, th.fidelity = ((max(th.rawData) + min(th.rawData))/2.0, 0) 
         th.rmsResidual=0
     elif tOptions.autoThresholdFittingGuess:
         guess = arr([max(th.binHeights), (max(th.rawData) + min(th.rawData))/4.0, gWidth,
                      max(th.binHeights)*0.5, 3*(max(th.rawData) + min(th.rawData))/4.0, gWidth])
         th.fitVals = fitDoubleGaussian(th.binCenters, th.binHeights, guess, quiet=quiet)
-        th.t, th.fidelity = calculateAtomThreshold(th.fitVals)
+        th.th, th.fidelity = calculateAtomThreshold(th.fitVals)
         th.rmsResidual = getNormalizedRmsDeviationOfResiduals(th.binCenters, th.binHeights, double_gaussian.f, th.fitVals)
     else:
         print('no option???')
         th.fitVals = None
-        th.t, th.fidelity = (tOptions.manualThresholdValue, 0)
+        th.th, th.fidelity = (tOptions.manualThresholdValue, 0)
         th.rmsResidual=0
     return th
 
@@ -1294,6 +1283,7 @@ def postSelectOnAssembly( pic1AtomData, pic2AtomData, analysisOpts, justReformat
         analysisOpts.postSelectionConditions = [[] for _ in analysisOpts.positiveResultConditions]
     # 2d conditions... ps for post-selected
     psPic1AtomData, psPic2AtomData, postSelectedExtraData = [[[] for _ in analysisOpts.postSelectionConditions] for _ in range(3)]    
+    condHitList = [[] for _ in range(dataSetTotalNum)]
     for dataSetInc in range(dataSetTotalNum):
         conditionHits = [None for condition in analysisOpts.postSelectionConditions[dataSetInc]]
         for conditionInc, condition in enumerate(analysisOpts.postSelectionConditions[dataSetInc]):
@@ -1304,6 +1294,7 @@ def postSelectOnAssembly( pic1AtomData, pic2AtomData, analysisOpts, justReformat
             for condition in conditionHits:
                 if condition[repNum] == False:
                     allCondMatch = False
+            condHitList[dataSetInc].append(allCondMatch)
             if allCondMatch or justReformat:
                 indvAtoms1, indvAtoms2 = [], []
                 for atomInc in range(len(pic1AtomData)):
@@ -1325,7 +1316,7 @@ def postSelectOnAssembly( pic1AtomData, pic2AtomData, analysisOpts, justReformat
             psPic2AtomData[dataSetInc].append(indvAtoms2)
             if extraDataToPostSelect is not None:
                 postSelectedExtraData[dataSetInc].append(extraDataToPostSelect[repNum])       
-    return psPic1AtomData, psPic2AtomData, postSelectedExtraData
+    return psPic1AtomData, psPic2AtomData, postSelectedExtraData, condHitList
 
 def getConditionHits(atomPresenceData, hitCondition, verbose=False):
     """
