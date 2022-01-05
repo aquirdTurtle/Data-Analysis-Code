@@ -31,6 +31,12 @@ class TransferAnalysisOptions:
 
         
     def numDataSets(self):
+        if (len(self.positiveResultConditions) != len(self.postSelectionConditions)):
+            raise ValueError("Length of positive result conditions is "+
+                             "inconsistent with length of post-selection conditions!"+
+                             " This length is used to determine the number of data sets,"+
+                             " and these two lengths should match. prc length: "+str(len(self.positiveResultConditions))+
+                             ", psc length: " + str(len(self.postSelectionConditions)))
         return len(self.positiveResultConditions)
     def numAtoms(self):
         return len(self.initLocs())
@@ -48,13 +54,13 @@ class TransferAnalysisOptions:
         return self.__str__()
 
 def getStandardLoadingOptions(atomLocs):
-    prConditions = [None for _ in range(len(ah.unpackAtomLocations(atomLocs)))]
+    prConditions = [None for _ in ah.unpackAtomLocations(atomLocs)]
     for atomNum in range(len(ah.unpackAtomLocations(atomLocs))):
         singleLoadCondition = condition(whichPic=[0],whichAtoms=[atomNum],conditions=[True],numRequired=-1, 
                                         markerWhichPicList=(0,1), markerLocList=(atomNum,atomNum))
         prConditions[atomNum] = singleLoadCondition
     return TransferAnalysisOptions( initLocsIn=atomLocs, tferLocsIn=atomLocs,
-                                   postSelectionConditions=[[] for _ in range(len(ah.unpackAtomLocations(atomLocs)))], 
+                                   postSelectionConditions=[[] for _ in ah.unpackAtomLocations(atomLocs)], 
                                    positiveResultConditions=prConditions )
 
     
@@ -88,6 +94,8 @@ def getStandard3AtomTransferConditions():
     
     sv = condition( name="Survive", whichPic=[1,1,1],whichAtoms=[0,1,2],
                               conditions=[True, True, True], numRequired=1)
+    
+    print('analysisopts', )
     return loadLeft, loadCenter, loadRight, loadEdges, finLeft, finCenter, finRight, finNone, sv
 
 def getStandard2AtomTransferConditions():

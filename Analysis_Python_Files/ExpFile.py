@@ -95,9 +95,11 @@ def getConfiguration(fid, expFile_version=currentVersion, useBase=True):
     
 #"J:\\Data repository\\New Data Repository"
 #r'\\DESKTOP-ASQ07EB\Local_Data_Repository'
+#r'\\DESKTOP-ASQ07EB\Local_Data_Repository'
 #r'\\REGALB232EXP\Local_Data_Repository'
-#r'\\jilafile.colorado.edu\scratch\regal\common\LabData\Quantum Gas Assembly\Data repository\\New Data Repository'
-def setPath(day, month, year, repoAddress=r'\\jilafile.colorado.edu\scratch\regal\common\LabData\Quantum Gas Assembly\Data repository\New Data Repository'):
+#\\\\jilafile.colorado.edu\\scratch\\regal\\common\\LabData\\Quantum Gas Assembly\\Data repository\\New Data Repository
+#r'\\REGALB232EXP\Local_Data_Repository'
+def setPath(day, month, year, repoAddress=r'\\REGALB232EXP\Local_Data_Repository'):
     """
     This function sets the location of where all of the data files are stored. It is occasionally called more
     than once in a notebook if the user needs to work past midnight.

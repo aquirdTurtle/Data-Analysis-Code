@@ -20,7 +20,7 @@ from .MainAnalysis import analyzeNiawgWave, standardAssemblyAnalysis, AnalyzeRea
 from .LoadingFunctions import loadDataRay, loadCompoundBasler, loadDetailedKey
 from .AnalysisHelpers import (processSingleImage, orderData,
                               normalizeData, getBinData, fitDoubleGaussian,
-                              guessGaussianPeaks, calculateAtomThreshold, getAvgPic, getEnsembleHits,
+                              guessGaussianPeaks, calculateAtomThreshold, getAvgPic,
                               getEnsembleStatistics, processImageData,
                               fitPictures, fitGaussianBeamWaist, integrateData, 
                               computeMotNumber, getFitsDataFrame, genAvgDiscrepancyImage, getGridDims)
@@ -66,7 +66,8 @@ def makeAvgPlts(avgPlt1, avgPlt2, avgPics, analysisOpts, colors):
                 else:                    
                     circNum = markerTotalList.count((pic, psc.markerLocList[markernum])) \
                               - markerRunningList.count((pic, psc.markerLocList[markernum]))
-                    circ = Circle((loc[1]+markerLocModList[circNum][0], loc[0]+markerLocModList[circNum][1]), 0.2, color=color)
+                    print('circNum', circNum)
+                    circ = Circle((loc[1]+markerLocModList[circNum%4][0], loc[0]+markerLocModList[circNum%4][1]), 0.2, color=color)
                 [avgPlt1,avgPlt2][pic].add_artist(circ)
         if prc is not None:
             for markernum, pic in enumerate(prc.markerWhichPicList):
@@ -163,7 +164,7 @@ def imageTickedColorbar(f, im, ax, lim):
     cb.outline.set_visible(False)
         
 def makeThresholdStatsImages(ax, thresholds, locs, shape, ims, lims, fig):
-    thresholdList = [thresh.t for thresh in thresholds]
+    thresholdList = [thresh.th for thresh in thresholds]
     thresholdPic, lims[0][0], lims[0][1] = genAvgDiscrepancyImage(thresholdList, shape, locs)
     ims.append(ax[0].imshow(thresholdPic, cmap=cm.get_cmap('seismic_r'), vmin=lims[0][0], vmax=lims[0][1], origin='lower'))
     ax[0].set_title('Thresholds:' + str(misc.round_sig(np.mean(thresholdList))), fontsize=12)
@@ -217,13 +218,13 @@ def plotThresholdHists( thresholds, colors, extra=None, extraname=None, threshol
             ax = axs[tnum]
         ax.bar(th.binCenters, th.binHeights, align='center', width=th.binCenters[1] - th.binCenters[0], color=color)
         #ax.semilogy(th.binCenters, th.binHeights, color=c)
-        ax.axvline(th.t, color=detailColor, ls=':')
+        ax.axvline(th.th, color=detailColor, ls=':')
         if localMinMax:
             minx, maxx = min(th.binCenters), max(th.binCenters)
         maxy = max(th.binHeights)
         if th2 is not None:
             ax.plot(th2.binEdges(), th2.binEdgeHeights(), color='r')
-            ax.axvline(th2.t, color='r', ls='-.')
+            ax.axvline(th2.th, color='r', ls='-.')
             if localMinMax:
                 minx, maxx = min(list(th2.binCenters) + [minx]), max(list(th2.binCenters) + [maxx])
             maxy = max(list(th2.binHeights) + [maxy])
@@ -563,6 +564,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
     """
     Standard data analysis function for looking at survival rates throughout an experiment. I'm very bad at keeping the 
     function argument descriptions up to date.
+    countMain: option is for switching which plot is the larger
     """
     avgColor='k'
     tt = TimeTracker()
@@ -584,7 +586,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
     (transferData, transferErrs, initPopulation, pic1Data, keyName, key, repetitions, initThresholds, 
      fits, avgTransferData, avgTransferErr, avgFit, avgPics, genAvgs, genErrs, transVarAvg, transVarErr, 
      initAtomImages, transAtomImages, pic2Data, transThresholds, fitModules, basicInfoStr, ensembleHits, 
-     tOptions, analysisOpts, initAtoms, tferAtoms, tferList, isAnnotated) = res
+     tOptions, analysisOpts, initAtoms, tferAtoms, tferList, isAnnotated, condHitList) = res
     print('key:',key)
     if flattenKeyDim != None:
         key = key[:,flattenKeyDim]
@@ -628,7 +630,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
     xlabels = [keyName,keyName,'Picture #','','']
     ylabels = [typeName + " %","Initial Pop %", "Camera Signal",'','']
     titles = [titletxt, "Initial Pop: Avg$ = " + str(misc.round_sig(np.mean(arr(initPopulation)))) + '$',
-              "Thresh.=" + str(misc.round_sig(np.mean( [initThresholds[i][j].t for i in range(len(initThresholds)) 
+              "Thresh.=" + str(misc.round_sig(np.mean( [initThresholds[i][j].th for i in range(len(initThresholds)) 
                                                         for j in range(len(initThresholds[i]))]))) , '', '']
     majorYTicks = [np.arange(0,1,0.1),np.arange(0,1,0.2),np.linspace(min(pic1Data[0]),max(pic1Data[0]),5),[],[]]
     minorYTicks = [np.arange(0,1,0.05),np.arange(0,1,0.1),np.linspace(min(pic1Data[0]),max(pic1Data[0]),10),[],[]]
@@ -657,6 +659,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
     
     if type(dataColor) == str:
         colors, colors2 = misc.getColors(analysisOpts.numDataSets() + 1, cmStr=dataColor)
+        
     else:
         colors = dataColor
     longLegend = len(transferData[0]) == 1
@@ -694,6 +697,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
     # ### Init Population Plot
     for datasetNum, _ in enumerate(analysisOpts.postSelectionConditions):
         print(np.array(initPopulation).shape)
+        print(initPopulation[datasetNum])
         initPopPlot.plot(key, initPopulation[datasetNum], ls='', marker='o', color=colors[datasetNum], alpha=0.3)
         initPopPlot.axhline(np.mean(initPopulation[datasetNum]), color=colors[datasetNum], alpha=0.3)
     # some shared properties 
@@ -703,23 +707,24 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
             plot.set_xlim(left = min(key) - r / len(key), right = max(key) + r / len(key))
         plot.set_ylim({0, 1})
     # ### Count Series Plot
+    locColors, _ = misc.getColors(len(pic1Data)+1, cmStr='gist_earth')
     for locNum, loc in enumerate(analysisOpts.initLocs()):
-        countPlot.plot(pic1Data[locNum], color=colors[locNum], ls='', marker='.', 
+        countPlot.plot(pic1Data[locNum], color=locColors[locNum], ls='', marker='.', 
                        markersize=2 if countMain else 1, alpha=1 if countMain else 0.05)
         if countRunningAvg is not None:
             countPlot.plot(np.convolve(pic1Data[locNum], np.ones(countRunningAvg)/countRunningAvg, mode='valid'),
-                           color=colors[locNum], alpha=1 if countMain else 0.5)
+                           color=locColors[locNum], alpha=1 if countMain else 0.5)
         for threshInc, thresh in enumerate(initThresholds[locNum]):
             picsPerVar = int(len(pic1Data[locNum])/len(initThresholds[locNum]))
-            countPlot.plot([picsPerVar*threshInc, picsPerVar*(threshInc+1)], [thresh.t, thresh.t], color=colors[locNum], alpha=0.3)
+            countPlot.plot([picsPerVar*threshInc, picsPerVar*(threshInc+1)], [thresh.th, thresh.th], color=locColors[locNum], alpha=0.3)
     ticksForVis = countPlot.xaxis.get_major_ticks()
     ticksForVis[-1].label1.set_visible(False)
     # Count Histogram Plot
     for i, atomLoc in enumerate(analysisOpts.initLocs()):
-        countHist.hist(pic1Data[i], 50, color=colors[i], orientation='horizontal', alpha=0.3, histtype='stepfilled')
-        countHist.axhline(initThresholds[i][0].t, color=colors[i], alpha=0.3)
+        countHist.hist(pic1Data[i], 50, color=locColors[i], orientation='horizontal', alpha=0.3, histtype='stepfilled')
+        countHist.axhline(initThresholds[i][0].th, color=locColors[i], alpha=0.3)
     setp(countHist.get_yticklabels(), visible=False)
-    makeAvgPlts(avgPlt1, avgPlt2, avgPics, analysisOpts, colors)
+    makeAvgPlts(avgPlt1, avgPlt2, avgPics, analysisOpts, locColors)
 
     avgFitCharacter = None
     if plotAvg:
@@ -917,12 +922,13 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
                 display(f)
     
     if outputThresholds:
-        thresholdList = np.flip(np.reshape([t.t for t in initThresholds], (10,10)),1)
+        thresholdList = np.flip(np.reshape([threshold.th for threshold in initThresholds], (10,10)),1)
         with open('J:/Code-Files/T-File.txt','w') as f:
             for row in thresholdList:
                 for thresh in row:
                     f.write(str(thresh) + ' ')
-    return {'Key':key, 'All_Transfer':transferData, 'All_Transfer_Errs':transferErrs, 'Initial_Populations':initPopulation, 
+                    
+    returnObj = {'Key':key, 'All_Transfer':transferData, 'All_Transfer_Errs':transferErrs, 'Initial_Populations':initPopulation, 
             'Transfer_Fits':fits, 'Average_Transfer_Fit':avgFit, 'Average_Atom_Generation':genAvgs, 
             'Average_Atom_Generation_Err':genErrs, 'Picture_1_Data':pic1Data, 'Fit_Character':fitCharacters, 
             'Average_Transfer_Pic':avgTransferPic, 'Transfer_Averaged_Over_Variations':transVarAvg, 
@@ -930,8 +936,13 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
             'Average_Transfer_Err':avgTransferErr, 'Initial_Atom_Images':initAtomImages, 
             'Transfer_Atom_Images':transAtomImages, 'Picture_2_Data':pic2Data, 'Initial_Thresholds':initThresholds,
             'Transfer_Thresholds':transThresholds, 'Fit_Modules':fitModules, 'Average_Fit_Character':avgFitCharacter,
-            'Ensemble_Hits':ensembleHits, 'InitAtoms':initAtoms, 'TferAtoms':tferAtoms, 'tferList':tferList, 'Main_Axis':mainPlot,
-            'Figures':[fig, *f_imgPlots]}
+            'InitAtoms':initAtoms, 'TferAtoms':tferAtoms, 'tferList':tferList, 'Main_Axis':mainPlot, 'Condition_Hit_List':condHitList}
+    if showImagePlots:
+         returnObj['Figures'] = [fig, *f_imgPlots]
+    else:
+        returnObj['Figures'] = [fig]
+    
+    return returnObj
 
 def Loading(fileID, atomLocs, **TransferArgs):
     """
@@ -1069,11 +1080,11 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     # ### Count Series Plot
     for i, loc in enumerate(atomLocations):
         countPlot.plot(locCounts[i], color=colors[i], ls='', marker='.', markersize=1, alpha=0.3)
-        countPlot.axhline(thresholds[i].t, color=colors[i], alpha=0.3)
+        countPlot.axhline(thresholds[i].th, color=colors[i], alpha=0.3)
 
     countPlot.set_xlabel("Picture #")
     countPlot.set_ylabel("Camera Signal")
-    countPlot.set_title("Thresh.=" + str(misc.round_sig(thresholds[i].t)), fontsize=10) #", Fid.="
+    countPlot.set_title("Thresh.=" + str(misc.round_sig(thresholds[i].th)), fontsize=10) #", Fid.="
                         # + str(round_sig(thresholdFid)), )
     ticksForVis = countPlot.xaxis.get_major_ticks()
     ticksForVis[-1].label1.set_visible(False)
@@ -1087,10 +1098,10 @@ def Population(fileNum, atomLocations, whichPic, picsPerRep, plotLoadingRate=Tru
     for i, atomLoc in enumerate(atomLocations):
         if histMain:
             countHist.hist(locCounts[i], 50, color=colors[i], orientation='vertical', alpha=mainAlpha, histtype='stepfilled')
-            countHist.axvline(thresholds[i].t, color=colors[i], alpha=0.3)
+            countHist.axvline(thresholds[i].th, color=colors[i], alpha=0.3)
         else:
             countHist.hist(locCounts[i], 50, color=colors[i], orientation='horizontal', alpha=mainAlpha, histtype='stepfilled')
-            countHist.axhline(thresholds[i].t, color=colors[i], alpha=0.3)
+            countHist.axhline(thresholds[i].th, color=colors[i], alpha=0.3)
     for item in ([countHist.title, countHist.xaxis.label, countHist.yaxis.label] +
                      countHist.get_xticklabels() + countHist.get_yticklabels()):
         item.set_fontsize(10 if not histMain else 20)
