@@ -30,7 +30,7 @@ from . import MainAnalysis as ma
 from . import AtomThreshold
 from . import ThresholdOptions
 from . import ExpFile as exp
-from .ExpFile import ExpFile, dataAddress
+#from .ExpFile import ExpFile as exp
 from .TimeTracker import TimeTracker
 from . import PictureWindow as pw
 from . import TransferAnalysisOptions as tao
@@ -228,7 +228,8 @@ def motFillAnalysis( dataSetNumber, motKey, exposureTime, window=pw.PictureWindo
     return rawData, intRawData, motNum, fitParams, fluorescence, motKey, fitErr
 
 def getTodaysTemperatureData():
-    path = dataAddress + 'Temperature_Data.csv'
+    #path = dataAddress + 'Temperature_Data.csv'
+    path = exp.jilafileAddress + 'Temperature_Data.csv'
     df = pd.read_csv(path, header=None, sep=',| ', engine='python')
     return df
 

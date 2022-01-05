@@ -559,7 +559,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
               timeit=False, outputThresholds=False, plotFitGuess=False, newAnnotation=False, 
               plotImagingSignal=False, expFile_version=4, plotAvg=True, countMain=False, histMain=False,
               flattenKeyDim=None, forceNoAnnotation=False, cleanOutput=True, dataColor='gist_rainbow', dataEdgeColors=None,
-              tOptions=[to.ThresholdOptions()], resInput=None, countRunningAvg=None, **standardTransferArgs ):
+              tOptions=[to.ThresholdOptions()], resInput=None, countRunningAvg=None, useBase=True, **standardTransferArgs ):
     """
     Standard data analysis function for looking at survival rates throughout an experiment. I'm very bad at keeping the 
     function argument descriptions up to date.
@@ -569,7 +569,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
     if resInput is None:
         try:
             res = TransferAnalysis.standardTransferAnalysis( fileNumber, anaylsisOpts, fitModules=fitModules, 
-                                                             expFile_version=expFile_version, tOptions=tOptions, 
+                                                             expFile_version=expFile_version, tOptions=tOptions, useBase=useBase,
                                                             **standardTransferArgs )
         except OSError as err:
             if (str(err) == "Unable to open file (bad object header version number)"):
@@ -873,7 +873,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
     if timeit:
         tt.display()
     
-    if (newAnnotation or not exp.checkAnnotation(fileNumber, force=False, quiet=True, expFile_version=expFile_version)) and not forceNoAnnotation :
+    if (newAnnotation or not exp.checkAnnotation(fileNumber, force=False, quiet=True, useBase=useBase, expFile_version=expFile_version)) and not forceNoAnnotation :
         disp.display(fig)
         if fitModules[-1] is not None:
             print("Avg Fit R-Squared: " + misc.round_sig_str(avgFit["R-Squared"]))
@@ -889,7 +889,7 @@ def Transfer( fileNumber, anaylsisOpts, show=True, legendOption=None, fitModules
                     display(f)
 
         exp.annotate(fileNumber,expFile_version)
-    configName = exp.getConfiguration(fileNumber,expFile_version=expFile_version)
+    configName = exp.getConfiguration(fileNumber,expFile_version=expFile_version, useBase=useBase)
     
     if not forceNoAnnotation:
         rawTitle, _, lev = exp.getAnnotation(fileNumber,expFile_version=expFile_version)

@@ -10,6 +10,14 @@ def fitCharacter( params ):
     r = params[7]/params[1]
     return r/(1-r) if not (r>=1) else 5
 
+def fitCharacterErr(params, errs):
+    [Offset, Amp1, x01, sig1, Amp2, x02, sig2, Amp3, x03, sig3] = params
+    [Offset_e, Amp1_e, x01_e, Sigma1_e,  Amp2_e, x02_e, sigma2_e,  Amp3_e, x03, sigma3_e] = errs
+    #[Offset_e, Amp1_e, Sigma1_e, Amp2_e, Sigma2_e, Amp3_e, Center_e, Spread_e] = errs
+    r = Amp3 / Amp1
+    errR = np.sqrt(Amp3_e**2/Amp1**2 + Amp1_e**2 * (r**2/Amp1**2) )
+    return errR/(1-r)**2
+
 def args():
     arglist = ['Offset']
     for i in range(numGauss):
